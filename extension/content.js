@@ -34,6 +34,14 @@ let isRecording = false;
 let enhanceHistory = [];
 let usageData = { count: 0, limit: 30 };
 let isLoadingTab = false;
+let promptTrackingEnabled = true;  // Passive prompt tracking — user can opt out
+let contextEnabled = true;          // Conversation context reading — user can opt out
+
+// Load privacy preferences
+chrome.storage.local.get(["pm_tracking", "pm_context"], (result) => {
+  promptTrackingEnabled = result.pm_tracking !== false;  // default: true
+  contextEnabled = result.pm_context !== false;          // default: true
+});
 
 // ══════════════════════════════════════════════════════════════
 // AUTH HELPERS (with auto-refresh)
@@ -284,6 +292,7 @@ async function fetchEnhanceHistory() {
 
 function scrapeConversation() {
   const messages = [];
+  if (!contextEnabled) return messages;  // Respect privacy setting
   const hostname = window.location.hostname;
 
   try {
@@ -385,8 +394,31 @@ function createPanel() {
     <div class="pm-header">
       <span class="pm-header-title">Prompt Memory</span>
       <span class="pm-version-badge">v4</span>
+      <button class="pm-settings-toggle" id="pm-settings-toggle" title="Privacy Settings">⚙</button>
       <button class="pm-theme-toggle" id="pm-theme-toggle" title="Toggle light/dark mode">🌙</button>
       <button class="pm-header-close" id="pm-close">×</button>
+    </div>
+    <div class="pm-settings-panel" id="pm-settings-panel" style="display:none">
+      <div class="pm-settings-row">
+        <div class="pm-settings-info">
+          <div class="pm-settings-label">Prompt Tracking</div>
+          <div class="pm-settings-desc">Logs your submitted prompts to improve future suggestions.</div>
+        </div>
+        <label class="pm-toggle">
+          <input type="checkbox" id="pm-tracking-toggle" checked>
+          <span class="pm-toggle-slider"></span>
+        </label>
+      </div>
+      <div class="pm-settings-row" style="margin-top:10px">
+        <div class="pm-settings-info">
+          <div class="pm-settings-label">Conversation Context</div>
+          <div class="pm-settings-desc">Reads recent chat messages for better enhancement results.</div>
+        </div>
+        <label class="pm-toggle">
+          <input type="checkbox" id="pm-context-toggle" checked>
+          <span class="pm-toggle-slider"></span>
+        </label>
+      </div>
     </div>
     <div class="pm-tabs">
       <button class="pm-tab pm-active" data-tab="context">Context</button>
@@ -425,6 +457,28 @@ function createPanel() {
 
   // Close
   document.getElementById("pm-close").addEventListener("click", () => togglePanel(false));
+
+  // Settings toggle
+  document.getElementById("pm-settings-toggle").addEventListener("click", () => {
+    const settingsPanel = document.getElementById("pm-settings-panel");
+    settingsPanel.style.display = settingsPanel.style.display === "none" ? "block" : "none";
+  });
+
+  // Tracking toggle
+  const trackToggle = document.getElementById("pm-tracking-toggle");
+  const ctxToggle = document.getElementById("pm-context-toggle");
+  chrome.storage.local.get(["pm_tracking", "pm_context"], (result) => {
+    trackToggle.checked = result.pm_tracking !== false;
+    ctxToggle.checked = result.pm_context !== false;
+  });
+  trackToggle.addEventListener("change", () => {
+    promptTrackingEnabled = trackToggle.checked;
+    chrome.storage.local.set({ pm_tracking: promptTrackingEnabled });
+  });
+  ctxToggle.addEventListener("change", () => {
+    contextEnabled = ctxToggle.checked;
+    chrome.storage.local.set({ pm_context: contextEnabled });
+  });
 
   // Theme toggle
   document.getElementById("pm-theme-toggle").addEventListener("click", () => {
@@ -1520,6 +1574,7 @@ function setupPassiveTracking() {
   let lastText = "";
 
   document.addEventListener("input", (e) => {
+    if (!promptTrackingEnabled) return;  // Check on every event
     const el = e.target;
     if (
       el.matches("#prompt-textarea, [contenteditable='true'], textarea") &&
@@ -1530,6 +1585,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("keydown", (e) => {
+    if (!promptTrackingEnabled) return;  // Check on every event
     if (e.key === "Enter" && !e.shiftKey && lastText.trim().length > 5) {
       trackPrompt(lastText);
       lastText = "";
@@ -1537,6 +1593,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("click", (e) => {
+    if (!promptTrackingEnabled) return;  // Check on every event
     const btn = e.target.closest("button");
     if (
       btn &&

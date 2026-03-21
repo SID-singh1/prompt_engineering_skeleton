@@ -265,5 +265,5 @@ This project is open source and available under the [MIT License](LICENSE).
 ---
 
 <p align="center">
-  Built with ☕ and curiosity by <a href="https://github.com/siddhm11"><strong>@siddhm11</strong></a> & <a href="https://github.com/sidhusingh2022"><strong>@sidhusingh2022</strong></a>
+  Built with ☕ and curiosity by <a href="https://github.com/siddhm11"><strong>@siddhm11</strong></a> & <a href="https://github.com/SID-singh1"><strong>@SID-singh1</strong></a>
 </p>
