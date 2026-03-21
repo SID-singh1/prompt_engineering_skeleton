@@ -12,6 +12,10 @@ IF EXIST "backend\venv\Scripts\activate.bat" (
 
 :: Run Uvicorn from ROOT, treating 'backend' as a package.
 :: This fixes the "ImportError: attempted relative import"
-uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4 --reload
+IF EXIST "backend\venv\Scripts\python.exe" (
+    backend\venv\Scripts\python.exe -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+) ELSE (
+    uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+)
 
 pause

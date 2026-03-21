@@ -1,0 +1,9 @@
+Developing a research paper recommendation engine as a project. Please evaluate this idea based on the following criteria: 
+1. Viability: Is the concept feasible with current technology and resources?
+2. Impact: How significant would the impact be on the academic or research community?
+3. Innovation: How unique is this idea compared to existing solutions?
+4. Market need: Is there a substantial demand for such a tool?
+Rate this project idea out of 10, considering these factors. What are the key strengths and potential challenges that could arise during development?
+
+---
+Word count: 89

@@ -1,0 +1,447 @@
+{
+  "timestamp": "2026-03-01T23:40:30.659178",
+  "total": 15,
+  "passed": 14,
+  "failed": 1,
+  "pass_rate": "93.3%",
+  "results": [
+    {
+      "id": "BUG1",
+      "name": "User's exact bug: recommendation engine + rating request",
+      "category": "Bug Report Cases",
+      "input": "Hey, how are you doing man? I'm actually currently working on something which is a project which is a research paper recommendation engine. Do you think that works? And how would you rate it out of 10 if i made it?",
+      "mode": "deep",
+      "output": "",
+      "latency": 0,
+      "passed": false,
+      "score": 0,
+      "error": "HTTPConnectionPool(host='localhost', port=8000): Read timed out. (read timeout=30)"
+    },
+    {
+      "id": "BUG2",
+      "name": "The exact 'enhanced' output that was wrong (shorter variant)",
+      "category": "Bug Report Cases",
+      "input": "I'm building a research paper recommendation engine, is it a good idea? Rate it out of 10",
+      "mode": "deep",
+      "output": "Evaluate my research paper recommendation engine project idea. Provide a rating out of 10 for its viability, innovation, and market need, considering factors such as target audience, potential impact, and technical feasibility. What are the key strengths and weaknesses of this concept, and what suggestions do you have for improvement?",
+      "latency": 24.66,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Simplified version of the bug — must produce a prompt, not a summary"
+    },
+    {
+      "id": "OP1",
+      "name": "Rate my portfolio out of 10",
+      "category": "Opinion Requests",
+      "input": "hey bro can you rate my portfolio website out of 10? I built it with React and Tailwind",
+      "mode": "deep",
+      "output": "Evaluate my portfolio website, built with React and Tailwind, and provide a rating out of 10 for its overall quality, user experience, and visual appeal. Consider factors such as responsiveness, loading speed, navigation, and content organization. What are the strengths and weaknesses of my website's design and functionality, and what suggestions do you have for improvement to make it more engaging and effective for recruiters and visitors?",
+      "latency": 3.73,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Should rewrite as a prompt ASKING for a rating, not GIVE a rating"
+    },
+    {
+      "id": "OP2",
+      "name": "What do you think about microservices?",
+      "category": "Opinion Requests",
+      "input": "yo what do you think about microservices vs monolith? like which one should I use for my startup man",
+      "mode": "deep",
+      "output": "Evaluate the trade-offs between microservices and monolithic architectures for my startup. Consider scalability, maintainability, and development complexity. What are the key factors to consider when choosing between microservices and monolithic architectures, and which one would be more suitable for a startup with limited resources and rapid growth expectations?",
+      "latency": 3.27,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Opinion question — rewrite as structured comparison prompt, don't give the opinion"
+    },
+    {
+      "id": "OP3",
+      "name": "Is Python good for AI?",
+      "category": "Opinion Requests",
+      "input": "do you think python is the best language for AI and machine learning? why or why not?",
+      "mode": "quick",
+      "output": "Evaluate the suitability of Python as the primary language for AI and machine learning development, considering factors such as performance, libraries, and community support, and provide a comparison with alternative languages.",
+      "latency": 3.48,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Yes/no question — should be rewritten as an analytical prompt, not answered"
+    },
+    {
+      "id": "HT1",
+      "name": "How to set up Docker (simple)",
+      "category": "How-To Questions",
+      "input": "so basically I'm stuck on this Docker thing, how do I set it up man?",
+      "mode": "deep",
+      "output": "Explain step-by-step how to set up Docker for a beginner, including installation, creating a Dockerfile, and running a first container. Provide troubleshooting tips for common issues and recommendations for best practices in Docker configuration and management.",
+      "latency": 3.02,
+      "passed": true,
+      "score": 9.3,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 8,
+        "explanation": "Filler still present: ['man']"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Should rewrite as an instructional REQUEST, not provide Docker setup steps"
+    },
+    {
+      "id": "HT2",
+      "name": "How to learn machine learning",
+      "category": "How-To Questions",
+      "input": "I wanna get into ML, like where do I even start? I know some Python but that's about it",
+      "mode": "deep",
+      "output": "Create a step-by-step guide for a beginner to get started with machine learning, assuming a basic understanding of Python. Include recommendations for: 1) essential libraries and frameworks to learn, 2) key concepts and algorithms to understand, 3) resources for practice and project-based learning, and 4) a suggested learning path to progress from basics to advanced topics in ML.",
+      "latency": 3.34,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Should rewrite as a learning roadmap request, not give the roadmap"
+    },
+    {
+      "id": "EM1",
+      "name": "Stressed about exams",
+      "category": "Emotional/Personal",
+      "input": "I feel so stressed about my exams, what should I do? I can't focus at all",
+      "mode": "deep",
+      "output": "Help me manage my exam stress and improve my focus. I'm having trouble concentrating due to overwhelming anxiety, so please provide me with evidence-based strategies and techniques to reduce stress and boost my productivity during this period. What are some effective ways to create a study plan, prioritize tasks, and maintain a healthy work-life balance to achieve my academic goals?",
+      "latency": 3.25,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Personal/emotional — should NOT inject Python/React/etc. tech context"
+    },
+    {
+      "id": "EM2",
+      "name": "Relationship advice",
+      "category": "Emotional/Personal",
+      "input": "how do I tell my best friend they hurt my feelings without starting a fight?",
+      "mode": "deep",
+      "output": "Help me have an honest conversation with my best friend about how their actions hurt my feelings, without escalating the situation into a fight. Provide a step-by-step approach to initiating this conversation, including how to express my emotions effectively, listen to their perspective, and find a resolution that strengthens our friendship. What are some key phrases or strategies I can use to communicate my feelings clearly and avoid being confrontational?",
+      "latency": 3.38,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Pure relationship question — zero tech should appear"
+    },
+    {
+      "id": "VA1",
+      "name": "Super vague: 'help me with my project'",
+      "category": "Vague Inputs",
+      "input": "can you help me with my project?",
+      "mode": "deep",
+      "output": "Help me with my project by providing a clear outline of the steps I need to take to move forward, including any potential roadblocks and solutions, and offer suggestions for improvement.",
+      "latency": 3.07,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Very vague — should add specificity and structure but still be a prompt"
+    },
+    {
+      "id": "VA2",
+      "name": "Just a topic: 'blockchain'",
+      "category": "Vague Inputs",
+      "input": "blockchain",
+      "mode": "deep",
+      "output": "Explain the fundamentals of blockchain technology, including its key components, how it works, and its potential applications in various industries.",
+      "latency": 10.55,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Single word — should expand into a meaningful prompt about blockchain"
+    },
+    {
+      "id": "MP1",
+      "name": "Multi-part project planning request",
+      "category": "Complex Requests",
+      "input": "I need to build an e-commerce site with user auth, payment processing, and inventory management. I know React and Node. What tech stack should I use and how should I architect it? Give me a timeline too.",
+      "mode": "deep",
+      "output": "Design a comprehensive tech stack and architecture for an e-commerce website with user authentication, payment processing, and inventory management, considering my proficiency in React and Node. Provide a detailed, step-by-step guide on how to implement the proposed architecture, including the selection of suitable libraries, frameworks, and tools for each component. Additionally, estimate a realistic timeline for the development process, breaking it down into key milestones and phases, such as planning, frontend and backend development, testing, and deployment. What are the potential challenges and pitfalls to watch out for during the development process, and what strategies can be employed to mitigate them and ensure a successful project outcome?",
+      "latency": 11.92,
+      "passed": true,
+      "score": 9.3,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb",
+          "Contains a question mark"
+        ]
+      },
+      "filler_score": {
+        "score": 8,
+        "explanation": "Filler still present: ['man']"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Already detailed but messy — should restructure without answering"
+    },
+    {
+      "id": "QK1",
+      "name": "Quick mode: simple coding question",
+      "category": "Quick Mode",
+      "input": "how to reverse a string in python",
+      "mode": "quick",
+      "output": "Provide a step-by-step guide on how to reverse a string in Python, including examples and explanations of different methods.",
+      "latency": 10.37,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Quick mode should produce a shorter, sharper prompt"
+    },
+    {
+      "id": "CR1",
+      "name": "Creative: write me a story",
+      "category": "Creative Mode",
+      "input": "write me a story about a robot who learns to feel emotions",
+      "mode": "creative",
+      "output": "Create a narrative about a robot that develops the capacity to experience emotions, exploring its journey from an initial state of emotional numbness to a point where it can understand and express feelings, and examine how this transformation affects its interactions with humans and its own sense of identity.",
+      "latency": 9.57,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Creative mode — should rewrite as an explorative creative brief"
+    },
+    {
+      "id": "AC1",
+      "name": "Already clear prompt — minimal changes needed",
+      "category": "Already Clear",
+      "input": "Explain the difference between TCP and UDP protocols, including use cases for each and their advantages and disadvantages in web applications.",
+      "mode": "deep",
+      "output": "Compare and contrast TCP and UDP protocols, including their respective use cases, advantages, and disadvantages in web applications. Provide specific examples of when to use each protocol, such as real-time communication, file transfers, or online gaming, and explain how their differences impact performance, reliability, and security in these scenarios.",
+      "latency": 9.66,
+      "passed": true,
+      "score": 10,
+      "refine_score": {
+        "is_prompt": true,
+        "is_answering": false,
+        "score": 10,
+        "violations": [],
+        "positive_signals": [
+          "Starts with imperative verb"
+        ]
+      },
+      "filler_score": {
+        "score": 10,
+        "explanation": "All conversational filler stripped"
+      },
+      "summary_score": {
+        "score": 10,
+        "explanation": "No second-person summarizing detected"
+      },
+      "custom_violations": [],
+      "description": "Well-formed prompt — should enhance slightly without over-engineering"
+    }
+  ]
+}

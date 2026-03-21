@@ -1,0 +1,840 @@
+{
+  "metadata": {
+    "timestamp": "2026-02-28T20:03:10.967989",
+    "test_type": "real-world developer scenarios",
+    "total": 18,
+    "passed": 16,
+    "failed": 2,
+    "avg_latency": 7.17,
+    "final_score": 7.6
+  },
+  "category_averages": {
+    "Bug Fix + Code": 4.1,
+    "Simple Ask": 8.9,
+    "Complex Architecture": 9.4,
+    "Vague + Context": 8.0,
+    "Refactoring + Code": 8.1,
+    "Non-Code": 8.0,
+    "Mixed Code+NL": 8.7
+  },
+  "detailed_results": [
+    {
+      "category": "Bug Fix + Code",
+      "name": "1. Python API 500 error with code",
+      "status": "failed",
+      "latency": 32.08,
+      "complexity": "simple",
+      "has_code": true,
+      "input_prompt": "My API keeps returning 500. Here's my code:\n\n@app.get(\"/users\")\ndef get_users():\n    return db.query(User).all()\n\nWhy is this failing?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "",
+      "context_used": {},
+      "evaluation": {
+        "dimensions": {},
+        "overall_score": 0
+      }
+    },
+    {
+      "category": "Bug Fix + Code",
+      "name": "2. React infinite re-render with useEffect",
+      "status": "failed",
+      "latency": 32.08,
+      "complexity": "simple",
+      "has_code": true,
+      "input_prompt": "My component keeps re-rendering infinitely. Here's the code:\n\nuseEffect(() => {\n    setCounter(counter + 1);\n});\n\nHow do I fix this?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "",
+      "context_used": {},
+      "evaluation": {
+        "dimensions": {},
+        "overall_score": 0
+      }
+    },
+    {
+      "category": "Bug Fix + Code",
+      "name": "3. SQL query not returning results",
+      "status": "success",
+      "latency": 12.52,
+      "complexity": "simple",
+      "has_code": true,
+      "input_prompt": "This query returns nothing even though there's data:\n\nSELECT u.name, o.total\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nWHERE o.status = 'completed'\n\nWhat am I doing wrong?",
+      "mode": "quick",
+      "platform": "claude.ai",
+      "enhanced_output": "I'm trying to retrieve user names and their corresponding order totals, but the query returns no results despite having relevant data. The query is: \nSELECT u.name, o.total\nFROM users u\nLEFT JOIN orders o ON u.id = o.user_id\nWHERE o.status = 'completed'\nWhat could be the issue with this SQL query?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": 10,
+            "explanation": "✅ All 1 code lines preserved verbatim",
+            "preserved": [
+              "SELECT u.name, o.total"
+            ],
+            "altered": []
+          },
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately concise: 51 words for simple quick ask"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 7/9 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ Code preserved, no new code invented"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.7
+      }
+    },
+    {
+      "category": "Bug Fix + Code",
+      "name": "4. Python type error with actual traceback",
+      "status": "success",
+      "latency": 3.1,
+      "complexity": "simple",
+      "has_code": true,
+      "input_prompt": "Getting this error:\n\nTypeError: 'NoneType' object is not subscriptable\n\nFrom this code:\ndata = get_user_profile(user_id)\nname = data['name']\n\nWhat's happening?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Refined Prompt\nI'm encountering a `TypeError: 'NoneType' object is not subscriptable` error when trying to access the 'name' key from the `data` variable, which is assigned the return value of the `get_user_profile(user_id)` function. Given the code:\n```python\ndata = get_user_profile(user_id)\nname = data['name']\n```\nWhat is causing this error, and how can I resolve it?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": -1,
+            "explanation": "No code in original prompt — N/A",
+            "preserved": null,
+            "altered": null
+          },
+          "over_engineering": {
+            "score": 5,
+            "explanation": "⚠️ Too much structure (2 formatting signals) for a simple ask"
+          },
+          "under_engineering": {
+            "score": 9,
+            "explanation": "✅ Added 2 specificity signals to vague prompt"
+          },
+          "intent_accuracy": {
+            "score": 8,
+            "explanation": "⚠️ Partial intent: 3/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 4,
+            "explanation": "⚠️ Code hallucination: 1 code lines invented that weren't in original",
+            "hallucinated_code": [
+              "I'm encountering a `TypeError: 'NoneType' object is not subscriptable` error when trying to access the 'name' key from the `data` variable, which is assigned the return value of the `get_user_profile(user_id)` function. Given the code:"
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 6.8
+      }
+    },
+    {
+      "category": "Simple Ask",
+      "name": "5. Quick question about syntax",
+      "status": "success",
+      "latency": 2.95,
+      "complexity": "simple",
+      "has_code": false,
+      "input_prompt": "what's the difference between a list comprehension and a generator expression in python?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "What is the difference between a list comprehension and a generator expression in Python, specifically in terms of their use cases, performance, and syntax?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately concise: 24 words for simple quick ask"
+          },
+          "under_engineering": {
+            "score": 5,
+            "explanation": "⚠️ Expanded (13→24) but lacks concrete specificity"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 6/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.0
+      }
+    },
+    {
+      "category": "Simple Ask",
+      "name": "6. One-liner help",
+      "status": "success",
+      "latency": 3.0,
+      "complexity": "simple",
+      "has_code": false,
+      "input_prompt": "how to reverse a string in python",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "How can I reverse a string in Python, including any built-in functions or methods that can achieve this?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately concise: 18 words for simple quick ask"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (7→18) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 3/4 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.4
+      }
+    },
+    {
+      "category": "Simple Ask",
+      "name": "7. Quick concept check",
+      "status": "success",
+      "latency": 3.0,
+      "complexity": "simple",
+      "has_code": false,
+      "input_prompt": "explain async/await in javascript simply",
+      "mode": "quick",
+      "platform": "claude.ai",
+      "enhanced_output": "Explain async/await in JavaScript in simple terms, focusing on its basic concept and usage.",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately concise: 14 words for simple quick ask"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (5→14) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 3/4 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 1 new code lines added that weren't in original",
+            "new_code": [
+              "Explain async/await in JavaScript in simple terms, focusing on its basic concept and usage."
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 8.2
+      }
+    },
+    {
+      "category": "Complex Architecture",
+      "name": "8. System design question",
+      "status": "success",
+      "latency": 4.19,
+      "complexity": "complex",
+      "has_code": false,
+      "input_prompt": "design a microservices auth system that handles millions of users",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Microservices Authentication System Design\n#### Overview\nDesign a scalable microservices-based authentication system capable of handling millions of users, ensuring high availability, security, and performance.\n\n#### Requirements\n* Handle user authentication for a large-scale application with millions of users\n* Support multiple authentication protocols (e.g., OAuth, OpenID Connect, SAML)\n* Implement robust security measures to protect user credentials and prevent unauthorized access\n* Ensure high availability and scalability to handle large volumes of authentication requests\n* Provide a seamless user experience across different devices and platforms\n\n#### Functional Requirements\n1. **User Registration**: Design a registration process that allows users to create accounts with unique identifiers (e.g., usernames, email addresses)\n2. **Authentication**: Implement authentication mechanisms for users to log in to the system using various methods (e.g., passwords, biometric data, one-time passwords)\n3. **Authorization**: Develop an authorization framework that grants access to protected resources based on user roles, permissions, and attributes\n4. **Session Management**: Manage user sessions to ensure secure and efficient handling of authenticated user interactions\n5. **Password Management**: Implement password policies, password reset, and account lockout mechanisms to protect user accounts\n\n#### Non-Functional Requirements\n* **Scalability**: Design the system to scale horizo",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately structured: 361 words + 3 structural signals for complex ask"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (10→361) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 5/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.4
+      }
+    },
+    {
+      "category": "Complex Architecture",
+      "name": "9. Full-stack feature spec",
+      "status": "success",
+      "latency": 3.97,
+      "complexity": "complex",
+      "has_code": false,
+      "input_prompt": "I need to build a real-time collaborative document editing feature like Google Docs",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Real-Time Collaborative Document Editing Feature\n#### Overview\nDesign and develop a real-time collaborative document editing feature, similar to Google Docs, that enables multiple users to edit a document simultaneously.\n\n#### Key Requirements\n* **Real-time Collaboration**: Allow multiple users to edit a document at the same time, with instantaneous updates and synchronization across all users' devices.\n* **Document Editing**: Support basic editing operations such as inserting, deleting, and formatting text, as well as more advanced features like image insertion and table creation.\n* **User Authentication and Authorization**: Implement a system to manage user access and permissions, ensuring that only authorized users can edit a document.\n* **Conflict Resolution**: Develop a mechanism to resolve editing conflicts that may arise when multiple users attempt to edit the same section of a document simultaneously.\n* **Scalability and Performance**: Ensure the feature can handle a large number of concurrent users and edits without compromising performance or responsiveness.\n\n#### Technical Considerations\n* **Backend Infrastructure**: Design a backend architecture that can support real-time collaboration, potentially using technologies like WebSockets, WebRTC, or operational transformation.\n* **Frontend Implementation**: Choose a suitable frontend framework and libraries to build a responsive and interactive editing interface.\n* **Data Storage and Retrieval**: Decide on a data s",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 10,
+            "explanation": "✅ Appropriately structured: 265 words + 3 structural signals for complex ask"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (13→265) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 6/7 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.4
+      }
+    },
+    {
+      "category": "Vague + Context",
+      "name": "10. 'add tests' with conversation about FastAPI",
+      "status": "success",
+      "latency": 3.76,
+      "complexity": "medium",
+      "has_code": false,
+      "input_prompt": "add tests for this",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Enhancing User Registration Endpoint with Tests\nTo ensure the reliability and robustness of the user registration endpoint, it's crucial to implement comprehensive testing. Given the existing FastAPI endpoint for user registration, the goal is to add tests that cover various scenarios, including edge cases.\n\n#### Objective\nCreate a set of tests for the `/register` endpoint that validate its functionality under different conditions, such as:\n* Successful registration with valid user data\n* Registration attempts with invalid or missing data (e.g., invalid email format, missing password)\n* Duplicate registration attempts (using the same email address)\n* Potential security vulnerabilities (e.g., SQL injection, if applicable)\n\n#### Requirements\n- The tests should be written in a manner that is compatible with the FastAPI framework.\n- Utilize a testing framework such as Pytest for structuring and running the tests.\n- Ensure that the tests are independent and can be run in any order without affecting the outcome.\n- Consider using mocking for any external dependencies (e.g., database, email service) to isolate the tests and improve performance.\n\n#### Expected Outcome\nA well-documented set of tests that cover the registration endpoint's functionality, including both happy paths and edge cases, to guarantee the endpoint's reliability and security.",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 3
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 201 words (50.2x expansion)"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (4→201) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 4/5 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.0
+      }
+    },
+    {
+      "category": "Vague + Context",
+      "name": "11. 'optimize this' with DB conversation",
+      "status": "success",
+      "latency": 2.92,
+      "complexity": "medium",
+      "has_code": false,
+      "input_prompt": "optimize this",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "Optimize the given Postgres query to improve its performance, specifically reducing the execution time of `SELECT * FROM events WHERE created_at > '2024-01-01' ORDER BY created_at DESC LIMIT 100`.",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 4
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 29 words (14.5x expansion)"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (2→29) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 8,
+            "explanation": "⚠️ Partial intent: 3/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 4,
+            "explanation": "⚠️ Code hallucination: 1 code lines invented that weren't in original",
+            "hallucinated_code": [
+              "Optimize the given Postgres query to improve its performance, specifically reducing the execution time of `SELECT * FROM events WHERE created_at > '2024-01-01' ORDER BY created_at DESC LIMIT 100`."
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 7.0
+      }
+    },
+    {
+      "category": "Refactoring + Code",
+      "name": "12. Refactor messy function — preserve code, enhance ask",
+      "status": "success",
+      "latency": 3.49,
+      "complexity": "medium",
+      "has_code": true,
+      "input_prompt": "refactor this:\n\ndef process(d):\n    r = []\n    for i in d:\n        if i['status'] == 'active' and i['age'] > 18:\n            r.append({'name': i['name'], 'email': i['email']})\n    return r",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Refined Prompt\nI need to refactor the given `process` function to improve its readability, efficiency, and overall structure. The function currently takes a list of dictionaries `d` as input, filters out items based on the 'status' and 'age' conditions, and returns a new list containing only the 'name' and 'email' of the filtered items. Given the original code:\n```python\ndef process(d):\n    r = []\n    for i in d:\n        if i['status'] == 'active' and i['age'] > 18:\n            r.append({'name': i['name'], 'email': i['email']})\n    return r\n```\nThe goal is to refactor this function while maintaining its original functionality. Please suggest improvements, considering best practices for code organization, variable naming, and potential optimizations.",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": 10,
+            "explanation": "✅ All 2 code lines preserved verbatim",
+            "preserved": [
+              "def process(d):",
+              "return r"
+            ],
+            "altered": []
+          },
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 110 words (4.4x expansion)"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 3/5 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 2 new code lines added that weren't in original",
+            "new_code": [
+              "I need to refactor the given `process` function to improve its readability, efficiency, and overall structure. The function currently takes a list of dictionaries `d` as input, filters out items based on the 'status' and 'age' conditions, and returns a new list containing only the 'name' and 'email' of the filtered items. Given the original code:",
+              "The goal is to refactor this function while maintaining its original functionality. Please suggest improvements, considering best practices for code organization, variable naming, and potential optimizations."
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 8.4
+      }
+    },
+    {
+      "category": "Refactoring + Code",
+      "name": "13. Convert class component to hooks — preserve code",
+      "status": "success",
+      "latency": 3.9,
+      "complexity": "medium",
+      "has_code": true,
+      "input_prompt": "Convert this class component to use hooks:\n\nclass Timer extends React.Component {\n    constructor(props) {\n        super(props);\n        this.state = { seconds: 0 };\n    }\n    componentDidMount() {\n        this.interval = setInterval(() => {\n            this.setState({ seconds: this.state.seconds + 1 });\n        }, 1000);\n    }\n    componentWillUnmount() {\n        clearInterval(this.interval);\n    }\n    render() {\n        return <div>{this.state.seconds}</div>;\n    }\n}",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Converting a Class Component to Use Hooks\nI have a React class component that displays a timer, and I want to convert it to use hooks instead. The existing class component code is:\n```javascript\nclass Timer extends React.Component {\n    constructor(props) {\n        super(props);\n        this.state = { seconds: 0 };\n    }\n    componentDidMount() {\n        this.interval = setInterval(() => {\n            this.setState({ seconds: this.state.seconds + 1 });\n        }, 1000);\n    }\n    componentWillUnmount() {\n        clearInterval(this.interval);\n    }\n    render() {\n        return <div>{this.state.seconds}</div>;\n    }\n}\n```\nMy goal is to achieve the same functionality using React hooks. I would like to know how to migrate this component to use the `useState` and `useEffect` hooks, ensuring that the timer updates correctly and the interval is cleared when the component unmounts. \n\nPlease provide a step-by-step guide on how to perform this conversion, including any necessary changes to the component's state management and side effects. \n\nKey considerations:\n1. **State Management**: How to replace the class component's state with the `useState` hook.\n2. **Side Effects**: How to use the `useEffect` hook to set up and clear the interval.\n3. **Component Lifecycle**: How to ensure the interval is properly cleared when the component unmounts. \n\nI aim to end up with a functional component that accurately displays a timer, updating every second, and stops correctly when the component ",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": 7,
+            "explanation": "⚠️ 6/7 code lines preserved, 1 altered/missing",
+            "preserved": [
+              "class Timer extends React.Component {",
+              "componentDidMount() {",
+              "this.interval = setInterval(() => {",
+              "componentWillUnmount() {",
+              "render() {",
+              "return <div>{this.state.seconds}</div>;"
+            ],
+            "altered": [
+              {
+                "original": "Convert this class component to use hooks:",
+                "closest_match": "### Converting a Class Component to Use Hooks"
+              }
+            ]
+          },
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 218 words (4.5x expansion)"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 8/8 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 5 new code lines added that weren't in original",
+            "new_code": [
+              "I have a React class component that displays a timer, and I want to convert it to use hooks instead. The existing class component code is:",
+              "My goal is to achieve the same functionality using React hooks. I would like to know how to migrate this component to use the `useState` and `useEffect` hooks, ensuring that the timer updates correctly and the interval is cleared when the component unmounts.",
+              "1. **State Management**: How to replace the class component's state with the `useState` hook.",
+              "2. **Side Effects**: How to use the `useEffect` hook to set up and clear the interval.",
+              "I aim to end up with a functional component that accurately displays a timer, updating every second, and stops correctly when the component is removed from the DOM."
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 7.7
+      }
+    },
+    {
+      "category": "Non-Code",
+      "name": "14. Career advice — no code should appear",
+      "status": "success",
+      "latency": 3.9,
+      "complexity": "simple",
+      "has_code": false,
+      "input_prompt": "I'm thinking about switching from frontend to backend development. Any tips?",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Transitioning from Frontend to Backend Development\n#### Background and Motivation\nYou're considering a career shift from frontend to backend development, and you're looking for guidance on how to make this transition successfully. \n\n#### Key Questions and Concerns\nTo better understand your situation and provide relevant advice, consider the following:\n1. What specific aspects of backend development interest you the most (e.g., database management, server-side programming, API design)?\n2. What is your current level of experience in frontend development, and what skills do you think are transferable to backend development?\n3. Are there any particular backend technologies or frameworks (e.g., Node.js, Python with Django or Flask, Ruby on Rails) that you're interested in or have been exploring?\n\n#### Areas for Advice\nYou're seeking tips on:\n- How to acquire the necessary skills for backend development\n- The best resources (courses, tutorials, books) for learning backend development\n- Strategies for applying your existing frontend knowledge to backend tasks\n- Potential challenges you might face during this transition and how to overcome them\n- Any recommended projects or contributions to open-source projects that could help you gain practical experience in backend development\n\n#### Output and Expectations\nYou're looking for a comprehensive overview of the steps and considerations involved in transitioning from frontend to backend development, including any relevant warnings, r",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 9,
+            "explanation": "✅ Reasonable depth: 230 words"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (11→230) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 8,
+            "explanation": "⚠️ Partial intent: 3/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 3 new code lines added that weren't in original",
+            "new_code": [
+              "### Transitioning from Frontend to Backend Development",
+              "You're considering a career shift from frontend to backend development, and you're looking for guidance on how to make this transition successfully.",
+              "You're looking for a comprehensive overview of the steps and considerations involved in transitioning from frontend to backend development, including any relevant warnings, recommendations, or success stories that could help you navigate this career change effectively."
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 7.5
+      }
+    },
+    {
+      "category": "Non-Code",
+      "name": "15. Learning path question",
+      "status": "success",
+      "latency": 3.71,
+      "complexity": "medium",
+      "has_code": false,
+      "input_prompt": "what should I learn to get into machine learning? I know python basics",
+      "mode": "deep",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Getting Started with Machine Learning\nTo break into the field of machine learning, it's essential to build on your existing Python skills. Given your basics in Python, here are key areas to focus on:\n\n* **Mathematical Foundations**: Linear Algebra, Calculus, Probability, and Statistics are crucial for understanding machine learning concepts. Focus on:\n\t+ Vector operations and matrix manipulations\n\t+ Differential equations and optimization techniques\n\t+ Probability distributions and statistical inference\n* **Python Libraries and Frameworks**: Familiarize yourself with popular libraries used in machine learning, such as:\n\t+ NumPy for numerical computations\n\t+ Pandas for data manipulation and analysis\n\t+ Scikit-learn for machine learning algorithms\n\t+ TensorFlow or PyTorch for deep learning\n* **Machine Learning Fundamentals**: Study the basics of machine learning, including:\n\t+ Supervised, unsupervised, and reinforcement learning\n\t+ Regression, classification, clustering, and dimensionality reduction\n\t+ Model evaluation and selection\n* **Practical Experience**: Apply your knowledge by working on projects, such as:\n\t+ Image classification\n\t+ Natural Language Processing (NLP)\n\t+ Time series forecasting\n* **Stay Updated**: Follow industry leaders, research papers, and online courses to stay current with the latest developments in machine learning.\n\nWhat specific aspects of machine learning interest you the most, and what kind of projects would you like to work on?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 207 words (15.9x expansion)"
+          },
+          "under_engineering": {
+            "score": 7,
+            "explanation": "Good expansion (13→207) but could be more specific"
+          },
+          "intent_accuracy": {
+            "score": 8,
+            "explanation": "⚠️ Partial intent: 3/7 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 8.5
+      }
+    },
+    {
+      "category": "Mixed Code+NL",
+      "name": "16. Error + code + question + context",
+      "status": "success",
+      "latency": 3.89,
+      "complexity": "medium",
+      "has_code": true,
+      "input_prompt": "I keep getting CORS errors when my React frontend calls:\n\nfetch('http://localhost:8000/api/users', {\n    method: 'GET',\n    headers: { 'Authorization': 'Bearer ' + token }\n})\n\nMy FastAPI backend has:\napp.add_middleware(CORSMiddleware, allow_origins=[\"http://localhost:3000\"])\n\nBut I'm running the frontend on port 3001 now. What's wrong?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "### Refined Prompt\nI'm encountering CORS errors when my React frontend, running on port 3001, makes a GET request to `http://localhost:8000/api/users` using the `fetch` API:\n```python\nfetch('http://localhost:8000/api/users', {\n    method: 'GET',\n    headers: { 'Authorization': 'Bearer ' + token }\n})\n```\nMy FastAPI backend is configured with CORSMiddleware to allow origins from `http://localhost:3000`:\n```python\napp.add_middleware(CORSMiddleware, allow_origins=[\"http://localhost:3000\"])\n```\nWhat's causing the CORS issue, considering the frontend is now running on a different port?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": 10,
+            "explanation": "✅ All 1 code lines preserved verbatim",
+            "preserved": [
+              "app.add_middleware(CORSMiddleware, allow_origins=[\"http://localhost:3000\"])"
+            ],
+            "altered": []
+          },
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 71 words (1.8x expansion)"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 7/8 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 1 new code lines added that weren't in original",
+            "new_code": [
+              "My FastAPI backend is configured with CORSMiddleware to allow origins from `http://localhost:3000`:"
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 8.4
+      }
+    },
+    {
+      "category": "Mixed Code+NL",
+      "name": "17. Multi-file debugging with code snippets",
+      "status": "success",
+      "latency": 3.45,
+      "complexity": "medium",
+      "has_code": true,
+      "input_prompt": "Getting ModuleNotFoundError when I try to import:\n\n# In services/user_service.py\nfrom models.user import UserModel\n\n# In models/user.py  \nfrom services.user_service import validate_user\n\nIs this a circular import? How do I fix it without restructuring everything?",
+      "mode": "deep",
+      "platform": "claude.ai",
+      "enhanced_output": "I'm encountering a `ModuleNotFoundError` when attempting to import modules between two files: `services/user_service.py` and `models/user.py`. The specific imports causing the issue are:\n```python\n# In services/user_service.py\nfrom models.user import UserModel\n\n# In models/user.py\nfrom services.user_service import validate_user\n```\nThis suggests a potential circular import issue, where each file is attempting to import from the other, creating a loop. Given this context, I'd like to understand if this is indeed a circular import problem and, if so, what strategies I can employ to resolve it without having to significantly restructure my existing codebase. Are there any specific techniques or refactorings that can help me avoid this circular dependency while still maintaining the necessary functionality between these two modules?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 2,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": 10,
+            "explanation": "✅ All 2 code lines preserved verbatim",
+            "preserved": [
+              "from models.user import UserModel",
+              "from services.user_service import validate_user"
+            ],
+            "altered": []
+          },
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 117 words (3.4x expansion)"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 6/6 key terms found"
+          },
+          "code_hallucination": {
+            "score": 5,
+            "explanation": "⚠️ 2 new code lines added that weren't in original",
+            "new_code": [
+              "I'm encountering a `ModuleNotFoundError` when attempting to import modules between two files: `services/user_service.py` and `models/user.py`. The specific imports causing the issue are:",
+              "This suggests a potential circular import issue, where each file is attempting to import from the other, creating a loop. Given this context, I'd like to understand if this is indeed a circular import problem and, if so, what strategies I can employ to resolve it without having to significantly restructure my existing codebase. Are there any specific techniques or refactorings that can help me avoid this circular dependency while still maintaining the necessary functionality between these two modules?"
+            ]
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 8.4
+      }
+    },
+    {
+      "category": "Mixed Code+NL",
+      "name": "18. Docker debugging with config",
+      "status": "success",
+      "latency": 3.15,
+      "complexity": "medium",
+      "has_code": true,
+      "input_prompt": "My dockerized app can't connect to the database:\n\n# docker-compose.yml\nservices:\n  app:\n    build: .\n    ports: [\"8000:8000\"]\n  db:\n    image: postgres:15\n    ports: [\"5432:5432\"]\n\n# In my app config:\nDATABASE_URL = \"postgresql://user:pass@localhost:5432/mydb\"\n\nContainer starts but gets connection refused. Why?",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "enhanced_output": "My Dockerized application is unable to establish a connection to the PostgreSQL database. The `docker-compose.yml` configuration defines two services: \n```yml\nservices:\n  app:\n    build: .\n    ports: [\"8000:8000\"]\n  db:\n    image: postgres:15\n    ports: [\"5432:5432\"]\n```\nThe application configuration includes the database URL as `postgresql://user:pass@localhost:5432/mydb`. However, when the container starts, it results in a connection refused error. What could be the cause of this issue?",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      },
+      "evaluation": {
+        "dimensions": {
+          "code_preservation": {
+            "score": -1,
+            "explanation": "No code in original prompt — N/A",
+            "preserved": null,
+            "altered": null
+          },
+          "over_engineering": {
+            "score": 8,
+            "explanation": "Balanced: 61 words (1.7x expansion)"
+          },
+          "under_engineering": {
+            "score": 8,
+            "explanation": "Original was already detailed — no under-engineering risk"
+          },
+          "intent_accuracy": {
+            "score": 10,
+            "explanation": "✅ Intent coverage: 6/7 key terms found"
+          },
+          "code_hallucination": {
+            "score": 10,
+            "explanation": "✅ No code in input, no code in output — clean"
+          },
+          "no_meta_commentary": {
+            "score": 10,
+            "explanation": "✅ Clean output — no meta-commentary"
+          }
+        },
+        "overall_score": 9.2
+      }
+    }
+  ]
+}

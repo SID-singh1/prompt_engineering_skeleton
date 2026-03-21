@@ -22,10 +22,25 @@ router = APIRouter(prefix="/saved-prompts", tags=["Saved Prompts"])
 
 @router.post("")
 def create_saved_prompt(body: SavedPromptCreate, user_id: str = Depends(verify_jwt)):
-    """Save a prompt to your personal library."""
+    """Save a prompt to your personal library. Checks for duplicates first."""
+    content = body.content.strip()
+
+    # ── DUPLICATE CHECK ──
+    if MongoDB.saved_prompts_col is not None:
+        existing = MongoDB.saved_prompts_col.find_one({
+            "user_id": user_id,
+            "content": content,
+        })
+        if existing:
+            return {"id": str(existing["_id"]), "message": "Prompt already saved.", "duplicate": True}
+    else:
+        for pid, doc in in_memory_saved_prompts.items():
+            if doc.get("user_id") == user_id and doc.get("content") == content:
+                return {"id": pid, "message": "Prompt already saved.", "duplicate": True}
+
     doc = {
         "user_id": user_id,
-        "content": body.content.strip(),
+        "content": content,
         "title": (body.title or "").strip() or None,
         "tags": body.tags or [],
         "platform": body.platform or None,

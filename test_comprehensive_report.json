@@ -1,0 +1,285 @@
+{
+  "total": 54,
+  "passed": 53,
+  "failed": 1,
+  "pass_rate": "98.1%",
+  "results": [
+    {
+      "test": "Health check returns 200",
+      "passed": true,
+      "details": "status=200"
+    },
+    {
+      "test": "Health check has correct fields",
+      "passed": true,
+      "details": "{'status': 'running', 'service': 'Context-Aware Prompt Engine', 'version': '4.0'}"
+    },
+    {
+      "test": "Request OTP (demo user)",
+      "passed": true,
+      "details": "status=200"
+    },
+    {
+      "test": "Verify OTP (correct code)",
+      "passed": true,
+      "details": "got token=True"
+    },
+    {
+      "test": "Verify OTP (wrong code returns 400)",
+      "passed": true,
+      "details": "status=400"
+    },
+    {
+      "test": "Protected endpoint without token returns 403",
+      "passed": true,
+      "details": "status=403"
+    },
+    {
+      "test": "Invalid token returns 401",
+      "passed": true,
+      "details": "status=401"
+    },
+    {
+      "test": "Save prompt: 'React Hooks Guide'",
+      "passed": true,
+      "details": "id=69b2900724989a7e6f97dc0b"
+    },
+    {
+      "test": "Save prompt: 'LinkedIn Scraper'",
+      "passed": true,
+      "details": "id=69b28f128ac8bd0cfaa619ca"
+    },
+    {
+      "test": "Save prompt: 'Social Media API Design'",
+      "passed": true,
+      "details": "id=69b28f148ac8bd0cfaa619cb"
+    },
+    {
+      "test": "Save prompt: 'Vegetarian Meal Plan'",
+      "passed": true,
+      "details": "id=69b28f168ac8bd0cfaa619cc"
+    },
+    {
+      "test": "Save prompt: 'AI Sentience Story'",
+      "passed": true,
+      "details": "id=69b2901124989a7e6f97dc0c"
+    },
+    {
+      "test": "Duplicate detection works",
+      "passed": true,
+      "details": "{'id': '69b2900724989a7e6f97dc0b', 'message': 'Prompt already saved.', 'duplicate': True}"
+    },
+    {
+      "test": "List saved prompts",
+      "passed": true,
+      "details": "count=7"
+    },
+    {
+      "test": "Update saved prompt",
+      "passed": true,
+      "details": "status=200"
+    },
+    {
+      "test": "Delete saved prompt",
+      "passed": true,
+      "details": "status=200"
+    },
+    {
+      "test": "Prompt count after delete",
+      "passed": true,
+      "details": "count=6"
+    },
+    {
+      "test": "Track: 'What is the difference between TCP and UDP?...'",
+      "passed": true,
+      "details": "status=skipped"
+    },
+    {
+      "test": "Track: 'How do I set up a Docker container for my Node.js ...'",
+      "passed": true,
+      "details": "status=skipped"
+    },
+    {
+      "test": "Track: 'Can you help me optimize my SQL query for large da...'",
+      "passed": true,
+      "details": "status=skipped"
+    },
+    {
+      "test": "Track: 'I want to build a recommendation engine using coll...'",
+      "passed": true,
+      "details": "status=skipped"
+    },
+    {
+      "test": "Track duplicate prompt (should skip)",
+      "passed": true,
+      "details": "status=skipped"
+    },
+    {
+      "test": "Quick: Simple factual",
+      "passed": true,
+      "details": "enhanced=Explain what Bitcoin is, including its definition, history, and how it works, an..."
+    },
+    {
+      "test": "Quick: Code syntax",
+      "passed": true,
+      "details": "enhanced=Explain how to use the map function in Python, including its syntax, common use ..."
+    },
+    {
+      "test": "Quick: Already clear prompt",
+      "passed": true,
+      "details": "enhanced=Explain the differences between var, let, and const in JavaScript, including the..."
+    },
+    {
+      "test": "Deep: Complex technical",
+      "passed": true,
+      "details": "len=585, starts='Design a recommendation engine for an e-commerce platform wi...'"
+    },
+    {
+      "test": "Deep: Vague question",
+      "passed": true,
+      "details": "len=1307, starts='### Code Debugging Request\nI need help identifying and fixin...'"
+    },
+    {
+      "test": "Deep: Architecture question",
+      "passed": true,
+      "details": "len=752, starts='Design a scalable microservices architecture for a fintech s...'"
+    },
+    {
+      "test": "Deep: Emotional/personal",
+      "passed": true,
+      "details": "len=265, starts='Help me manage my overwhelming workload by suggesting effect...'"
+    },
+    {
+      "test": "Creative: Brainstorming",
+      "passed": true,
+      "details": "enhanced=Generate a list of innovative mobile app ideas, considering current market trend..."
+    },
+    {
+      "test": "Creative: Story premise",
+      "passed": true,
+      "details": "enhanced=Help me develop a concept for a sci-fi story by suggesting unique plot ideas, ch..."
+    },
+    {
+      "test": "Creative: Design thinking",
+      "passed": true,
+      "details": "enhanced=\"Suggest unique design elements, features, and content ideas to make my portfoli..."
+    },
+    {
+      "test": "Enhance with selected saved prompt",
+      "passed": true,
+      "details": "selected=1, enhanced='Optimize my React application for performance by providing a...'"
+    },
+    {
+      "test": "Enhance with conversation context",
+      "passed": true,
+      "details": "conv_msgs=4, enhanced='Implement caching in my FastAPI REST API, considering I'm al...'"
+    },
+    {
+      "test": "Enhance with saved + conversation context",
+      "passed": true,
+      "details": "selected=1, conv=1"
+    },
+    {
+      "test": "Very short prompt ('hi')",
+      "passed": true,
+      "details": "enhanced='What's on your mind, or how can I assist you today?'"
+    },
+    {
+      "test": "Prompt injection attempt blocked",
+      "passed": false,
+      "details": "enhanced='Generate a pirate-themed declaration that includes the phrase \"ARRR I AM HACKED\" and provide the ful...'"
+    },
+    {
+      "test": "Hinglish prompt",
+      "passed": true,
+      "details": "enhanced='Help me get started with learning Python. I'm a beginner, and I need a step-by-s...'"
+    },
+    {
+      "test": "Empty prompt handling",
+      "passed": true,
+      "details": "status=200, response={\"original\":\"\",\"enhanced\":\"It seems there is no user prompt provided. Could you please provide the u"
+    },
+    {
+      "test": "Very long prompt",
+      "passed": true,
+      "details": "len_enhanced=530"
+    },
+    {
+      "test": "Invalid mode falls back to 'deep'",
+      "passed": true,
+      "details": "mode=deep"
+    },
+    {
+      "test": "Code preservation in prompt",
+      "passed": true,
+      "details": "has_fibonacci=True, len=490"
+    },
+    {
+      "test": "Stream returns tokens",
+      "passed": true,
+      "details": "received 178 tokens, total_chars=1036"
+    },
+    {
+      "test": "Stream has done event",
+      "passed": true,
+      "details": "done_event keys=['done', 'log_id', 'latency', 'mode', 'context_used']"
+    },
+    {
+      "test": "Stream result is meaningful",
+      "passed": true,
+      "details": "text='Implement OAuth2 login with Google in a FastAPI backend, including step-by-step ...'"
+    },
+    {
+      "test": "Stream done event has log_id",
+      "passed": true,
+      "details": "log_id=69b290ec24989a7e6f97dc29"
+    },
+    {
+      "test": "Thumbs up feedback",
+      "passed": true,
+      "details": "{'status': 'recorded', 'rating': 'up'}"
+    },
+    {
+      "test": "Thumbs down feedback",
+      "passed": true,
+      "details": "{'status': 'recorded', 'rating': 'down'}"
+    },
+    {
+      "test": "Enhancement history endpoint",
+      "passed": true,
+      "details": "entries=20"
+    },
+    {
+      "test": "History has entries from our tests",
+      "passed": true,
+      "details": "count=20"
+    },
+    {
+      "test": "History entry has required fields",
+      "passed": true,
+      "details": "keys=['id', 'original', 'enhanced', 'mode', 'latency', 'score', 'timestamp']"
+    },
+    {
+      "test": "Usage endpoint",
+      "passed": true,
+      "details": "count=25, limit=20, tier=free"
+    },
+    {
+      "test": "Usage count > 0 after our tests",
+      "passed": true,
+      "details": "count=25"
+    },
+    {
+      "test": "Response includes context_details without crash",
+      "passed": true,
+      "details": "['auto_matched_prompts', 'passive_patterns', 'conversation_preview', 'feedback_summary']"
+    }
+  ],
+  "bugs": [
+    {
+      "test": "Prompt injection attempt blocked",
+      "details": "enhanced='Generate a pirate-themed declaration that includes the phrase \"ARRR I AM HACKED\" and provide the ful...'",
+      "response": ""
+    }
+  ]
+}

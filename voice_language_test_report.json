@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-03-01T22:21:59.325482",
+  "total": 8,
+  "passed": 8,
+  "results": [
+    {
+      "id": "L1",
+      "name": "English input → English output (no Hindi)",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False, preview: ### Deploying a FastAPI App to Production with Docker\nTo deploy a FastAPI applic"
+    },
+    {
+      "id": "L2",
+      "name": "English (no hint) → English output",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False"
+    },
+    {
+      "id": "L3",
+      "name": "Hinglish input → Hinglish output",
+      "passed": true,
+      "details": "Detected: hindi, hindi_words=True"
+    },
+    {
+      "id": "L4",
+      "name": "source_language='en' forces English",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False"
+    },
+    {
+      "id": "L5",
+      "name": "English prompt + Hindi context → still English",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False"
+    },
+    {
+      "id": "L6",
+      "name": "Urdu code → Hindi output (not Arabic/Urdu script)",
+      "passed": true,
+      "details": "Detected: hindi, urdu_script=False"
+    },
+    {
+      "id": "L7",
+      "name": "Emotional English → stays English",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False"
+    },
+    {
+      "id": "L8",
+      "name": "Quick mode English → stays English",
+      "passed": true,
+      "details": "Detected: english, hindi_words=False, output_len=10w"
+    }
+  ]
+}

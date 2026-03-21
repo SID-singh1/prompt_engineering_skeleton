@@ -1,0 +1,95 @@
+[
+  {
+    "name": "Scenario 1: Extremely Vague Prompt (Deep Mode)",
+    "payload": {
+      "prompt": "fix it",
+      "mode": "deep",
+      "platform": "unknown"
+    },
+    "result": {
+      "original": "fix it",
+      "enhanced": "What exactly needs to be fixed, and what have you tried so far to resolve the issue? Is this related to something we previously discussed, or is it a new problem that's arisen? Please provide more details so I can better understand the situation and offer a more accurate solution.",
+      "log_id": "69a2d774d66ba9cd3e30198b",
+      "latency": 5.76,
+      "mode": "deep",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      }
+    },
+    "latency": 8.251589059829712
+  },
+  {
+    "name": "Scenario 2: Vague Prompt WITH Conversation Context (Quick Mode)",
+    "payload": {
+      "prompt": "fix it",
+      "mode": "quick",
+      "platform": "chatgpt.com",
+      "conversation_context": [
+        "[user]: My React component is re-rendering infinitely.",
+        "[assistant]: This usually happens due to missing dependency arrays in useEffect. Can you show your code?",
+        "[user]: useEffect(() => { setCounter(counter + 1); });"
+      ]
+    },
+    "result": {
+      "original": "fix it",
+      "enhanced": "How can I fix the infinite re-rendering issue in my React component caused by the `useEffect` hook that updates the `counter` state?",
+      "log_id": "69a2d777d66ba9cd3e30198c",
+      "latency": 0.93,
+      "mode": "quick",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 1,
+        "conversation_messages": 3
+      }
+    },
+    "latency": 3.214078187942505
+  },
+  {
+    "name": "Scenario 3: Technical Setup (Deep Mode + Target Platform)",
+    "payload": {
+      "prompt": "write a python script to scrape a website",
+      "mode": "deep",
+      "platform": "claude.ai"
+    },
+    "result": {
+      "original": "write a python script to scrape a website",
+      "enhanced": "To create a Python script for web scraping, we need to clarify a few details to ensure the script meets your requirements. Can you please provide the URL of the website you want to scrape and specify what data you want to extract from it? Additionally, are there any specific HTML elements or patterns on the website that you'd like the script to focus on? It would also be helpful to know if you have a preferred method for handling the scraped data, such as saving it to a CSV file or storing it in a database. Lastly, are there any particular libraries or tools you'd like the script to utilize, such as BeautifulSoup or Scrapy?",
+      "log_id": "69a2d77bd66ba9cd3e30198d",
+      "latency": 1.64,
+      "mode": "deep",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      }
+    },
+    "latency": 3.9177732467651367
+  },
+  {
+    "name": "Scenario 4: Creative Exploration (Creative Mode)",
+    "payload": {
+      "prompt": "explain quantum physics",
+      "mode": "creative",
+      "platform": "grok.com"
+    },
+    "result": {
+      "original": "explain quantum physics",
+      "enhanced": "Imagine you're explaining quantum physics to a curious friend who's never heard of it before - what are the most mind-blowing, fundamental concepts you'd want to share, and how would you make them easy to understand?",
+      "log_id": "69a2d77ed66ba9cd3e30198e",
+      "latency": 0.72,
+      "mode": "creative",
+      "context_used": {
+        "selected": 0,
+        "auto_matched": 0,
+        "passive_matched": 0,
+        "conversation_messages": 0
+      }
+    },
+    "latency": 2.9813942909240723
+  }
+]

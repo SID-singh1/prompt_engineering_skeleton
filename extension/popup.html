@@ -2,7 +2,9 @@
 <html>
 
 <head>
+    <meta charset="UTF-8">
     <title>Prompt Memory</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
         * {
             box-sizing: border-box;
@@ -11,223 +13,311 @@
         }
 
         body {
-            width: 320px;
+            width: 340px;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            padding: 20px;
-            background: #ffffff;
-            color: #1a1a1e;
+            background: #0d0e12;
+            color: #e8e8ed;
+            overflow: hidden;
         }
 
-        .pm-logo {
-            font-size: 16px;
-            font-weight: 600;
-            color: #2a8a7a;
-            margin-bottom: 16px;
+        /* ── Header ── */
+        .popup-header {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            padding: 18px 20px 14px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
         }
 
-        .pm-logo-icon {
-            width: 28px;
-            height: 28px;
-            border-radius: 8px;
-            background: #e8f5f2;
+        .popup-logo {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #50c8a8, #7b68ee);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 14px;
+            font-size: 16px;
+            color: #fff;
+            flex-shrink: 0;
         }
 
-        p {
-            font-size: 13px;
-            color: #6b6b76;
+        .popup-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #e8e8ed;
+        }
+
+        .popup-version {
+            font-size: 10px;
+            font-weight: 600;
+            color: #50c8a8;
+            background: rgba(80, 200, 168, 0.12);
+            padding: 2px 7px;
+            border-radius: 4px;
+            margin-left: auto;
+        }
+
+        /* ── Login Screen ── */
+        .login-section {
+            padding: 32px 24px 28px;
+            text-align: center;
+        }
+
+        .login-icon {
+            font-size: 40px;
             margin-bottom: 12px;
+        }
+
+        .login-title {
+            font-size: 18px;
+            font-weight: 700;
+            margin-bottom: 6px;
+            background: linear-gradient(135deg, #50c8a8, #7b68ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .login-subtitle {
+            font-size: 13px;
+            color: #6b6b78;
+            margin-bottom: 24px;
             line-height: 1.5;
         }
 
-        input {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #e2e2e5;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 13px;
-            color: #1a1a1e;
-            outline: none;
-            margin-bottom: 10px;
-            transition: border-color 180ms ease;
-        }
-
-        input:focus {
-            border-color: #2a8a7a;
-        }
-
-        input::placeholder {
-            color: #9d9da8;
-        }
-
-        button {
-            width: 100%;
-            padding: 10px;
-            border: none;
-            border-radius: 6px;
-            font-family: inherit;
-            font-size: 13px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 180ms ease, opacity 180ms ease;
-        }
-
-        button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-primary {
-            background: #2a8a7a;
-            color: #fff;
-        }
-
-        .btn-primary:hover:not(:disabled) {
-            background: #238073;
-        }
-
         .btn-google {
+            width: 100%;
+            padding: 12px 16px;
             background: #fff;
             color: #1a1a1e;
-            border: 1px solid #e2e2e5;
-            margin-top: 8px;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
             display: flex;
             align-items: center;
             justify-content: center;
-            gap: 8px;
+            gap: 10px;
+            transition: background 180ms ease, transform 120ms ease, box-shadow 180ms ease;
         }
 
-        .btn-google:hover:not(:disabled) {
-            background: #f7f7f8;
-            border-color: #d0d0d5;
+        .btn-google:hover {
+            background: #f5f5f5;
+            box-shadow: 0 4px 16px rgba(255, 255, 255, 0.08);
         }
 
-        .btn-danger {
-            background: #c0392b;
-            color: #fff;
-            margin-top: 12px;
+        .btn-google:active {
+            transform: scale(0.97);
         }
 
-        .btn-danger:hover:not(:disabled) {
-            background: #a93226;
-        }
-
-        .divider {
-            text-align: center;
-            font-size: 12px;
-            color: #9d9da8;
-            margin: 12px 0;
-            position: relative;
-        }
-
-        .divider::before,
-        .divider::after {
-            content: '';
-            position: absolute;
-            top: 50%;
-            width: 40%;
-            height: 1px;
-            background: #ececef;
-        }
-
-        .divider::before {
-            left: 0;
-        }
-
-        .divider::after {
-            right: 0;
-        }
-
-        .back-link {
-            font-size: 12px;
-            color: #2a8a7a;
-            text-align: center;
-            cursor: pointer;
-            margin-top: 10px;
-            display: block;
-        }
-
-        .back-link:hover {
-            text-decoration: underline;
+        .btn-google svg {
+            flex-shrink: 0;
         }
 
         #status {
-            margin-top: 10px;
+            margin-top: 12px;
             font-size: 12px;
-            color: #6b6b76;
+            color: #6b6b78;
             text-align: center;
+            min-height: 16px;
         }
 
         .hidden {
-            display: none;
+            display: none !important;
         }
 
-        /* Profile section */
+        /* ── Profile Screen ── */
+        .profile-section {
+            padding: 20px;
+        }
+
         .profile-card {
-            background: #f7f7f8;
-            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
             padding: 16px;
-            text-align: center;
+            margin-bottom: 14px;
+        }
+
+        .profile-user-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .profile-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #50c8a8, #7b68ee);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+            text-transform: uppercase;
+        }
+
+        .profile-info {
+            flex: 1;
+            min-width: 0;
         }
 
         .profile-email {
             font-size: 14px;
             font-weight: 600;
-            color: #1a1a1e;
-            margin-bottom: 4px;
+            color: #e8e8ed;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
-        .profile-id {
+        .profile-status {
             font-size: 11px;
-            color: #9d9da8;
-            word-break: break-all;
-            margin-bottom: 12px;
+            color: #50c8a8;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            margin-top: 2px;
         }
 
-        .profile-tip {
+        .profile-status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #50c8a8;
+            display: inline-block;
+        }
+
+        /* ── Shortcuts Card ── */
+        .shortcuts-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 14px;
+        }
+
+        .shortcuts-title {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            color: #6b6b78;
+            margin-bottom: 10px;
+        }
+
+        .shortcut-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 0;
+        }
+
+        .shortcut-row + .shortcut-row {
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+        }
+
+        .shortcut-label {
+            font-size: 13px;
+            color: #9d9daa;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .shortcut-label-icon {
+            font-size: 14px;
+        }
+
+        kbd {
+            background: rgba(255, 255, 255, 0.08);
+            padding: 3px 8px;
+            border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 11px;
+            font-family: inherit;
+            font-weight: 500;
+            color: #e8e8ed;
+        }
+
+        /* ── Quick Tip ── */
+        .tip-card {
+            background: linear-gradient(135deg, rgba(80, 200, 168, 0.08), rgba(123, 104, 238, 0.08));
+            border: 1px solid rgba(80, 200, 168, 0.15);
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin-bottom: 14px;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+        }
+
+        .tip-icon {
+            font-size: 16px;
+            flex-shrink: 0;
+            margin-top: 1px;
+        }
+
+        .tip-text {
             font-size: 12px;
-            color: #6b6b76;
-            background: #e8f5f2;
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 12px;
+            color: #9d9daa;
             line-height: 1.5;
         }
 
-        .profile-tip kbd {
-            background: #fff;
-            padding: 2px 5px;
-            border-radius: 3px;
-            border: 1px solid #d0d0d5;
-            font-size: 11px;
+        .tip-text strong {
+            color: #50c8a8;
+            font-weight: 600;
+        }
+
+        /* ── Logout ── */
+        .btn-logout {
+            width: 100%;
+            padding: 10px;
+            background: transparent;
+            color: #6b6b78;
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 8px;
             font-family: inherit;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
+        }
+
+        .btn-logout:hover {
+            background: rgba(239, 83, 80, 0.08);
+            color: #ef5350;
+            border-color: rgba(239, 83, 80, 0.2);
+        }
+
+        .btn-logout:active {
+            transform: scale(0.97);
         }
     </style>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div class="pm-logo">
-        <div class="pm-logo-icon">⊕</div>
-        Prompt Memory
+    <!-- ═══ HEADER ═══ -->
+    <div class="popup-header">
+        <div class="popup-logo">⊕</div>
+        <span class="popup-title">Prompt Memory</span>
+        <span class="popup-version">v4</span>
     </div>
 
+    <!-- ═══ LOGIN ═══ -->
     <div id="login-section">
-        <!-- Step 1: Email -->
-        <div id="step-1">
-            <p>Enter your email to receive a login code.</p>
-            <input type="email" id="email" placeholder="you@example.com" />
-            <button class="btn-primary" id="send-otp-btn">Send Code</button>
-            <div class="divider">or</div>
+        <div class="login-section">
+            <div class="login-icon">✨</div>
+            <div class="login-title">Better prompts, better AI</div>
+            <div class="login-subtitle">Sign in to enhance your prompts on ChatGPT, Claude, Gemini, and more.</div>
             <button class="btn-google" id="google-login-btn">
-                <svg width="16" height="16" viewBox="0 0 24 24">
+                <svg width="18" height="18" viewBox="0 0 24 24">
                     <path fill="#4285F4"
                         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
                     <path fill="#34A853"
@@ -237,31 +327,56 @@
                     <path fill="#EA4335"
                         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
                 </svg>
-                Sign in with Google
+                Continue with Google
             </button>
-        </div>
-
-        <!-- Step 2: OTP -->
-        <div id="step-2" class="hidden">
-            <p>Enter the 6-digit code from your email.</p>
-            <input type="text" id="otp-code" placeholder="123456" maxlength="6" />
-            <button class="btn-primary" id="verify-otp-btn">Verify & Login</button>
-            <span class="back-link" id="back-to-email">← Back to email</span>
+            <p id="status"></p>
         </div>
     </div>
 
+    <!-- ═══ PROFILE ═══ -->
     <div id="profile-section" class="hidden">
-        <div class="profile-card">
-            <div class="profile-email" id="user-display"></div>
-            <div class="profile-id" id="uuid-display"></div>
-            <div class="profile-tip">
-                Use <kbd>Ctrl+Shift+E</kbd> on any AI chat to instantly enhance your prompt.
+        <div class="profile-section">
+            <div class="profile-card">
+                <div class="profile-user-row">
+                    <div class="profile-avatar" id="profile-avatar">?</div>
+                    <div class="profile-info">
+                        <div class="profile-email" id="user-display"></div>
+                        <div class="profile-status">
+                            <span class="profile-status-dot"></span>
+                            <span>Connected</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <button class="btn-danger" id="logout-btn">Log Out</button>
+
+            <div class="shortcuts-card">
+                <div class="shortcuts-title">Keyboard Shortcuts</div>
+                <div class="shortcut-row">
+                    <span class="shortcut-label">
+                        <span class="shortcut-label-icon">🎯</span>
+                        Enhance prompt
+                    </span>
+                    <kbd>Ctrl+Shift+E</kbd>
+                </div>
+                <div class="shortcut-row">
+                    <span class="shortcut-label">
+                        <span class="shortcut-label-icon">🎤</span>
+                        Voice to prompt
+                    </span>
+                    <kbd>Ctrl+Shift+V</kbd>
+                </div>
+            </div>
+
+            <div class="tip-card">
+                <span class="tip-icon">💡</span>
+                <div class="tip-text">
+                    Open any AI chat and look for the <strong>⊕ button</strong> in the bottom-right corner to open the sidebar.
+                </div>
+            </div>
+
+            <button class="btn-logout" id="logout-btn">Sign Out</button>
         </div>
     </div>
-
-    <p id="status"></p>
 
     <script src="popup.js"></script>
 </body>

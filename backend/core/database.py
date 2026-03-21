@@ -11,6 +11,7 @@ class MongoDB:
     users_col = None
     prompts_col = None
     saved_prompts_col = None
+    feedback_col = None
     
     @classmethod
     def connect(cls):
@@ -24,11 +25,13 @@ class MongoDB:
             cls.users_col = cls.db["users"]
             cls.prompts_col = cls.db["prompt_logs"]
             cls.saved_prompts_col = cls.db["saved_prompts"]
+            cls.feedback_col = cls.db["user_feedback"]
 
             # Indexes
             cls.users_col.create_index("user_id", unique=True)
             cls.prompts_col.create_index([("user_id", 1), ("timestamp", -1)])
             cls.saved_prompts_col.create_index("user_id")
+            cls.feedback_col.create_index([("user_id", 1), ("timestamp", -1)])
             
             print("✅ MongoDB Indexes Verified")
             print("✅ MongoDB Connected")
@@ -37,6 +40,7 @@ class MongoDB:
             cls.users_col = None
             cls.prompts_col = None
             cls.saved_prompts_col = None
+            cls.feedback_col = None
 
 # Qdrant
 class QdrantDB:

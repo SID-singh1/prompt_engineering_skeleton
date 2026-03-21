@@ -1,0 +1,155 @@
+{
+  "timestamp": "2026-03-01T14:43:14.175719",
+  "total": 15,
+  "passed": 14,
+  "avg_score": 0.535,
+  "categories": {
+    "Embedding": {
+      "pass": 3,
+      "total": 3,
+      "avg": 0.449
+    },
+    "Search": {
+      "pass": 4,
+      "total": 4,
+      "avg": 0.385
+    },
+    "Threshold": {
+      "pass": 2,
+      "total": 3,
+      "avg": 0.333
+    },
+    "Assembly": {
+      "pass": 3,
+      "total": 3,
+      "avg": 0.713
+    },
+    "Isolation": {
+      "pass": 2,
+      "total": 2,
+      "avg": 1.0
+    }
+  },
+  "results": [
+    {
+      "id": "A1",
+      "name": "Same concept, different words (React useEffect)",
+      "category": "Embedding",
+      "passed": true,
+      "score": 0.758,
+      "details": "Expected >0.65, got 0.758"
+    },
+    {
+      "id": "A2",
+      "name": "Technical synonyms (SQL optimization)",
+      "category": "Embedding",
+      "passed": true,
+      "score": 0.602,
+      "details": "Expected >0.55, got 0.602"
+    },
+    {
+      "id": "A3",
+      "name": "Unrelated topics (CS vs travel) — should be low",
+      "category": "Embedding",
+      "passed": true,
+      "score": -0.013,
+      "details": "Expected <0.35, got -0.013"
+    },
+    {
+      "id": "B1",
+      "name": "Python query → matches Python prompt (not cooking/travel)",
+      "category": "Search",
+      "passed": true,
+      "score": 0.642,
+      "details": "Top match: 'Python Debug' | All: ['Python Debug']"
+    },
+    {
+      "id": "B2",
+      "name": "React query → matches React prompt (top result)",
+      "category": "Search",
+      "passed": true,
+      "score": 0.646,
+      "details": "Top match: 'React Hooks' | All: ['React Hooks']"
+    },
+    {
+      "id": "B3",
+      "name": "Backend query → matches Python/K8s (not cooking)",
+      "category": "Search",
+      "passed": true,
+      "score": 0.252,
+      "details": "Top matches: ['K8s Debug']"
+    },
+    {
+      "id": "B4",
+      "name": "Quantum physics query → no false matches",
+      "category": "Search",
+      "passed": true,
+      "score": 0,
+      "details": "Matches found: 0 | Highest score: 0.000 | Titles: []"
+    },
+    {
+      "id": "C1",
+      "name": "Exact duplicate → score ≥0.95",
+      "category": "Threshold",
+      "passed": true,
+      "score": 1.0,
+      "details": "Score: 1.000"
+    },
+    {
+      "id": "C2",
+      "name": "Cooking query → filtered by 0.30 threshold",
+      "category": "Threshold",
+      "passed": true,
+      "score": 0,
+      "details": "Matches above threshold: 0 | Highest: 0.000"
+    },
+    {
+      "id": "C3",
+      "name": "Slightly related query → threshold filters weak matches",
+      "category": "Threshold",
+      "passed": false,
+      "score": 0,
+      "details": "Total results: 0 | Above 0.30: 0 | Scores: []"
+    },
+    {
+      "id": "D1",
+      "name": "Conversation carries React/useEffect context for 'fix it'",
+      "category": "Assembly",
+      "passed": true,
+      "score": 1.0,
+      "details": "Conversation contains: react=True, useEffect=True"
+    },
+    {
+      "id": "D2",
+      "name": "Passive memory surfaces auth patterns for auth query",
+      "category": "Assembly",
+      "passed": true,
+      "score": 0.611,
+      "details": "Matches: 1 | Top: 'debug authentication middleware in Express.js...' (0.611)"
+    },
+    {
+      "id": "D3",
+      "name": "Code review query → matches Code Review Template",
+      "category": "Assembly",
+      "passed": true,
+      "score": 0.527,
+      "details": "Top: 'Code Review Template' (0.527)"
+    },
+    {
+      "id": "E1",
+      "name": "User B cannot see User A's prompts",
+      "category": "Isolation",
+      "passed": true,
+      "score": 1.0,
+      "details": "No leak | Results: []"
+    },
+    {
+      "id": "E2",
+      "name": "User A cannot see User B's prompts",
+      "category": "Isolation",
+      "passed": true,
+      "score": 1.0,
+      "details": "No leak | Results: []"
+    }
+  ]
+}

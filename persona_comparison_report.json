@@ -1,0 +1,2060 @@
+{
+  "timestamp": "2026-02-28T22:45:00.888688",
+  "models": 6,
+  "prompts": 20,
+  "total_calls": 120,
+  "leaderboard": [
+    {
+      "model_id": "llama-3.3-70b-versatile",
+      "model_name": "Llama 3.3 70B",
+      "avg_score": 9.55,
+      "avg_latency": 1.03,
+      "tests_passed": 11,
+      "errors": 9
+    },
+    {
+      "model_id": "qwen/qwen3-32b",
+      "model_name": "Qwen3 32B",
+      "avg_score": 9.39,
+      "avg_latency": 7.67,
+      "tests_passed": 20,
+      "errors": 0
+    },
+    {
+      "model_id": "openai/gpt-oss-120b",
+      "model_name": "GPT-OSS 120B",
+      "avg_score": 9.38,
+      "avg_latency": 2.38,
+      "tests_passed": 20,
+      "errors": 0
+    },
+    {
+      "model_id": "openai/gpt-oss-20b",
+      "model_name": "GPT-OSS 20B",
+      "avg_score": 9.26,
+      "avg_latency": 4.79,
+      "tests_passed": 20,
+      "errors": 0
+    },
+    {
+      "model_id": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "model_name": "Llama 4 Scout",
+      "avg_score": 9.23,
+      "avg_latency": 0.39,
+      "tests_passed": 20,
+      "errors": 0
+    },
+    {
+      "model_id": "llama-3.1-8b-instant",
+      "model_name": "Llama 3.1 8B",
+      "avg_score": 8.14,
+      "avg_latency": 5.61,
+      "tests_passed": 20,
+      "errors": 0
+    }
+  ],
+  "persona_averages": {
+    "🎓 CS Student": {
+      "Llama 3.3 70B": 9.4,
+      "GPT-OSS 120B": 9.5,
+      "GPT-OSS 20B": 9.6,
+      "Qwen3 32B": 9.3,
+      "Llama 4 Scout": 9.2,
+      "Llama 3.1 8B": 8.0
+    },
+    "💼 Corporate Dev": {
+      "Llama 3.3 70B": 9.6,
+      "GPT-OSS 120B": 9.3,
+      "GPT-OSS 20B": 9.4,
+      "Qwen3 32B": 9.9,
+      "Llama 4 Scout": 9.3,
+      "Llama 3.1 8B": 8.3
+    },
+    "🚀 Startup Founder": {
+      "Llama 3.3 70B": 10.0,
+      "GPT-OSS 120B": 9.4,
+      "GPT-OSS 20B": 9.0,
+      "Qwen3 32B": 9.3,
+      "Llama 4 Scout": 9.4,
+      "Llama 3.1 8B": 7.8
+    },
+    "📊 Data Scientist": {
+      "GPT-OSS 120B": 9.4,
+      "GPT-OSS 20B": 8.8,
+      "Qwen3 32B": 9.8,
+      "Llama 4 Scout": 9.8,
+      "Llama 3.1 8B": 7.6
+    },
+    "🛠️ DevOps": {
+      "GPT-OSS 120B": 9.8,
+      "GPT-OSS 20B": 8.8,
+      "Qwen3 32B": 9.1,
+      "Llama 4 Scout": 7.8,
+      "Llama 3.1 8B": 8.6
+    },
+    "🧑‍💼 Non-Tech": {
+      "GPT-OSS 120B": 9.1,
+      "GPT-OSS 20B": 9.5,
+      "Qwen3 32B": 8.8,
+      "Llama 4 Scout": 9.6,
+      "Llama 3.1 8B": 8.5
+    }
+  },
+  "per_model_outputs": {
+    "llama-3.3-70b-versatile": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "Can you explain how recursion works in terms of the system call stack, specifically how function calls are added and removed from the stack, and how the base case affects the unwinding process, so I can better understand the step-by-step execution of a recursive function?",
+        "score": 9.4,
+        "latency": 2.5,
+        "word_count": 45,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "I'm having trouble implementing Dijkstra's algorithm to find the shortest paths in a graph, and I'm consistently getting incorrect results. Here's my current implementation:\n\n```java\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (!visited[v] && graph[u][v] != 0 && d",
+        "score": 9.6,
+        "latency": 1.41,
+        "word_count": 213,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "Explain the difference between TCP and UDP in a simple way, like you would to a five-year-old.",
+        "score": 10.0,
+        "latency": 0.96,
+        "word_count": 17,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "What are the key concepts and topics in Database Management Systems (DBMS) that I should focus on for my exam tomorrow?",
+        "score": 8.6,
+        "latency": 0.65,
+        "word_count": 21,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "I'm getting a segmentation fault with this linked list code and I don't understand why: \nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "score": 9.2,
+        "latency": 0.78,
+        "word_count": 23,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "Create a detailed JIRA ticket for the migration of our user service from a REST-based architecture to gRPC, ensuring all necessary steps and requirements are clearly outlined for a successful transition. The ticket should include:\n\n1. A concise description of the migration objective, highlighting the benefits of switching to gRPC.\n2. A list of specific tasks involved in the migration process, such as:\n   - Updating service endpoints\n   - Modifying data models\n   - Implementing gRPC protocol buffers\n   - Conducting thorough testing for compatibility and performance\n3. Identification of potentia",
+        "score": 10.0,
+        "latency": 1.3,
+        "word_count": 210,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "I need to craft a clear and concise explanation for my non-technical manager on why it's not feasible to integrate AI into our product within a short timeframe of just one week. The explanation should be free from technical jargon and focus on the practical challenges and complexities involved in AI implementation, such as data preparation, model training, and integration with existing systems. It should also highlight the potential risks and consequences of rushing such a project, including compromised product quality, user experience, and potential biases in the AI system. What are the key p",
+        "score": 8.6,
+        "latency": 1.02,
+        "word_count": 110,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_meta": 10,
+          "length_cal": 10,
+          "audience_aware": 10
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "Draft a pull request description for changes that include refactoring the authentication module to utilize Redis sessions instead of JSON Web Tokens, removing three deprecated API endpoints, and implementing rate limiting.",
+        "score": 10.0,
+        "latency": 0.3,
+        "word_count": 31,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "Our microservice is experiencing intermittent timeouts in production, with a significant increase in p99 latency from 200ms to 3s since the last deployment. The relevant configuration for this service is as follows:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000\n\nWe need to identify the root cause of this issue and determine the best course of action to reduce the latency and prevent future timeouts. Please consider the current configuration and provide guidance on potential adjustments or additional troubleshooting steps that can help resolve this problem.",
+        "score": 9.6,
+        "latency": 0.61,
+        "word_count": 84,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "Summarize the key points from the meeting about the Q3 roadmap and extract specific action items, including the status of the API redesign, DB migration, vendor selection for logging, and addressing test coverage concerns.",
+        "score": 10.0,
+        "latency": 0.51,
+        "word_count": 34,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "Create a high-converting landing page for an AI-powered resume builder SaaS targeting job seekers aged 22-35, with a monthly subscription fee of $19. The landing page should effectively communicate the value proposition of using an AI-driven tool to create professional resumes, highlighting the benefits of increased interview callbacks and job placement rates. The design and content should resonate with the target audience, addressing their pain points and motivations when searching for employment. Consider incorporating elements such as:\n\n1. A clear and concise headline that emphasizes the AI",
+        "score": 10.0,
+        "latency": 1.28,
+        "word_count": 215,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F2",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "F3",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "D1",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "D2",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "O1",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "O2",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "N1",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "N2",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      },
+      {
+        "id": "N3",
+        "output": "",
+        "error": "Error code: 429 - {'error': {'message': 'Rate limit reached for model `llama-3.3-70b-versatile` in o"
+      }
+    ],
+    "openai/gpt-oss-120b": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "I’m trying to grasp recursion. I understand the base case, but I’m unclear on how the call stack actually works during recursive calls. Could you explain, in clear, step‑by‑step terms, how stack frames are created and removed, using a simple example such as computing factorial or Fibonacci? Please include a textual (or visual) representation of the stack at each step, keep the explanation concise, and avoid overly formal or abstract language.",
+        "score": 9.4,
+        "latency": 1.26,
+        "word_count": 71,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "I’m a student working on a class assignment to implement Dijkstra’s algorithm in Java, but the method keeps returning incorrect shortest‑path distances. Below is the exact code I’ve written:\n\n```java\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (!visited[v] && grap",
+        "score": 10.0,
+        "latency": 1.22,
+        "word_count": 151,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "Explain the difference between TCP and UDP as if I were five years old.",
+        "score": 8.9,
+        "latency": 0.39,
+        "word_count": 14,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "I have a DBMS exam tomorrow; could you list the most important topics I should focus on?",
+        "score": 10.0,
+        "latency": 0.42,
+        "word_count": 17,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "I'm getting a segmentation fault with this linked list code. Why does it happen?\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "score": 9.2,
+        "latency": 0.62,
+        "word_count": 22,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "Write a detailed JIRA ticket for migrating the User Service from a REST API to gRPC. Include the following sections:\n\n- **Title**: concise summary of the migration.\n- **Description**: brief overview of why we’re moving to gRPC, expected benefits, and high‑level approach.\n- **Scope**: list the components, endpoints, and data models that will be affected.\n- **Acceptance Criteria**: clear, testable conditions that must be met before the ticket can be closed (e.g., all existing REST endpoints are fully replicated in gRPC, performance benchmarks meet target, backward compatibility is verified, docu",
+        "score": 10.0,
+        "latency": 1.05,
+        "word_count": 179,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "Help me craft a concise, non‑technical explanation for my manager about why we can’t just “add AI” to our product in a week. Include the main steps involved—data collection and preparation, model development and training, testing and validation, integration into the existing system, and any compliance or security considerations. Use simple analogies that a non‑technical audience can relate to, keep the language respectful and jargon‑free, and limit the overall explanation to roughly 150 words. Also provide a short list of talking points I can use in a meeting.",
+        "score": 6.3,
+        "latency": 1.18,
+        "word_count": 88,
+        "dimensions": {
+          "intent_preservation": 3,
+          "no_meta": 10,
+          "length_cal": 10,
+          "audience_aware": 7
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "Please draft a pull request description summarizing these changes: refactored the auth module to use Redis sessions instead of JWT, removed three deprecated endpoints, and added rate limiting.",
+        "score": 10.0,
+        "latency": 0.41,
+        "word_count": 28,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "You are an experienced backend engineer specializing in microservice performance.\n\n**Context:** In production, after the latest deployment, our microservice is experiencing intermittent timeouts. The p99 latency has spiked from 200 ms to 3 s. The relevant configuration is:\n\n```\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000\n```\n\n**Task:** Identify possible causes for the latency increase and intermittent timeouts, suggest diagnostic steps, and recommend targeted configuration or code adjustments to stabilize performance.\n\n**Strategy:** Consider factors such as connection‑pool sizing, ",
+        "score": 10.0,
+        "latency": 1.94,
+        "word_count": 129,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "Summarize the meeting and list the action items from the following notes: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the vendor selection for logging by Friday. Mike raised concerns about test coverage dropping below 70%.",
+        "score": 10.0,
+        "latency": 0.56,
+        "word_count": 54,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "Act as a conversion‑focused landing‑page designer and copywriter. I have a SaaS product—an AI‑powered resume builder priced at $19 per month—targeted at job seekers aged 22‑35. Create a high‑converting landing page that clearly communicates the value proposition, showcases key features, includes trust signals, and drives sign‑ups. The design should be clean, modern, and mobile‑responsive. Provide:\n\n1. A headline and sub‑headline hierarchy that grabs attention.  \n2. Hero‑section copy with a strong, single CTA button.  \n3. A concise, benefit‑focused feature list (3‑5 points).  \n4. Suggestions fo",
+        "score": 10.0,
+        "latency": 1.38,
+        "word_count": 126,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F2",
+        "persona": "🚀 Startup Founder",
+        "name": "Stripe webhooks (casual)",
+        "mode": "quick",
+        "original": "how do i add stripe payments to my next.js app without getting rekt by webhooks",
+        "enhanced": "How can I integrate Stripe payments into my Next.js app and handle webhooks correctly to avoid issues?",
+        "score": 10.0,
+        "latency": 0.84,
+        "word_count": 17,
+        "dimensions": {
+          "intent_preservation": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F3",
+        "persona": "🚀 Startup Founder",
+        "name": "Roast my copy",
+        "mode": "creative",
+        "original": "roast my landing page copy: 'Build better resumes with AI. Start free today.'",
+        "enhanced": "Please give a sharp, humorous roast of this landing‑page copy: “Build better resumes with AI. Start free today.”",
+        "score": 8.3,
+        "latency": 0.39,
+        "word_count": 18,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_meta": 10,
+          "length_cal": 8,
+          "quote_preserved": 10
+        }
+      },
+      {
+        "id": "D1",
+        "persona": "📊 Data Scientist",
+        "name": "Overfitting diagnosis with code",
+        "mode": "deep",
+        "original": "my model accuracy is 92% on training but drops to 71% on test set, what's going on?\n\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)",
+        "enhanced": "Role: I am a machine learning practitioner seeking to understand a performance discrepancy.  \nContext: I trained a scikit‑learn RandomForestClassifier with 100 trees on my training data and obtained 92 % accuracy on the training set but only 71 % accuracy on the test set.  \n\n```python\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)\n```  \n\nTask: Explain the likely reasons for this large drop in accuracy and recommend concrete diagnostic steps and mitigation techniques.  \nStrategy: Discuss overfitting, possible data leakage, class imbalance, distribution shift betwee",
+        "score": 9.6,
+        "latency": 3.4,
+        "word_count": 143,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "D2",
+        "persona": "📊 Data Scientist",
+        "name": "Attention mechanism intuition",
+        "mode": "deep",
+        "original": "explain the attention mechanism in transformers, I've read the paper but the math doesn't click",
+        "enhanced": "As an expert in deep learning, please explain the attention mechanism in transformers. I’ve read the original paper, but the mathematical formulation still isn’t clear to me. Provide an intuitive, step‑by‑step explanation of scaled dot‑product attention, covering the roles of queries, keys, values, and the softmax weighting. Break down the key equations, include a simple numeric example, and use analogies where helpful. Keep the explanation accessible, avoid unnecessary jargon, and format the answer with clear headings or bullet points.",
+        "score": 9.2,
+        "latency": 5.08,
+        "word_count": 79,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O1",
+        "persona": "🛠️ DevOps",
+        "name": "K8s crashloop with logs+YAML",
+        "mode": "quick",
+        "original": "kubernetes pod keeps crashlooping:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nmy deployment.yaml has:\nenv:\n  - name: DB_HOST\n    value: localhost",
+        "enhanced": "My Kubernetes pod `api-server-7d8f` keeps crashlooping. The logs show:\n\n```\nError: ECONNREFUSED 127.0.0.1:5432\n```\n\nIn my `deployment.yaml` I have:\n\n```yaml\nenv:\n  - name: DB_HOST\n    value: localhost\n```\n\nWhy is the pod unable to connect to the database, and how can I resolve the crashloop?",
+        "score": 9.6,
+        "latency": 3.86,
+        "word_count": 44,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O2",
+        "persona": "🛠️ DevOps",
+        "name": "GitHub Actions CI/CD",
+        "mode": "deep",
+        "original": "write a github actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main",
+        "enhanced": "You are a DevOps engineer tasked with creating a GitHub Actions workflow for a repository. The workflow must:\n\n1. Run the test suite automatically for every pull request.\n2. Deploy to the staging environment automatically when a PR is merged into the `develop` branch.\n3. Deploy to the production environment automatically when a PR is merged into the `main` branch.\n\nUse appropriate triggers (`pull_request`, `push`), separate jobs for testing and each deployment, and include steps to:\n- Check out the code.\n- Set up the required runtime (e.g., Node.js or Python).\n- Install dependencies.\n- Run the",
+        "score": 10.0,
+        "latency": 3.43,
+        "word_count": 126,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N1",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Resignation letter",
+        "mode": "deep",
+        "original": "help me write a resignation letter, I've been here 3 years and want to leave on good terms",
+        "enhanced": "Please help me draft a professional resignation letter. I have been with the company for three years and want to leave on good terms, expressing gratitude, providing a brief reason for my departure, and offering a courteous notice period.",
+        "score": 8.7,
+        "latency": 4.62,
+        "word_count": 39,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "N2",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Japan travel plan",
+        "mode": "deep",
+        "original": "plan a 7-day trip to Japan for 2 people, budget around $3000, we like food and culture not touristy stuff",
+        "enhanced": "Plan a 7‑day itinerary for two people traveling to Japan with a total budget of about $3000. We’re interested in authentic food experiences and cultural activities, and we’d like to avoid typical tourist hotspots. Include suggestions for accommodation, transportation, meals, and off‑the‑beaten‑path attractions, and provide approximate daily costs.",
+        "score": 9.2,
+        "latency": 8.02,
+        "word_count": 48,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N3",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Email to teacher",
+        "mode": "quick",
+        "original": "my kid got a C in math and I need to write an email to the teacher asking what we can do to help without sounding like THAT parent",
+        "enhanced": "Help me draft a polite email to my child's math teacher asking how we can support them after receiving a C, while sounding collaborative and not overly demanding.",
+        "score": 9.3,
+        "latency": 7.54,
+        "word_count": 28,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      }
+    ],
+    "openai/gpt-oss-20b": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "Could you explain how recursion works, focusing on the call‑stack mechanism?  \nI understand the base case, but I’m confused about how stack frames are created, maintained, and unwound during recursive calls. A step‑by‑step example (or a simple diagram) would help clarify the process.",
+        "score": 9.4,
+        "latency": 0.51,
+        "word_count": 43,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "I’m implementing Dijkstra’s algorithm in Java, but the shortest‑path results are incorrect.  \nAssume the graph is given as an adjacency matrix where a value of `0` means “no edge.”  \nHere’s the code I’m using:\n\n```java\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (",
+        "score": 9.5,
+        "latency": 0.71,
+        "word_count": 128,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "Explain the difference between TCP and UDP in a way a 5‑year‑old could understand.",
+        "score": 8.9,
+        "latency": 0.21,
+        "word_count": 14,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "What are the most important topics I should study for my upcoming DBMS exam?",
+        "score": 10.0,
+        "latency": 0.19,
+        "word_count": 14,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "I have this linked list code that segfaults:\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);\n\nWhy does it segfault?",
+        "score": 10.0,
+        "latency": 0.41,
+        "word_count": 20,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "Draft a JIRA ticket for migrating our user service from REST to gRPC. The ticket should include:\n\n- **Summary**: A concise title.\n- **Description**: Explain the current REST architecture, the need for gRPC, and the expected benefits.\n- **Acceptance Criteria**: List clear, testable conditions that must be met for the migration to be considered complete.\n- **Tasks**: Break down the migration into actionable items (e.g., interface design, service implementation, client updates, testing, documentation).\n- **Dependencies**: Note any other teams or components that must be coordinated with.\n- **Due D",
+        "score": 10.0,
+        "latency": 0.55,
+        "word_count": 116,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "I need to explain to my non‑technical manager why we can’t simply “add AI” to our product in a week. What are the main reasons I should cover, and how can I present them in a clear, non‑technical way?",
+        "score": 7.2,
+        "latency": 0.47,
+        "word_count": 39,
+        "dimensions": {
+          "intent_preservation": 5,
+          "no_meta": 10,
+          "length_cal": 7,
+          "audience_aware": 10
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "Draft a PR description that covers the following changes: refactored the auth module to use Redis sessions instead of JWT, removed three deprecated endpoints, and added rate limiting.",
+        "score": 10.0,
+        "latency": 4.4,
+        "word_count": 28,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "Hi, our microservice is experiencing intermittent timeouts in production. Since the last deployment, the 99th‑percentile latency has jumped from 200 ms to 3 s. The relevant configuration is:\n\n```\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000\n```\n\nCould you help me diagnose the root cause and suggest configuration or code changes to reduce the latency and prevent timeouts? Please focus on network, database, and resource‑contention issues, and recommend specific metrics or logs to inspect.",
+        "score": 9.6,
+        "latency": 8.89,
+        "word_count": 73,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "Summarize the meeting notes below and list the action items:  \nWe discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the vendor selection for logging by Friday. Mike raised concerns about test coverage dropping below 70%.",
+        "score": 10.0,
+        "latency": 7.59,
+        "word_count": 52,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "**Role:** Landing‑page copywriter and designer for a SaaS product.  \n**Context:** An AI‑powered resume builder sold at $19 / month, aimed at job seekers aged 22‑35.  \n**Task:** Draft a high‑converting landing page that clearly communicates value, builds trust, and drives sign‑ups.  \n**Constraints:**  \n- Keep the tone professional yet approachable.  \n- Highlight the AI advantage, affordability, and quick results.  \n- Include a headline, sub‑headline, benefit bullets, social proof, pricing, CTA, and trust signals.  \n- Use concise, benefit‑driven language.  \n- Avoid jargon that might alienate the",
+        "score": 10.0,
+        "latency": 7.81,
+        "word_count": 117,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F2",
+        "persona": "🚀 Startup Founder",
+        "name": "Stripe webhooks (casual)",
+        "mode": "quick",
+        "original": "how do i add stripe payments to my next.js app without getting rekt by webhooks",
+        "enhanced": "How can I integrate Stripe payments into my Next.js app while ensuring robust webhook handling to avoid failures?",
+        "score": 8.6,
+        "latency": 7.4,
+        "word_count": 18,
+        "dimensions": {
+          "intent_preservation": 7,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F3",
+        "persona": "🚀 Startup Founder",
+        "name": "Roast my copy",
+        "mode": "creative",
+        "original": "roast my landing page copy: 'Build better resumes with AI. Start free today.'",
+        "enhanced": "Please roast the following landing page copy: “Build better resumes with AI. Start free today.”",
+        "score": 8.3,
+        "latency": 7.33,
+        "word_count": 15,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_meta": 10,
+          "length_cal": 8,
+          "quote_preserved": 10
+        }
+      },
+      {
+        "id": "D1",
+        "persona": "📊 Data Scientist",
+        "name": "Overfitting diagnosis with code",
+        "mode": "deep",
+        "original": "my model accuracy is 92% on training but drops to 71% on test set, what's going on?\n\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)",
+        "enhanced": "I trained a `RandomForestClassifier` with 100 trees:\n\n```python\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)\n```\n\nThe training accuracy is 92 %, but on the test set it falls to 71 %. What could be causing this discrepancy, and what steps can I take to diagnose and mitigate the issue?",
+        "score": 9.2,
+        "latency": 7.55,
+        "word_count": 48,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "D2",
+        "persona": "📊 Data Scientist",
+        "name": "Attention mechanism intuition",
+        "mode": "deep",
+        "original": "explain the attention mechanism in transformers, I've read the paper but the math doesn't click",
+        "enhanced": "I read the transformer paper, but the mathematics behind the attention mechanism is still unclear to me. Could you explain it in a clear, step‑by‑step way, highlighting the key equations and providing intuitive analogies that make the concepts easier to grasp?",
+        "score": 8.3,
+        "latency": 7.63,
+        "word_count": 41,
+        "dimensions": {
+          "intent_preservation": 6,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O1",
+        "persona": "🛠️ DevOps",
+        "name": "K8s crashloop with logs+YAML",
+        "mode": "quick",
+        "original": "kubernetes pod keeps crashlooping:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nmy deployment.yaml has:\nenv:\n  - name: DB_HOST\n    value: localhost",
+        "enhanced": "Why is my pod crashing with `ECONNREFUSED 127.0.0.1:5432` when I set `DB_HOST=localhost` in the deployment? Here’s the relevant part of my `deployment.yaml`:\n\n```yaml\nenv:\n  - name: DB_HOST\n    value: localhost\n```",
+        "score": 7.7,
+        "latency": 7.61,
+        "word_count": 30,
+        "dimensions": {
+          "intent_preservation": 4,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O2",
+        "persona": "🛠️ DevOps",
+        "name": "GitHub Actions CI/CD",
+        "mode": "deep",
+        "original": "write a github actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main",
+        "enhanced": "Create a GitHub Actions workflow YAML that:\n\n1. **Runs tests on every pull request** – trigger on `pull_request` events and execute a test job (e.g., using `actions/checkout` and a test runner of your choice).\n2. **Deploys to a staging environment when a PR is merged into the `develop` branch** – trigger on `push` to `develop`, run a deployment job that targets your staging environment, and enforce environment protection rules for `staging`.\n3. **Deploys to production when a PR is merged into the `main` branch** – trigger on `push` to `main`, run a deployment job that targets your production e",
+        "score": 10.0,
+        "latency": 7.91,
+        "word_count": 144,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N1",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Resignation letter",
+        "mode": "deep",
+        "original": "help me write a resignation letter, I've been here 3 years and want to leave on good terms",
+        "enhanced": "I need help drafting a resignation letter. I’ve worked at the company for three years and want to leave on good terms. Please help me write a professional, courteous letter that includes my position, a brief reason for leaving, a proposed last working day, and a note of appreciation for the opportunities and support I’ve received. The tone should be respectful and positive.",
+        "score": 9.6,
+        "latency": 7.53,
+        "word_count": 63,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N2",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Japan travel plan",
+        "mode": "deep",
+        "original": "plan a 7-day trip to Japan for 2 people, budget around $3000, we like food and culture not touristy stuff",
+        "enhanced": "Create a detailed 7‑day itinerary for a trip to Japan for two people, with a total budget of about $3,000. The plan should focus on authentic food experiences and cultural activities, avoiding typical tourist attractions. Include suggestions for accommodation, local transportation, dining, and any off‑the‑beaten‑path cultural experiences, while keeping costs within the budget.",
+        "score": 9.6,
+        "latency": 7.52,
+        "word_count": 53,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N3",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Email to teacher",
+        "mode": "quick",
+        "original": "my kid got a C in math and I need to write an email to the teacher asking what we can do to help without sounding like THAT parent",
+        "enhanced": "I need help drafting an email to my child’s math teacher asking what we can do to support them after they received a C, but I want to avoid sounding like the typical concerned parent.",
+        "score": 9.3,
+        "latency": 3.48,
+        "word_count": 35,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      }
+    ],
+    "qwen/qwen3-32b": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "Can you explain recursion with a focus on how the call stack operates during execution? I understand the concept of a base case but need a step-by-step breakdown showing:  \n1. How recursive function calls are added to the stack  \n2. How the stack unwinds after reaching the base case  \n3. How memory is managed during this process  \nInclude a simple example (like factorial calculation) with visual representation of the stack at each step. Avoid technical jargon and explain stack behavior in plain language.",
+        "score": 9.4,
+        "latency": 1.32,
+        "word_count": 83,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "\"Implementing Dijkstra's algorithm for shortest path calculation - need help debugging incorrect results. Here's my Java implementation:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (!visited[v] && graph[u][v] != 0 && dist[u] + graph[u][v] < dist[v])\n             ",
+        "score": 10.0,
+        "latency": 2.05,
+        "word_count": 155,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "\"Explain the difference between TCP and UDP in simple terms, like I'm 5. Use examples a kid would understand, such as sending letters versus sending messages.\"",
+        "score": 10.0,
+        "latency": 1.41,
+        "word_count": 26,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "\"List the most critical DBMS topics and key concepts to prioritize for an exam, focusing on frequently tested areas and foundational principles for quick revision.\"",
+        "score": 8.6,
+        "latency": 1.14,
+        "word_count": 25,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "\"El siguiente código de lista enlazada causa un segment fault. ¿Por qué ocurre esto?  \nNode* head = NULL;  \ninsertAtHead(&head, 5);  \nprintf(\"%d\", head->next->data);  \n\n¿Espera que head->next exista después de insertar solo un nodo?\"",
+        "score": 8.5,
+        "latency": 0.92,
+        "word_count": 32,
+        "dimensions": {
+          "intent_preservation": 6,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "Refine the user's prompt into a structured JIRA ticket template with these specific elements:\n1. **Summary**: \"Migrate User Service from REST API to gRPC Protocol\"\n2. **Description**: \n   - Context: Current REST-based user service needs modernization for improved performance and scalability\n   - Business justification: Align with architecture roadmap, reduce latency for mobile clients\n   - Success metrics: 30% faster request processing, 50% smaller payload sizes\n3. **Acceptance Criteria**:\n   - 100% API parity with existing REST endpoints\n   - Backward compatibility via API gateway during tran",
+        "score": 10.0,
+        "latency": 2.25,
+        "word_count": 186,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "\"Explain to a non-technical executive why implementing AI capabilities requires careful planning and resources beyond a one-week timeline. Focus on: 1) Data preparation requirements (quality/quantity), 2) Model training/iteration cycles, 3) Integration with existing systems, 4) Testing/validation processes. Use relatable analogies (e.g., 'AI is like hiring a specialized employee who needs training and tools') and emphasize that AI implementation is an iterative process requiring domain expertise, not a simple feature toggle.\"",
+        "score": 9.5,
+        "latency": 8.04,
+        "word_count": 70,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_meta": 10,
+          "length_cal": 10,
+          "audience_aware": 10
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "\"Write a concise PR description summarizing: 1) Refactored authentication system to use Redis session storage instead of JWT tokens for improved session management 2) Removed three deprecated API endpoints that were marked for removal in v2.0 3) Implemented rate limiting middleware to prevent API abuse. Highlight the security and maintenance benefits of these changes.\"",
+        "score": 10.0,
+        "latency": 10.49,
+        "word_count": 54,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "\"Since our microservice deployment, we're experiencing intermittent timeouts with p99 latency spiking from 200ms to 3s in production. The current configuration shows:\n\nconnection_pool_size: 5  \nmax_retries: 3  \ntimeout_ms: 5000  \n\nPlease analyze:  \n1. How these configuration parameters might contribute to the latency spike  \n2. Potential bottlenecks in connection management, retry logic, or timeout settings  \n3. Recommendations for optimizing these values while maintaining reliability  \n4. Metrics we should monitor to validate changes (e.g., connection pool utilization, error rates, retry freq",
+        "score": 10.0,
+        "latency": 11.04,
+        "word_count": 94,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "\"Provide a concise summary of the meeting discussing the Q3 roadmap, including specific action items with owners and deadlines: John will lead the API redesign, Sarah is blocked on DB migration due to missing credentials, vendor selection for logging must be finalized by Friday, and Mike highlighted that test coverage has dropped below 70% and needs attention.\"",
+        "score": 10.0,
+        "latency": 10.14,
+        "word_count": 57,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "I need a high-conversion landing page for my SaaS product: an AI-powered resume builder priced at $19/month. The target audience is job seekers aged 22-35 actively seeking internships, entry-level roles, or career transitions. The page should:\n\n1. Feature a bold headline emphasizing time-saving AI automation (\"Get a Professional Resume in 2 Minutes\")\n2. Highlight key benefits: ATS optimization, industry-specific templates, real-time feedback\n3. Include social proof (mock testimonials: \"Landed 3 interviews after using this tool!\")\n4. Showcase competitive pricing comparison (vs. $300+ for tradit",
+        "score": 10.0,
+        "latency": 10.97,
+        "word_count": 137,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F2",
+        "persona": "🚀 Startup Founder",
+        "name": "Stripe webhooks (casual)",
+        "mode": "quick",
+        "original": "how do i add stripe payments to my next.js app without getting rekt by webhooks",
+        "enhanced": "\"Guide me through securely integrating Stripe payments into my Next.js app, with a focus on implementing robust webhook handling to prevent issues like duplicate charges, failed transactions, or security vulnerabilities. Include best practices for event verification, endpoint setup, and error handling.\"",
+        "score": 8.6,
+        "latency": 9.96,
+        "word_count": 41,
+        "dimensions": {
+          "intent_preservation": 7,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F3",
+        "persona": "🚀 Startup Founder",
+        "name": "Roast my copy",
+        "mode": "creative",
+        "original": "roast my landing page copy: 'Build better resumes with AI. Start free today.'",
+        "enhanced": "Roast this landing page copy for a developer audience: \"Build better resumes with AI. Start free today.\" Critique its emotional appeal, uniqueness, and urgency — would a Python developer find this compelling? What specific phrases feel generic or overused? Suggest 3 alternative hooks that balance technical credibility with human curiosity.",
+        "score": 9.2,
+        "latency": 9.34,
+        "word_count": 50,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_meta": 10,
+          "length_cal": 8,
+          "quote_preserved": 10
+        }
+      },
+      {
+        "id": "D1",
+        "persona": "📊 Data Scientist",
+        "name": "Overfitting diagnosis with code",
+        "mode": "deep",
+        "original": "my model accuracy is 92% on training but drops to 71% on test set, what's going on?\n\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)",
+        "enhanced": "I have a RandomForestClassifier with 92% training accuracy but only 71% test accuracy - what could be causing this significant performance drop?\n\nCode:\n```python\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)\n```\n\nPlease analyze potential causes like:\n1. Overfitting due to high model complexity\n2. Data leakage in training/test split\n3. Imbalanced class distribution\n4. Feature selection issues\n5. Hyperparameter configuration\n\nWhat diagnostic steps should I take to identify the root cause and improve generalization?",
+        "score": 9.6,
+        "latency": 10.38,
+        "word_count": 73,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "D2",
+        "persona": "📊 Data Scientist",
+        "name": "Attention mechanism intuition",
+        "mode": "deep",
+        "original": "explain the attention mechanism in transformers, I've read the paper but the math doesn't click",
+        "enhanced": "\"Can you explain the attention mechanism in transformers with a focus on building intuition rather than dense mathematical notation? I've studied the original paper but struggle to connect the equations to their practical implementation. Please break down:  \n1. How queries, keys, and values represent relationships between input elements  \n2. The role of scaling factors and softmax in attention score calculation  \n3. Why this mechanism improves over traditional sequence modeling approaches  \nUse analogies or visual metaphors where possible, and highlight common conceptual pitfalls when interpre",
+        "score": 10.0,
+        "latency": 10.45,
+        "word_count": 86,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O1",
+        "persona": "🛠️ DevOps",
+        "name": "K8s crashloop with logs+YAML",
+        "mode": "quick",
+        "original": "kubernetes pod keeps crashlooping:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nmy deployment.yaml has:\nenv:\n  - name: DB_HOST\n    value: localhost",
+        "enhanced": "\"Kubernetes pod is crashlooping with ECONNREFUSED 127.0.0.1:5432 error. The deployment.yaml sets DB_HOST to localhost:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nDeployment configuration:\nenv:\n  - name: DB_HOST\n    value: localhost\n\nHow should I configure DB_HOST to connect to a PostgreSQL service running in the same Kubernetes cluster?\"",
+        "score": 9.6,
+        "latency": 10.51,
+        "word_count": 45,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O2",
+        "persona": "🛠️ DevOps",
+        "name": "GitHub Actions CI/CD",
+        "mode": "deep",
+        "original": "write a github actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main",
+        "enhanced": "Here's a refined GitHub Actions workflow prompt with structured implementation guidance:\n\n**GitHub Actions Workflow Specification**\n\n1. **Core Requirements**\n- Create a multi-job workflow with three distinct execution paths:\n  - **Test Job**: Trigger on `pull_request` events (all branches)\n  - **Staging Deployment**: Trigger on `push` to `develop` branch\n  - **Production Deployment**: Trigger on `push` to `main` branch\n\n2. **Implementation Details**\n- Use separate jobs for test/deploy with proper dependency flow\n- Include:\n  - `name` field with clear environment indicators\n  - `on` triggers wi",
+        "score": 8.5,
+        "latency": 11.38,
+        "word_count": 236,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 2,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N1",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Resignation letter",
+        "mode": "deep",
+        "original": "help me write a resignation letter, I've been here 3 years and want to leave on good terms",
+        "enhanced": "I need help drafting a professional resignation letter that maintains positive relationships with my employer. I've worked at the company for 3 years and want to:  \n1. Clearly state my resignation with appropriate notice period  \n2. Express genuine gratitude for the opportunities I've had  \n3. Briefly mention my reasons for leaving (career growth/personal development) without burning bridges  \n4. Offer to assist with transition/ knowledge transfer  \n5. Keep the tone respectful, positive, and professional  \n\nPlease include placeholders for:  \n- My position and department  \n- Last working day  \n",
+        "score": 10.0,
+        "latency": 10.5,
+        "word_count": 136,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N2",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Japan travel plan",
+        "mode": "deep",
+        "original": "plan a 7-day trip to Japan for 2 people, budget around $3000, we like food and culture not touristy stuff",
+        "enhanced": "Plan a 7-day cultural and culinary immersion trip for 2 people to Japan with a $3000 budget (excluding flights). Focus on authentic local experiences:  \n1. **Food**: Highlight regional specialties, hidden gem eateries, and cooking classes/workshops. Include at least 3 unique food-focused activities (e.g., market tours, izakaya visits, seasonal festivals).  \n2. **Culture**: Prioritize lesser-known temples, artisan workshops, and traditional arts (e.g., tea ceremonies, calligraphy, kimono experiences). Avoid over-touristed spots like Tokyo Tower or Kyoto’s Fushimi Inari.  \n3. **Budget breakdown*",
+        "score": 10.0,
+        "latency": 11.12,
+        "word_count": 164,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N3",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Email to teacher",
+        "mode": "quick",
+        "original": "my kid got a C in math and I need to write an email to the teacher asking what we can do to help without sounding like THAT parent",
+        "enhanced": "\"Mi hijo obtuvo una C en matemáticas y necesito escribir un correo al profesor pidiendo orientación sobre cómo apoyarlo de manera colaborativa, manteniendo un tono respetuoso y enfocado en soluciones prácticas.\"",
+        "score": 6.4,
+        "latency": 10.09,
+        "word_count": 31,
+        "dimensions": {
+          "intent_preservation": 0,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      }
+    ],
+    "meta-llama/llama-4-scout-17b-16e-instruct": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "How does the call stack manage and execute recursive function calls, specifically in terms of storing and retrieving function call states, and what happens when a recursive function reaches its base case and starts returning values back up the call stack?",
+        "score": 8.1,
+        "latency": 0.24,
+        "word_count": 41,
+        "dimensions": {
+          "intent_preservation": 4,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "I'm implementing Dijkstra's algorithm for my professor, but I'm getting incorrect shortest paths. Here's my code:\n\n```java\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (!visited[v] && graph[u][v] != 0 && dist[u] + graph[u][v] < dist[v])\n                dist[v] = di",
+        "score": 10.0,
+        "latency": 0.73,
+        "word_count": 150,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "What is the difference between TCP and UDP, explained in a simple way that a 5-year-old can understand?",
+        "score": 10.0,
+        "latency": 0.2,
+        "word_count": 18,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "What are the key concepts and topics in Database Management Systems (DBMS) that I should focus on for my exam?",
+        "score": 8.6,
+        "latency": 0.21,
+        "word_count": 20,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "The provided linked list code results in a segmentation fault, and I need help identifying why. The code is as follows:\n\n```c\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);\n```\n\nCan you explain the cause of the segmentation fault and how to fix it?",
+        "score": 9.2,
+        "latency": 0.31,
+        "word_count": 45,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "Create a JIRA ticket for the migration of the user service from REST to gRPC, targeting completion by Q3, with the following details:\n\n- **Title:** Migrate User Service from REST to gRPC\n- **Description:** \n  1. **Objective:** Migrate the existing user service from REST to gRPC to enhance performance and scalability.\n  2. **Scope:** \n     - Identify all REST endpoints currently used by the user service.\n     - Design equivalent gRPC services and messages.\n     - Implement gRPC services, ensuring backward compatibility with existing REST clients.\n     - Update relevant documentation and API con",
+        "score": 10.0,
+        "latency": 0.78,
+        "word_count": 174,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "\"I want to help my non-technical manager understand the complexities and limitations of integrating AI into our product within a short timeframe, specifically a week. What are the key points I should emphasize to set realistic expectations?\"",
+        "score": 7.2,
+        "latency": 0.23,
+        "word_count": 37,
+        "dimensions": {
+          "intent_preservation": 5,
+          "no_meta": 10,
+          "length_cal": 7,
+          "audience_aware": 10
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "Draft a pull request description for refactoring the authentication module to utilize Redis sessions in place of JSON Web Tokens, deprecating three obsolete endpoints, and implementing rate limiting features.",
+        "score": 9.4,
+        "latency": 0.28,
+        "word_count": 29,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "Our microservice is experiencing intermittent timeouts in production, and we've observed a significant spike in p99 latency from 200ms to 3 seconds since the last deployment. \n\nTo help diagnose the issue, we've provided the relevant configuration details:\n- connection_pool_size: 5\n- max_retries: 3\n- timeout_ms: 5000\n\nCan you help us identify the potential causes of these timeouts and suggest possible optimizations or adjustments to our configuration to mitigate this issue?",
+        "score": 10.0,
+        "latency": 0.41,
+        "word_count": 70,
+        "dimensions": {
+          "intent_preservation": 10,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "Please summarize the key takeaways from our discussion on the Q3 roadmap, including action items and outstanding issues, such as the API redesign, DB migration, vendor selection for logging, and test coverage concerns.",
+        "score": 10.0,
+        "latency": 0.31,
+        "word_count": 33,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "\"I want to create a high-converting landing page for my SaaS product, which is an AI-powered resume builder priced at $19 per month. The target audience for this product is job seekers between the ages of 22 and 35. \n\nTo effectively design this landing page, I would like to consider the following key elements:\n1. Key pain points: What are the primary challenges that job seekers in this age group face when building their resumes?\n2. Desired outcomes: What specific benefits do job seekers hope to achieve by using an AI-powered resume builder?\n3. Unique selling proposition (USP): How can I clearl",
+        "score": 10.0,
+        "latency": 0.71,
+        "word_count": 173,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F2",
+        "persona": "🚀 Startup Founder",
+        "name": "Stripe webhooks (casual)",
+        "mode": "quick",
+        "original": "how do i add stripe payments to my next.js app without getting rekt by webhooks",
+        "enhanced": "\"How can I integrate Stripe payments into my Next.js application while effectively handling webhooks to avoid potential issues?\"",
+        "score": 10.0,
+        "latency": 0.21,
+        "word_count": 18,
+        "dimensions": {
+          "intent_preservation": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F3",
+        "persona": "🚀 Startup Founder",
+        "name": "Roast my copy",
+        "mode": "creative",
+        "original": "roast my landing page copy: 'Build better resumes with AI. Start free today.'",
+        "enhanced": "Critique the landing page copy \"'Build better resumes with AI. Start free today.'\" with a focus on identifying areas for improvement and suggesting alternative phrasing to make it more compelling.",
+        "score": 8.3,
+        "latency": 0.3,
+        "word_count": 30,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_meta": 10,
+          "length_cal": 8,
+          "quote_preserved": 10
+        }
+      },
+      {
+        "id": "D1",
+        "persona": "📊 Data Scientist",
+        "name": "Overfitting diagnosis with code",
+        "mode": "deep",
+        "original": "my model accuracy is 92% on training but drops to 71% on test set, what's going on?\n\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)",
+        "enhanced": "I'm experiencing a significant drop in accuracy with my machine learning model. The model achieves an accuracy of 92% on the training set but only 71% on the test set. I'm using a RandomForestClassifier with 100 estimators. Here's my code:\n\n```\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)\n```\n\nI'd like to understand the possible causes of this discrepancy and potential steps to improve the model's performance on unseen data. What could be contributing to this gap in accuracy?",
+        "score": 9.6,
+        "latency": 0.36,
+        "word_count": 77,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "D2",
+        "persona": "📊 Data Scientist",
+        "name": "Attention mechanism intuition",
+        "mode": "deep",
+        "original": "explain the attention mechanism in transformers, I've read the paper but the math doesn't click",
+        "enhanced": "The attention mechanism in transformers is a key component that allows the model to focus on specific parts of the input sequence when generating output. Can you elaborate on which specific mathematical aspects of the attention mechanism you're struggling with, such as the scaled dot-product attention or the multi-head attention? Additionally, what is your current understanding of the attention mechanism, and what do you hope to gain clarity on?",
+        "score": 10.0,
+        "latency": 0.3,
+        "word_count": 69,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O1",
+        "persona": "🛠️ DevOps",
+        "name": "K8s crashloop with logs+YAML",
+        "mode": "quick",
+        "original": "kubernetes pod keeps crashlooping:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nmy deployment.yaml has:\nenv:\n  - name: DB_HOST\n    value: localhost",
+        "enhanced": "\"Why is my Kubernetes pod (api-server-7d8f) crash-looping with a ECONNREFUSED error to localhost:5432, despite setting DB_HOST to localhost in my deployment.yaml?\"",
+        "score": 5.5,
+        "latency": 0.31,
+        "word_count": 21,
+        "dimensions": {
+          "intent_preservation": 4,
+          "code_preservation": 3,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O2",
+        "persona": "🛠️ DevOps",
+        "name": "GitHub Actions CI/CD",
+        "mode": "deep",
+        "original": "write a github actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main",
+        "enhanced": "Create a GitHub Actions workflow that automates the following tasks:\n\n1. **Run tests on every Pull Request (PR)**: Execute the test suite to ensure code quality and prevent broken code from being merged.\n2. **Deploy to staging environment on merge to develop branch**: Automatically deploy the code to a staging environment when changes are merged into the develop branch, allowing for further testing and validation.\n3. **Deploy to production environment on merge to main branch**: Deploy the code to the production environment when changes are merged into the main branch, ensuring that the latest ",
+        "score": 10.0,
+        "latency": 0.76,
+        "word_count": 184,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N1",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Resignation letter",
+        "mode": "deep",
+        "original": "help me write a resignation letter, I've been here 3 years and want to leave on good terms",
+        "enhanced": "I want to leave my job on good terms after 3 years of service. Can you help me draft a professional and respectful resignation letter that maintains a positive relationship with my employer? Please include the essential details that I should provide in the letter.",
+        "score": 9.6,
+        "latency": 0.3,
+        "word_count": 45,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N2",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Japan travel plan",
+        "mode": "deep",
+        "original": "plan a 7-day trip to Japan for 2 people, budget around $3000, we like food and culture not touristy stuff",
+        "enhanced": "Plan a 7-day itinerary for a trip to Japan for 2 people with a budget of approximately $3000. The trip should focus on immersing in local food and cultural experiences, avoiding typical tourist attractions. \n\nInclude:\n1. Daily activities and destinations \n2. Traditional Japanese cuisine recommendations \n3. Cultural events or festivals (if applicable) \n4. Accommodation suggestions within budget \n5. Transportation details \n\nEnsure the itinerary provides a balance of structure and free time for spontaneity. \n\nProvide the refined itinerary in a concise and organized format.",
+        "score": 9.6,
+        "latency": 0.4,
+        "word_count": 83,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N3",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Email to teacher",
+        "mode": "quick",
+        "original": "my kid got a C in math and I need to write an email to the teacher asking what we can do to help without sounding like THAT parent",
+        "enhanced": "How can I help my child improve their math grade after receiving a C, and what email approach can I take with the teacher to discuss support without coming across as overly concerned or confrontational?",
+        "score": 9.6,
+        "latency": 0.42,
+        "word_count": 35,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      }
+    ],
+    "llama-3.1-8b-instant": [
+      {
+        "id": "S1",
+        "persona": "🎓 CS Student",
+        "name": "Recursion confusion",
+        "mode": "deep",
+        "original": "I don't understand recursion at all, like I get the base case but how does the stack actually work??",
+        "enhanced": "\"Explain how recursion works in terms of stack management, focusing on the relationship between function calls and the base case.\"",
+        "score": 8.0,
+        "latency": 0.31,
+        "word_count": 20,
+        "dimensions": {
+          "intent_preservation": 6,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 4
+        }
+      },
+      {
+        "id": "S2",
+        "persona": "🎓 CS Student",
+        "name": "Dijkstra's with Java code",
+        "mode": "deep",
+        "original": "my prof wants me to implement dijkstra's algorithm but I keep getting wrong shortest paths. here's my code:\n\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n   ",
+        "enhanced": "\"Given the provided Java implementation of Dijkstra's algorithm, which includes the following code:\n\n```java\npublic int[] dijkstra(int[][] graph, int src) {\n    int[] dist = new int[graph.length];\n    boolean[] visited = new boolean[graph.length];\n    Arrays.fill(dist, Integer.MAX_VALUE);\n    dist[src] = 0;\n    for (int i = 0; i < graph.length; i++) {\n        int u = minDistance(dist, visited);\n        visited[u] = true;\n        for (int v = 0; v < graph.length; v++) {\n            if (!visited[v] && graph[u][v] != 0 && dist[u] + graph[u][v] < dist[v])\n                dist[v] = dist[u] + graph[",
+        "score": 9.2,
+        "latency": 0.42,
+        "word_count": 114,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "S3",
+        "persona": "🎓 CS Student",
+        "name": "TCP vs UDP ELI5",
+        "mode": "quick",
+        "original": "whats the difference between TCP and UDP explain like im 5",
+        "enhanced": "\"What's the difference between TCP and UDP, explained in a way that's easy to understand for a 5-year-old?\"",
+        "score": 8.9,
+        "latency": 0.25,
+        "word_count": 18,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S4",
+        "persona": "🎓 CS Student",
+        "name": "DBMS exam prep",
+        "mode": "quick",
+        "original": "I have a database exam tomorrow, give me the most important topics for DBMS",
+        "enhanced": "What are the key topics typically covered in a DBMS exam?",
+        "score": 8.6,
+        "latency": 0.18,
+        "word_count": 11,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_overengineering": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "S5",
+        "persona": "🎓 CS Student",
+        "name": "C code segfault",
+        "mode": "quick",
+        "original": "this linked list code gives segfault, idk why\n\nNode* head = NULL;\ninsertAtHead(&head, 5);\nprintf(\"%d\", head->next->data);",
+        "enhanced": "\"Given the linked list code that results in a segmentation fault, what causes the error and how to fix it, specifically in the line where it attempts to print the data of the next node after the head?\"",
+        "score": 5.4,
+        "latency": 0.26,
+        "word_count": 38,
+        "dimensions": {
+          "intent_preservation": 6,
+          "code_preservation": 0,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C1",
+        "persona": "💼 Corporate Dev",
+        "name": "JIRA ticket for migration",
+        "mode": "deep",
+        "original": "write a JIRA ticket for migrating our user service from REST to gRPC, the team lead wants it by Q3",
+        "enhanced": "\"Create a detailed JIRA ticket for migrating our user service from REST to gRPC, outlining key tasks, timelines, and dependencies, with a target completion date by the end of Q3.\"",
+        "score": 8.4,
+        "latency": 0.31,
+        "word_count": 30,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 4,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "C2",
+        "persona": "💼 Corporate Dev",
+        "name": "Explain to non-tech manager",
+        "mode": "deep",
+        "original": "I need to explain to my non-technical manager why we can't just 'add AI' to our product in a week",
+        "enhanced": "Why is it not feasible to integrate AI capabilities into our product within a one-week timeframe?",
+        "score": 4.7,
+        "latency": 0.25,
+        "word_count": 16,
+        "dimensions": {
+          "intent_preservation": 2,
+          "no_meta": 10,
+          "length_cal": 4,
+          "audience_aware": 7
+        }
+      },
+      {
+        "id": "C3",
+        "persona": "💼 Corporate Dev",
+        "name": "PR description",
+        "mode": "quick",
+        "original": "draft a PR description for: refactored the auth module to use Redis sessions instead of JWT, removed 3 deprecated endpoints, added rate limiting",
+        "enhanced": "Refactor the authentication module to utilize Redis sessions instead of JSON Web Tokens (JWT), eliminate three outdated endpoints, and implement rate limiting.",
+        "score": 8.9,
+        "latency": 3.29,
+        "word_count": 22,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C4",
+        "persona": "💼 Corporate Dev",
+        "name": "Prod incident with config",
+        "mode": "deep",
+        "original": "our microservice is timing out intermittently in prod, p99 latency spiked from 200ms to 3s since last deploy, here's the relevant config:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000",
+        "enhanced": "\"An intermittent timeout issue has occurred in our microservice, causing a significant spike in p99 latency from 200ms to 3s since the last deployment. The relevant configuration is provided below:\n\nconnection_pool_size: 5\nmax_retries: 3\ntimeout_ms: 5000\n\nPlease investigate and suggest improvements to prevent such latency spikes in future deployments.\"",
+        "score": 9.6,
+        "latency": 4.45,
+        "word_count": 49,
+        "dimensions": {
+          "intent_preservation": 9,
+          "code_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "C5",
+        "persona": "💼 Corporate Dev",
+        "name": "Meeting notes summary",
+        "mode": "quick",
+        "original": "summarize this meeting and extract action items: We discussed the Q3 roadmap. John will lead the API redesign. Sarah is blocked on the DB migration due to missing credentials. We need to finalize the ",
+        "enhanced": "\"Summarize the key points from the Q3 roadmap meeting and extract the action items, including the status of the API redesign, DB migration, vendor selection for logging, and test coverage concerns.\"",
+        "score": 10.0,
+        "latency": 9.45,
+        "word_count": 31,
+        "dimensions": {
+          "intent_preservation": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F1",
+        "persona": "🚀 Startup Founder",
+        "name": "Landing page conversion",
+        "mode": "deep",
+        "original": "I need a landing page that converts, my SaaS is an AI-powered resume builder for $19/mo, target audience is job seekers aged 22-35",
+        "enhanced": "\"Design a high-converting landing page for an AI-powered resume builder SaaS targeting job seekers aged 22-35, with a pricing plan of $19/month.\"",
+        "score": 7.4,
+        "latency": 9.33,
+        "word_count": 22,
+        "dimensions": {
+          "intent_preservation": 9,
+          "proper_structure": 4,
+          "no_meta": 10,
+          "length_cal": 4
+        }
+      },
+      {
+        "id": "F2",
+        "persona": "🚀 Startup Founder",
+        "name": "Stripe webhooks (casual)",
+        "mode": "quick",
+        "original": "how do i add stripe payments to my next.js app without getting rekt by webhooks",
+        "enhanced": "\"Implement Stripe payment gateway in a Next.js application, focusing on secure webhook handling to prevent potential issues.\"",
+        "score": 7.7,
+        "latency": 9.32,
+        "word_count": 17,
+        "dimensions": {
+          "intent_preservation": 5,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "F3",
+        "persona": "🚀 Startup Founder",
+        "name": "Roast my copy",
+        "mode": "creative",
+        "original": "roast my landing page copy: 'Build better resumes with AI. Start free today.'",
+        "enhanced": "\"Analyze and critique the tone, language, and persuasive effectiveness of the given landing page copy: 'Build better resumes with AI. Start free today.' Identify areas for improvement to make it more compelling and engaging.\"",
+        "score": 8.3,
+        "latency": 7.34,
+        "word_count": 34,
+        "dimensions": {
+          "intent_preservation": 7,
+          "no_meta": 10,
+          "length_cal": 8,
+          "quote_preserved": 10
+        }
+      },
+      {
+        "id": "D1",
+        "persona": "📊 Data Scientist",
+        "name": "Overfitting diagnosis with code",
+        "mode": "deep",
+        "original": "my model accuracy is 92% on training but drops to 71% on test set, what's going on?\n\nmodel = RandomForestClassifier(n_estimators=100)\nmodel.fit(X_train, y_train)",
+        "enhanced": "\"Given a RandomForestClassifier model with 100 estimators, why is there a significant drop in accuracy from 92% on the training set to 71% on the test set?\"",
+        "score": 6.6,
+        "latency": 10.41,
+        "word_count": 27,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 3,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "D2",
+        "persona": "📊 Data Scientist",
+        "name": "Attention mechanism intuition",
+        "mode": "deep",
+        "original": "explain the attention mechanism in transformers, I've read the paper but the math doesn't click",
+        "enhanced": "\"Explain the attention mechanism in transformers from a conceptual perspective, avoiding mathematical derivations, and focusing on how it enables the model to weigh input elements during processing.\"",
+        "score": 8.7,
+        "latency": 8.4,
+        "word_count": 27,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "O1",
+        "persona": "🛠️ DevOps",
+        "name": "K8s crashloop with logs+YAML",
+        "mode": "quick",
+        "original": "kubernetes pod keeps crashlooping:\n\nkubectl logs pod/api-server-7d8f:\nError: ECONNREFUSED 127.0.0.1:5432\n\nmy deployment.yaml has:\nenv:\n  - name: DB_HOST\n    value: localhost",
+        "enhanced": "\"Given the Kubernetes pod 'api-server-7d8f' is crashlooping due to an ECONNREFUSED error on port 5432, and the deployment.yaml specifies DB_HOST as 'localhost', what is the cause of this connection refusal and how to resolve it?\"",
+        "score": 7.1,
+        "latency": 9.82,
+        "word_count": 35,
+        "dimensions": {
+          "intent_preservation": 8,
+          "code_preservation": 3,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "O2",
+        "persona": "🛠️ DevOps",
+        "name": "GitHub Actions CI/CD",
+        "mode": "deep",
+        "original": "write a github actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main",
+        "enhanced": "Given a GitHub Actions workflow that runs tests on PR, deploys to staging on merge to develop, and deploys to prod on merge to main, with the following code snippet:\n\n```yml\nname: CI/CD Workflow\n\non:\n  pull_request:\n    branches:\n      - develop\n  push:\n    branches:\n      - main\n\njobs:\n  build-and-deploy:\n    runs-on: ubuntu-latest\n    steps:\n      - name: Checkout code\n        uses: actions/checkout@v2\n      - name: Run tests\n        run: |\n          npm install\n          npm run test\n      - name: Deploy to staging\n        uses: appleboy/ssh-action@v0\n        with:\n          host: ${{ secre",
+        "score": 10.0,
+        "latency": 10.14,
+        "word_count": 307,
+        "dimensions": {
+          "intent_preservation": 10,
+          "proper_structure": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      },
+      {
+        "id": "N1",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Resignation letter",
+        "mode": "deep",
+        "original": "help me write a resignation letter, I've been here 3 years and want to leave on good terms",
+        "enhanced": "\"Write a sample resignation letter for a 3-year employee who wishes to leave on good terms, highlighting their gratitude for the experience and opportunities gained during their tenure.\"",
+        "score": 7.0,
+        "latency": 9.46,
+        "word_count": 28,
+        "dimensions": {
+          "intent_preservation": 4,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "N2",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Japan travel plan",
+        "mode": "deep",
+        "original": "plan a 7-day trip to Japan for 2 people, budget around $3000, we like food and culture not touristy stuff",
+        "enhanced": "\"Create a 7-day itinerary for a non-touristy cultural and food-focused trip to Japan for two people, with a budget of approximately $3000, emphasizing local experiences and avoiding popular tourist destinations.\"",
+        "score": 9.1,
+        "latency": 9.45,
+        "word_count": 30,
+        "dimensions": {
+          "intent_preservation": 9,
+          "no_tech_injection": 10,
+          "no_meta": 10,
+          "length_cal": 7
+        }
+      },
+      {
+        "id": "N3",
+        "persona": "🧑‍💼 Non-Tech",
+        "name": "Email to teacher",
+        "mode": "quick",
+        "original": "my kid got a C in math and I need to write an email to the teacher asking what we can do to help without sounding like THAT parent",
+        "enhanced": "How can I craft a non-confrontational email to the teacher about my child's C grade in math, expressing concern without coming across as overly critical or demanding?",
+        "score": 9.3,
+        "latency": 9.42,
+        "word_count": 27,
+        "dimensions": {
+          "intent_preservation": 8,
+          "no_tech_injection": 10,
+          "tone_match": 10,
+          "no_meta": 10,
+          "length_cal": 10
+        }
+      }
+    ]
+  }
+}
