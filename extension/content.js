@@ -3,8 +3,8 @@
 // Streaming enhancement. History. Token auto-refresh. Multi-language voice.
 
 // Default API URL — overridden by chrome.storage.local['api_url'] (set via popup)
-// const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
-const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
+const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
+// const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
 let API_URL = DEFAULT_API_URL;
 
 // Load configured API URL from storage on startup

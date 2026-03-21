@@ -2,8 +2,8 @@
 // Prompt Memory — Extension Popup (Google OAuth Only)
 // ════════════════════════════════════════════════════════════════
 
-// const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
-const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
+const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
+// const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
 let API_URL = DEFAULT_API_URL;
 
 const loginSection = document.getElementById("login-section");
