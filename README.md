@@ -127,6 +127,10 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 JWT_SECRET=your_secure_random_secret
 
+# ── Private builder dashboard ──
+# Generate a long random value. Never commit it or put it in a URL.
+BUILDER_DASHBOARD_KEY=your_long_random_dashboard_key
+
 # ── Email (Optional) ──
 SENDGRID_API_KEY=your_sendgrid_api_key
 ```
