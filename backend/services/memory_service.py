@@ -195,7 +195,7 @@ class MemoryService:
         return recent_prompts
 
     @staticmethod
-    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep"):
+    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep", platform: str = None, provider: str = None, model: str = None, byok: bool = False):
         """Logs prompt to Mongo or Memory."""
         log_entry = {
             "user_id": user_id,
@@ -207,6 +207,13 @@ class MemoryService:
             "source": source,
             "mode": mode,
         }
+        if platform:
+            log_entry["platform"] = platform
+        if provider:
+            log_entry["provider"] = provider
+        if model:
+            log_entry["model"] = model
+        log_entry["byok"] = bool(byok)
 
         # Count the enhancement before attempting the write, and count it on
         # exactly the shape check_daily_limit() counts in Mongo (an active log

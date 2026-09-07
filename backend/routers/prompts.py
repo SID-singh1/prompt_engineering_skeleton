@@ -12,6 +12,7 @@ from ..core.security import verify_jwt
 from ..core.ratelimit import enhance_limit, voice_limit
 from ..core import usage
 from ..core.database import MongoDB, in_memory_users, in_memory_saved_prompts
+from ..services.analytics_service import AnalyticsService
 from ..services.memory_service import MemoryService
 from ..services.llm_service import get_groq_client, mark_groq_rate_limited
 from ..services import providers
@@ -561,7 +562,8 @@ def track_prompt(request: TrackRequest, user_id: str = Depends(verify_jwt)):
     MemoryService.log_prompt(
         user_id=request.user_id,
         original=request.prompt,
-        source="passive_tracker"
+        source="passive_tracker",
+        platform=request.platform,
     )
 
     # No vector is written here, deliberately.
@@ -649,6 +651,10 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
             user_model=request.byok_model,
         )
     except providers.NoProviderAvailable as e:
+        AnalyticsService.record_failure(
+            operation="enhance", reason="provider_unavailable",
+            platform=request.platform, mode=request.mode, user_id=user_id,
+        )
         print(f"❌ All providers failed: {e}")
         return JSONResponse(
             status_code=429 if e.all_rate_limited else 503,
@@ -672,6 +678,10 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
         score=max_similarity,
         latency=process_time,
         mode=ctx["mode"],
+        platform=request.platform,
+        provider=result.get("provider"),
+        model=result.get("model"),
+        byok=result.get("byok", False),
     )
 
     # ── MEMORIZE (if unique) ──
@@ -767,6 +777,10 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
                     failure = event["error"]
                     yield f"data: {json.dumps({'error': failure})}\n\n"
         except providers.NoProviderAvailable as e:
+            AnalyticsService.record_failure(
+                operation="enhance_stream", reason="provider_unavailable",
+                platform=request.platform, mode=request.mode, user_id=user_id,
+            )
             failure = e.user_message
             print(f"❌ All providers failed (stream): {e}")
             yield "data: " + json.dumps({
@@ -791,6 +805,10 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
                 score=max_similarity,
                 latency=process_time,
                 mode=ctx["mode"],
+                platform=request.platform,
+                provider=meta.get("provider"),
+                model=meta.get("model"),
+                byok=meta.get("byok", False),
             )
             if max_similarity < 0.90:
                 MemoryService.memorize_strategy(user_id, request.prompt, enhanced_prompt)
