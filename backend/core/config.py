@@ -67,6 +67,11 @@ class Settings:
     
     # Production backend URL (used by extension config)
     PROD_URL = os.getenv("PROD_URL", "https://siddhm11-prompt-engine.hf.space")
+
+    # Private builder dashboard. The dashboard page is intentionally not linked
+    # from the public site; the API is disabled until this high-entropy secret
+    # is configured and never accepts it in a query string.
+    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "").strip()
     
     # Constants
     EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"

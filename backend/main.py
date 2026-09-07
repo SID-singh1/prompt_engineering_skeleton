@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from .core.config import settings
 from .core.database import MongoDB, QdrantDB
-from .routers import auth, users, prompts, saved_prompts, feedback
+from .routers import auth, users, prompts, saved_prompts, feedback, builder_dashboard
 
 app = FastAPI(
     title="Context-Aware Prompt Engine",
@@ -198,6 +198,7 @@ app.include_router(users.router)
 app.include_router(prompts.router)
 app.include_router(saved_prompts.router)
 app.include_router(feedback.router)
+app.include_router(builder_dashboard.router)
 
 if __name__ == "__main__":
     import uvicorn

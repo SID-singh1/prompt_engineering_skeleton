@@ -14,6 +14,7 @@ class MongoDB:
     prompts_col = None
     saved_prompts_col = None
     feedback_col = None
+    analytics_col = None
     
     @classmethod
     def connect(cls):
@@ -28,12 +29,15 @@ class MongoDB:
             cls.prompts_col = cls.db["prompt_logs"]
             cls.saved_prompts_col = cls.db["saved_prompts"]
             cls.feedback_col = cls.db["user_feedback"]
+            cls.analytics_col = cls.db["analytics_events"]
 
             # Indexes
             cls.users_col.create_index("user_id", unique=True)
             cls.prompts_col.create_index([("user_id", 1), ("timestamp", -1)])
             cls.saved_prompts_col.create_index("user_id")
             cls.feedback_col.create_index([("user_id", 1), ("timestamp", -1)])
+            cls.analytics_col.create_index([("timestamp", -1)])
+            cls.analytics_col.create_index([("event", 1), ("timestamp", -1)])
 
             # get_user_feedback_summary() reads db["prompt_feedback"], which is a
             # DIFFERENT collection from feedback_col (db["user_feedback"]) above.
@@ -63,6 +67,7 @@ class MongoDB:
             cls.prompts_col = None
             cls.saved_prompts_col = None
             cls.feedback_col = None
+            cls.analytics_col = None
 
     @staticmethod
     def _ensure_ttl(col, field: str, seconds: int):
@@ -276,3 +281,4 @@ class QdrantDB:
 in_memory_users = {}
 in_memory_prompt_logs = []
 in_memory_saved_prompts = {}  # {prompt_id: {doc}}
+in_memory_analytics_events = []
