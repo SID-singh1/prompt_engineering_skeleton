@@ -130,6 +130,12 @@ JWT_SECRET=your_secure_random_secret
 # ── Private builder dashboard ──
 # Generate a long random value. Never commit it or put it in a URL.
 BUILDER_DASHBOARD_KEY=your_long_random_dashboard_key
+# Add this only when builder.html is hosted on a DIFFERENT origin from the API.
+# Same-origin hosting needs no CORS entry.
+# BUILDER_DASHBOARD_ORIGINS=https://your-private-dashboard.example
+# Limits a dashboard request to its newest N logs; failure events expire after 90 days.
+# DASHBOARD_MAX_LOGS=50000
+# ANALYTICS_EVENT_TTL_DAYS=90
 
 # ── Email (Optional) ──
 SENDGRID_API_KEY=your_sendgrid_api_key
@@ -271,7 +277,7 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 - [x] Diff preview with accept/dismiss
 - [x] Thumbs up/down feedback loop
 - [ ] 🎙️ Voice-to-Prompt (prototype → full release)
-- [ ] Prompt analytics dashboard
+- [x] Private builder analytics dashboard
 - [ ] Team / shared prompt libraries
 - [ ] Firefox & Edge extension support
 
