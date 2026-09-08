@@ -445,6 +445,15 @@ def test_lazy_created_voice_overlay_inherits_the_current_theme():
     assert "data-pm-theme" in body and "pm-panel" in body
 
 
+def test_builder_dashboard_never_persists_its_bearer_key_or_accepts_any_https_api():
+    """A dashboard URL must not turn its key header into an exfiltration channel."""
+    dashboard_js = (ROOT / "website" / "builder.js").read_text(encoding="utf-8")
+    assert "LOCAL_API_URLS" in dashboard_js
+    assert "url.origin === DEFAULT_API_URL" in dashboard_js
+    assert "sessionStorage" not in dashboard_js
+    assert "dashboard-notice" in dashboard_js
+
+
 def test_toasts_are_placed_above_the_card_not_over_it():
     """
     Anchoring to the card alone breaks the empty-chat layout, where the card

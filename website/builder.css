@@ -42,6 +42,7 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 .banner { margin: 0 0 20px; padding: 13px 16px; border-radius: 10px; }
 .error { color: #ffb7c0; }
 .banner.error { border: 1px solid rgba(242,125,138,.3); background: rgba(242,125,138,.1); }
+.banner.notice { color: #ffe0a9; border: 1px solid rgba(243,181,98,.3); background: rgba(243,181,98,.1); }
 .metric-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
 .metric { min-height: 116px; padding: 18px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); }
 .metric-label { color: var(--muted); font-size: 11px; font-weight: 700; }

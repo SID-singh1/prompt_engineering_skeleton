@@ -1,13 +1,18 @@
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";
 const params = new URLSearchParams(window.location.search);
+const LOCAL_API_URLS = new Set([
+  "http://localhost:8000",
+  "http://127.0.0.1:8000",
+]);
 
 function apiOrigin() {
   const candidate = params.get("api");
   if (!candidate) return DEFAULT_API_URL;
   try {
     const url = new URL(candidate);
-    const local = ["localhost", "127.0.0.1"].includes(url.hostname);
-    if (url.protocol === "https:" || (local && url.protocol === "http:")) {
+    // The dashboard key is sent in a request header. Never let a query-string
+    // parameter redirect that header to an arbitrary HTTPS endpoint.
+    if (url.origin === DEFAULT_API_URL || LOCAL_API_URLS.has(url.origin)) {
       return url.origin;
     }
   } catch { /* use the production origin */ }
@@ -15,7 +20,9 @@ function apiOrigin() {
 }
 
 const API_URL = apiOrigin();
-const state = { key: sessionStorage.getItem("pm_builder_key") || "", days: 7 };
+// Keep the key in memory only. Reloading the page deliberately requires the
+// builder to enter it again rather than leaving a bearer secret in web storage.
+const state = { key: "", days: 7 };
 const $ = (id) => document.getElementById(id);
 
 function number(value) { return new Intl.NumberFormat().format(value || 0); }
@@ -26,7 +33,6 @@ function escapeHtml(value) {
 function setAuthError(message) { $("auth-error").textContent = message || ""; }
 function showDashboard() { $("auth-gate").classList.add("hidden"); $("dashboard").classList.remove("hidden"); }
 function lockDashboard() {
-  sessionStorage.removeItem("pm_builder_key");
   state.key = "";
   $("dashboard").classList.add("hidden");
   $("auth-gate").classList.remove("hidden");
@@ -36,6 +42,7 @@ function lockDashboard() {
 async function loadDashboard() {
   $("refresh").disabled = true;
   $("dashboard-error").classList.add("hidden");
+  $("dashboard-notice").classList.add("hidden");
   try {
     const response = await fetch(`${API_URL}/builder/dashboard/summary?days=${state.days}`, {
       headers: { "X-Builder-Key": state.key },
@@ -58,6 +65,10 @@ async function loadDashboard() {
 
 function render(data) {
   const s = data.summary || {};
+  if (data.range?.logs_truncated) {
+    $("dashboard-notice").textContent = `This view is based on the newest ${number(data.range.max_logs)} logs in the selected window. Increase DASHBOARD_MAX_LOGS or use a narrower window for a complete view.`;
+    $("dashboard-notice").classList.remove("hidden");
+  }
   $("updated").textContent = `Updated ${new Date(data.generated_at).toLocaleString()} · last ${data.range?.days || state.days} days`;
   $("metrics").innerHTML = [
     ["Enhancements", number(s.enhancements), `${number(s.byok_enhancements)} via BYOK`],
@@ -130,12 +141,9 @@ $("auth-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   state.key = $("builder-key").value.trim();
   if (!state.key) return;
-  sessionStorage.setItem("pm_builder_key", state.key);
   showDashboard();
   await loadDashboard();
 });
 $("days").addEventListener("change", () => { state.days = Number($("days").value); loadDashboard(); });
 $("refresh").addEventListener("click", loadDashboard);
 $("lock").addEventListener("click", lockDashboard);
-
-if (state.key) { showDashboard(); loadDashboard(); }
