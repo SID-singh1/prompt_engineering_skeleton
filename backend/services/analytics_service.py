@@ -21,6 +21,7 @@ from ..core.database import (
     in_memory_saved_prompts,
     in_memory_users,
 )
+from ..core.config import settings
 
 
 def _now() -> datetime:
@@ -78,10 +79,15 @@ class AnalyticsService:
     def summary(days: int = 7) -> dict:
         days = max(1, min(int(days), 90))
         since = _now() - timedelta(days=days)
+        max_logs = max(1, settings.DASHBOARD_MAX_LOGS)
 
         logs = []
         if MongoDB.prompts_col is not None:
             projection = {
+                # Required for active-user counting. This was accidentally
+                # omitted, so Mongo-backed deployments reported zero active
+                # users while the in-memory test path appeared correct.
+                "user_id": 1,
                 "timestamp": 1,
                 "source": 1,
                 "latency": 1,
@@ -95,11 +101,18 @@ class AnalyticsService:
             try:
                 logs = list(MongoDB.prompts_col.find(
                     {"timestamp": {"$gte": since}}, projection
-                ))
+                ).sort("timestamp", -1).limit(max_logs + 1))
             except Exception:
                 logs = []
         else:
-            logs = [x for x in in_memory_prompt_logs if _in_range(x.get("timestamp"), since)]
+            logs = sorted(
+                (x for x in in_memory_prompt_logs if _in_range(x.get("timestamp"), since)),
+                key=lambda x: x.get("timestamp"),
+                reverse=True,
+            )[:max_logs + 1]
+
+        logs_truncated = len(logs) > max_logs
+        logs = logs[:max_logs]
 
         active = [
             x for x in logs
@@ -187,7 +200,12 @@ class AnalyticsService:
 
         return {
             "generated_at": _now().isoformat(),
-            "range": {"days": days, "since": since.isoformat()},
+            "range": {
+                "days": days,
+                "since": since.isoformat(),
+                "logs_truncated": logs_truncated,
+                "max_logs": max_logs,
+            },
             "summary": {
                 "total_users": total_users,
                 "active_users": len(users),

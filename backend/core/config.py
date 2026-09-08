@@ -64,6 +64,14 @@ class Settings:
     # CORS — comma-separated origins allowed in production
     # In development, all origins ("*") are allowed automatically
     FRONTEND_ORIGINS = os.getenv("FRONTEND_ORIGINS", "").split(",") if os.getenv("FRONTEND_ORIGINS") else []
+
+    # Origins that may host the private builder dashboard when it is deployed
+    # separately from the API. These are added to production CORS, but never
+    # grant access without the independent builder dashboard key.
+    BUILDER_DASHBOARD_ORIGINS = (
+        os.getenv("BUILDER_DASHBOARD_ORIGINS", "").split(",")
+        if os.getenv("BUILDER_DASHBOARD_ORIGINS") else []
+    )
     
     # Production backend URL (used by extension config)
     PROD_URL = os.getenv("PROD_URL", "https://siddhm11-prompt-engine.hf.space")
@@ -72,6 +80,15 @@ class Settings:
     # from the public site; the API is disabled until this high-entropy secret
     # is configured and never accepts it in a query string.
     BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "").strip()
+
+    # Dashboard queries are intentionally bounded. A private page must not be
+    # able to read an unbounded prompt-log history into one application worker.
+    DASHBOARD_MAX_LOGS = int(os.getenv("DASHBOARD_MAX_LOGS", "50000"))
+
+    # Failure events contain metadata only and are useful for operational
+    # review, not permanent archival. Set 0 only with a deliberate retention
+    # decision.
+    ANALYTICS_EVENT_TTL_DAYS = int(os.getenv("ANALYTICS_EVENT_TTL_DAYS", "90"))
     
     # Constants
     EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
@@ -196,7 +213,12 @@ class Settings:
         """Returns CORS origins based on environment."""
         if not self.is_production:
             return ["*"]
-        return [o.strip() for o in self.FRONTEND_ORIGINS if o.strip()]
+        origins = []
+        for raw in [*self.FRONTEND_ORIGINS, *self.BUILDER_DASHBOARD_ORIGINS]:
+            origin = raw.strip()
+            if origin and origin not in origins:
+                origins.append(origin)
+        return origins
 
     @property
     def cors_allow_credentials(self) -> bool:

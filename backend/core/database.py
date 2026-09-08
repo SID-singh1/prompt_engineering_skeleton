@@ -34,6 +34,9 @@ class MongoDB:
             # Indexes
             cls.users_col.create_index("user_id", unique=True)
             cls.prompts_col.create_index([("user_id", 1), ("timestamp", -1)])
+            # The private dashboard queries all users inside a time window, so
+            # the existing user_id-first index cannot serve it efficiently.
+            cls.prompts_col.create_index([("timestamp", -1)])
             cls.saved_prompts_col.create_index("user_id")
             cls.feedback_col.create_index([("user_id", 1), ("timestamp", -1)])
             cls.analytics_col.create_index([("timestamp", -1)])
@@ -44,6 +47,7 @@ class MongoDB:
             # It was never indexed, so every /enhance ran an unindexed scan plus
             # an in-memory sort against it.
             cls.db["prompt_feedback"].create_index([("user_id", 1), ("timestamp", -1)])
+            cls.db["prompt_feedback"].create_index([("timestamp", -1)])
 
             # Retention. Atlas M0 is 512 MB and nothing ever deleted a prompt
             # log, so the cluster filled and then failed writes silently.
@@ -52,6 +56,13 @@ class MongoDB:
                 _ttl = settings.PROMPT_LOG_TTL_DAYS * 86400
                 cls._ensure_ttl(cls.prompts_col, "timestamp", _ttl)
                 cls._ensure_ttl(cls.db["prompt_feedback"], "timestamp", _ttl)
+
+            if settings.ANALYTICS_EVENT_TTL_DAYS > 0:
+                cls._ensure_ttl(
+                    cls.analytics_col,
+                    "timestamp",
+                    settings.ANALYTICS_EVENT_TTL_DAYS * 86400,
+                )
 
             print("✅ MongoDB Indexes Verified")
             print("✅ MongoDB Connected")

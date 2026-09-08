@@ -51,3 +51,10 @@ def test_production_mode_actually_narrows_cors(monkeypatch):
     monkeypatch.setattr(settings, "FRONTEND_ORIGINS", ["https://chatgpt.com"])
     assert settings.cors_origins == ["https://chatgpt.com"]
     assert "*" not in settings.cors_origins
+
+
+def test_private_dashboard_origin_is_added_without_opening_production_cors(monkeypatch):
+    monkeypatch.setattr(settings, "ENVIRONMENT", "production")
+    monkeypatch.setattr(settings, "FRONTEND_ORIGINS", ["https://chatgpt.com"])
+    monkeypatch.setattr(settings, "BUILDER_DASHBOARD_ORIGINS", ["https://builder.example"])
+    assert settings.cors_origins == ["https://chatgpt.com", "https://builder.example"]
