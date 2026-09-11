@@ -682,6 +682,8 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
         provider=result.get("provider"),
         model=result.get("model"),
         byok=result.get("byok", False),
+        input_method="voice" if request.input_method == "voice" else "text",
+        input_duration_seconds=request.input_duration_seconds,
     )
 
     # ── MEMORIZE (if unique) ──
@@ -809,6 +811,8 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
                 provider=meta.get("provider"),
                 model=meta.get("model"),
                 byok=meta.get("byok", False),
+                input_method="voice" if request.input_method == "voice" else "text",
+                input_duration_seconds=request.input_duration_seconds,
             )
             if max_similarity < 0.90:
                 MemoryService.memorize_strategy(user_id, request.prompt, enhanced_prompt)
@@ -912,6 +916,152 @@ def enhance_usage(byok: bool = False, user_id: str = Depends(verify_jwt)):
     return {"count": count, "limit": limit, "tier": tier, "degraded": degraded}
 
 
+def _voice_error(*, status_code: int, reason: str, detail: str, user_id: str, platform: str):
+    """Return a safe client error and record only its operational metadata."""
+    AnalyticsService.record_failure(
+        operation="voice_transcribe", reason=reason,
+        platform=platform, user_id=user_id,
+    )
+    return JSONResponse(status_code=status_code, content={"error": reason, "detail": detail})
+
+
+def _transcription_parts(transcription) -> tuple[str, str]:
+    """Extract and normalize the two safe fields returned by Whisper."""
+    if hasattr(transcription, "text"):
+        text = transcription.text or ""
+    elif isinstance(transcription, dict):
+        text = transcription.get("text", "")
+    else:
+        text = str(transcription)
+
+    if hasattr(transcription, "language"):
+        language = transcription.language or "unknown"
+    elif isinstance(transcription, dict):
+        language = transcription.get("language", "unknown")
+    else:
+        language = "unknown"
+
+    # Whisper can call Hindi speech Urdu. Preserve the existing product choice
+    # while refusing unsupported/hallucinated labels as a source-language hint.
+    if language == "ur":
+        language = "hi"
+    elif language not in LANGUAGE_NAMES:
+        language = "unknown"
+    return text.strip(), language
+
+
+def _transcribe_voice_audio(
+    *,
+    audio: UploadFile,
+    platform: str,
+    byok_provider: str,
+    byok_key: str,
+    recording_duration_seconds: float,
+    user_id: str,
+):
+    """Transcribe transient audio without storing audio or transcript content."""
+    content_type = (audio.content_type or "").lower()
+    if content_type and not (content_type.startswith("audio/") or content_type == "application/octet-stream"):
+        return None, _voice_error(
+            status_code=415, reason="unsupported_audio_format",
+            detail="Use a supported audio recording format.", user_id=user_id, platform=platform,
+        )
+
+    audio_bytes = audio.file.read()
+    if len(audio_bytes) < 100:
+        return None, _voice_error(
+            status_code=422, reason="audio_too_short",
+            detail="Audio was too short. Speak for at least a second and try again.",
+            user_id=user_id, platform=platform,
+        )
+    if len(audio_bytes) > settings.MAX_AUDIO_BYTES:
+        return None, _voice_error(
+            status_code=413, reason="audio_too_large",
+            detail="Recording is too large. Keep it shorter and try again.",
+            user_id=user_id, platform=platform,
+        )
+
+    whisper_key = byok_key if (byok_provider or "").lower() == "groq" else None
+    filename = audio.filename or "recording.webm"
+    started = time.time()
+
+    def request_transcription():
+        client = get_groq_client(whisper_key)
+        audio_file = io.BytesIO(audio_bytes)
+        audio_file.name = filename
+        return client.audio.transcriptions.create(
+            file=(audio_file.name, audio_file),
+            model="whisper-large-v3-turbo",
+            response_format="verbose_json",
+        )
+
+    try:
+        transcription = request_transcription()
+    except Exception as error:
+        # A shared Groq key can rotate once. A BYOK key is intentionally not
+        # rotated because it belongs to exactly one user.
+        if whisper_key is None and ("429" in str(error) or "rate" in str(error).lower()):
+            mark_groq_rate_limited()
+            try:
+                transcription = request_transcription()
+            except Exception as retry_error:
+                is_rate_limited = "429" in str(retry_error) or "rate" in str(retry_error).lower()
+                return None, _voice_error(
+                    status_code=429 if is_rate_limited else 503,
+                    reason="transcription_rate_limited" if is_rate_limited else "transcription_unavailable",
+                    detail=("Voice transcription is busy. Please try again shortly."
+                            if is_rate_limited else
+                            "Voice transcription is temporarily unavailable. Please try again."),
+                    user_id=user_id, platform=platform,
+                )
+        else:
+            return None, _voice_error(
+                status_code=503, reason="transcription_unavailable",
+                detail="Voice transcription is temporarily unavailable. Please try again.",
+                user_id=user_id, platform=platform,
+            )
+
+    text, language = _transcription_parts(transcription)
+    if len(text) < 3:
+        return None, _voice_error(
+            status_code=422, reason="transcription_empty",
+            detail="Could not understand the recording. Try speaking clearly.",
+            user_id=user_id, platform=platform,
+        )
+
+    transcription_seconds = round(time.time() - started, 2)
+    AnalyticsService.record_voice_transcription(
+        user_id=user_id,
+        platform=platform,
+        duration_seconds=recording_duration_seconds,
+        transcription_seconds=transcription_seconds,
+        detected_language=language,
+    )
+    return {
+        "transcription": text,
+        "detected_language": language,
+        "transcription_time": transcription_seconds,
+    }, None
+
+
+@router.post("/voice-transcribe")
+def voice_transcribe(
+    audio: UploadFile = File(...),
+    platform: str = Form("unknown"),
+    recording_duration_seconds: float = Form(0),
+    byok_provider: str = Form(""),
+    byok_key: str = Form(""),
+    user_id: str = Depends(voice_limit),
+):
+    """Return an editable Whisper transcript. Audio is used only for this request."""
+    result, error = _transcribe_voice_audio(
+        audio=audio, platform=platform, byok_provider=byok_provider,
+        byok_key=byok_key, recording_duration_seconds=recording_duration_seconds,
+        user_id=user_id,
+    )
+    return error or result
+
+
 @router.post("/voice-enhance")
 def voice_enhance(
     audio: UploadFile = File(...),
@@ -919,154 +1069,54 @@ def voice_enhance(
     platform: str = Form("unknown"),
     conversation_context: str = Form(""),
     selected_prompt_ids: str = Form("[]"),
+    recording_duration_seconds: float = Form(0),
     byok_provider: str = Form(""),
     byok_key: str = Form(""),
     byok_model: str = Form(""),
     user_id: str = Depends(voice_limit),
 ):
-    """
-    Voice-to-Prompt pipeline:
-      1. Transcribe audio with Groq Whisper (whisper-large-v3-turbo) — auto-detects language
-      2. Enhance the transcript through the provider fallback chain
-      3. Return both transcription and enhanced prompt
-    """
-    print(f"\n🎤 /voice-enhance — user={user_id[:8]}... mode={mode} platform={platform}")
-    print(f"   Audio file: {audio.filename} ({audio.content_type})")
-    start_time = time.time()
+    """Legacy one-shot voice endpoint, retained for existing extension builds."""
+    started = time.time()
+    transcription, error = _transcribe_voice_audio(
+        audio=audio, platform=platform, byok_provider=byok_provider,
+        byok_key=byok_key, recording_duration_seconds=recording_duration_seconds,
+        user_id=user_id,
+    )
+    if error:
+        return error
 
-    # ── 1. READ AUDIO ──
-    # Declared `async def` while calling a blocking Whisper upload and then the
-    # fully-synchronous enhance_prompt() inline, which pinned the single event
-    # loop for the length of both — every other request on the Space, including
-    # health checks, queued behind one voice transcription. Declared `def`, so
-    # FastAPI runs it in the threadpool where blocking work belongs; the file
-    # is read off the underlying handle since there is no await here now.
-    audio_bytes = audio.file.read()
-    if len(audio_bytes) < 100:
-        return {"error": "Audio too short. Please speak for at least a second."}
-
-    # ── 2. TRANSCRIBE WITH WHISPER (auto-detect language) ──
-    transcribed_text = ""
-    detected_language = "unknown"
-    try:
-        whisper_key = byok_key if (byok_provider or "").lower() == "groq" else None
-        client = get_groq_client(whisper_key)
-        audio_file = io.BytesIO(audio_bytes)
-        audio_file.name = audio.filename or "audio.webm"
-
-        transcription = client.audio.transcriptions.create(
-            file=(audio_file.name, audio_file),
-            model="whisper-large-v3-turbo",
-            response_format="verbose_json",
-        )
-        
-        # Extract text and detected language
-        if hasattr(transcription, 'text'):
-            transcribed_text = transcription.text.strip()
-        elif isinstance(transcription, dict):
-            transcribed_text = transcription.get("text", "").strip()
-        else:
-            transcribed_text = str(transcription).strip()
-        
-        if hasattr(transcription, 'language'):
-            detected_language = transcription.language
-        elif isinstance(transcription, dict):
-            detected_language = transcription.get("language", "unknown")
-        # Fix: Whisper confuses Hindi/Urdu — they are the same spoken language
-        if detected_language == "ur":
-            print(f"   🔄 Language corrected: Urdu → Hindi (same spoken language)")
-            detected_language = "hi"
-        # Fix: Ignore rare Whisper hallucinations for short clips
-        elif detected_language not in LANGUAGE_NAMES and detected_language != "unknown":
-            print(f"   ⚠️ Ignoring auto-detected language '{detected_language}' (not in supported list). Falling back to text detection.")
-            detected_language = "unknown"
-
-    except Exception as e:
-        err = str(e)
-        if "429" in err or "rate" in err.lower():
-            print(f"🔄 Whisper rate limit hit, rotating API key...")
-            mark_groq_rate_limited()
-            try:
-                client = get_groq_client(whisper_key)
-                audio_file = io.BytesIO(audio_bytes)
-                audio_file.name = audio.filename or "audio.webm"
-                transcription = client.audio.transcriptions.create(
-                    file=(audio_file.name, audio_file),
-                    model="whisper-large-v3-turbo",
-                    response_format="verbose_json",
-                )
-                if hasattr(transcription, 'text'):
-                    transcribed_text = transcription.text.strip()
-                elif isinstance(transcription, dict):
-                    transcribed_text = transcription.get("text", "").strip()
-                else:
-                    transcribed_text = str(transcription).strip()
-                if hasattr(transcription, 'language'):
-                    detected_language = transcription.language
-                elif isinstance(transcription, dict):
-                    detected_language = transcription.get("language", "unknown")
-                if detected_language == "ur":
-                    print(f"   🔄 Language corrected: Urdu → Hindi (retry path)")
-                    detected_language = "hi"
-                elif detected_language not in LANGUAGE_NAMES and detected_language != "unknown":
-                    print(f"   ⚠️ Ignoring auto-detected language '{detected_language}' (not in supported list). Falling back to text detection.")
-                    detected_language = "unknown"
-            except Exception as retry_err:
-                print(f"❌ Whisper retry failed: {retry_err}")
-                return {"error": f"Transcription failed: {str(retry_err)}"}
-        else:
-            print(f"❌ Whisper transcription error: {e}")
-            return {"error": f"Transcription failed: {str(e)}"}
-
-    if len(transcribed_text) < 3:
-        return {"error": "Could not understand audio. Try speaking clearly."}
-
-    transcription_time = round(time.time() - start_time, 2)
-
-    # ── 3. ENHANCE THE TRANSCRIPT ──
     try:
         ctx_list = json.loads(conversation_context) if conversation_context else []
     except Exception:
         ctx_list = []
     try:
-        sel_ids = json.loads(selected_prompt_ids) if selected_prompt_ids else []
+        selected_ids = json.loads(selected_prompt_ids) if selected_prompt_ids else []
     except Exception:
-        sel_ids = []
-
-    print(f"   📝 Transcript: \"{transcribed_text[:100]}...\"")
-    print(f"   🌐 Detected language: {detected_language}")
+        selected_ids = []
 
     enhance_req = EnhanceRequest(
-        prompt=transcribed_text,
-        mode=mode,
-        platform=platform,
-        conversation_context=ctx_list if ctx_list else None,
-        selected_prompt_ids=sel_ids if sel_ids else None,
-        source_language=detected_language if detected_language != "unknown" else None,
-        byok_provider=byok_provider or None,
-        byok_key=byok_key or None,
-        byok_model=byok_model or None,
+        prompt=transcription["transcription"], mode=mode, platform=platform,
+        conversation_context=ctx_list or None, selected_prompt_ids=selected_ids or None,
+        source_language=(transcription["detected_language"]
+                         if transcription["detected_language"] != "unknown" else None),
+        byok_provider=byok_provider or None, byok_key=byok_key or None,
+        byok_model=byok_model or None, input_method="voice",
+        input_duration_seconds=recording_duration_seconds,
     )
-    enhance_result = enhance_prompt(enhance_req, user_id)
-
-    # enhance_prompt returns a JSONResponse when every provider fails or the
-    # daily limit is hit. Hand that straight back rather than .get()-ing a
-    # Response object and reporting the raw transcript as an "enhancement".
-    if isinstance(enhance_result, JSONResponse):
-        return enhance_result
-
-    total_time = round(time.time() - start_time, 2)
+    enhanced = enhance_prompt(enhance_req, user_id)
+    if isinstance(enhanced, JSONResponse):
+        return enhanced
 
     return {
-        "transcription": transcribed_text,
-        "enhanced": enhance_result.get("enhanced", transcribed_text),
-        "original": transcribed_text,
+        "transcription": transcription["transcription"],
+        "enhanced": enhanced.get("enhanced", transcription["transcription"]),
+        "original": transcription["transcription"],
         "mode": mode,
-        "detected_language": detected_language,
-        "transcription_time": transcription_time,
-        "total_time": total_time,
-        "context_used": enhance_result.get("context_used"),
-        "log_id": enhance_result.get("log_id", ""),
+        "detected_language": transcription["detected_language"],
+        "transcription_time": transcription["transcription_time"],
+        "total_time": round(time.time() - started, 2),
+        "context_used": enhanced.get("context_used"),
+        "log_id": enhanced.get("log_id", ""),
     }
 
 

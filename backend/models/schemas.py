@@ -47,6 +47,12 @@ class EnhanceRequest(BaseModel):
     selected_prompt_ids: Optional[List[str]] = None
     source_language: Optional[str] = None  # ISO code from Whisper (e.g., "en", "hi")
 
+    # Input metadata is deliberately separate from the prompt body. It lets the
+    # private builder dashboard measure voice reliability without retaining an
+    # audio file or exposing transcript content.
+    input_method: Optional[str] = "text"  # "text" | "voice"
+    input_duration_seconds: Optional[float] = None
+
     # BYOK — the user's own provider key, forwarded per request and never
     # persisted server-side. Sending it here (rather than storing it) means a
     # database breach cannot leak anyone's provider credentials.

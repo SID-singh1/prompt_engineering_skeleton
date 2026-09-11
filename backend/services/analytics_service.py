@@ -76,6 +76,34 @@ class AnalyticsService:
             in_memory_analytics_events.append(doc)
 
     @staticmethod
+    def record_voice_transcription(
+        *,
+        user_id: Optional[str],
+        platform: Optional[str],
+        duration_seconds: Optional[float],
+        transcription_seconds: float,
+        detected_language: Optional[str],
+    ) -> None:
+        """Record voice-operation metadata only; audio and transcript stay out."""
+        doc = {
+            "event": "voice_transcribed",
+            "operation": "voice_transcribe",
+            "platform": (platform or "unknown")[:80],
+            "user_hash": _user_hash(user_id),
+            "duration_seconds": round(max(0.0, float(duration_seconds or 0)), 3),
+            "transcription_seconds": round(max(0.0, float(transcription_seconds or 0)), 3),
+            "language": (detected_language or "unknown")[:20],
+            "timestamp": _now(),
+        }
+        try:
+            if MongoDB.analytics_col is not None:
+                MongoDB.analytics_col.insert_one(doc)
+            else:
+                in_memory_analytics_events.append(doc)
+        except Exception:
+            in_memory_analytics_events.append(doc)
+
+    @staticmethod
     def summary(days: int = 7) -> dict:
         days = max(1, min(int(days), 90))
         since = _now() - timedelta(days=days)
@@ -96,6 +124,7 @@ class AnalyticsService:
                 "provider": 1,
                 "model": 1,
                 "byok": 1,
+                "input_method": 1,
                 "enhanced": 1,
             }
             try:
@@ -126,6 +155,7 @@ class AnalyticsService:
         platforms = Counter()
         providers = Counter()
         models = Counter()
+        input_methods = Counter()
         byok_count = 0
         users = set()
 
@@ -136,6 +166,7 @@ class AnalyticsService:
             platforms[item.get("platform") or "unknown"] += 1
             providers[item.get("provider") or "unknown"] += 1
             models[item.get("model") or "unknown"] += 1
+            input_methods[item.get("input_method") or "text"] += 1
             byok_count += bool(item.get("byok"))
             if item.get("user_id"):
                 users.add(item["user_id"])
@@ -167,6 +198,28 @@ class AnalyticsService:
             day = item["timestamp"].date().isoformat() if isinstance(item.get("timestamp"), datetime) else "unknown"
             daily.setdefault(day, {"enhancements": 0, "passive_events": 0})
             daily[day]["failures"] = daily[day].get("failures", 0) + 1
+
+        voice_transcriptions = 0
+        voice_transcription_seconds = []
+        if MongoDB.analytics_col is not None:
+            try:
+                voice_events = MongoDB.analytics_col.find(
+                    {"event": "voice_transcribed", "timestamp": {"$gte": since}},
+                    {"transcription_seconds": 1},
+                )
+                for item in voice_events:
+                    voice_transcriptions += 1
+                    if isinstance(item.get("transcription_seconds"), (int, float)):
+                        voice_transcription_seconds.append(float(item["transcription_seconds"]))
+            except Exception:
+                pass
+        else:
+            for item in in_memory_analytics_events:
+                if item.get("event") != "voice_transcribed" or not _in_range(item.get("timestamp"), since):
+                    continue
+                voice_transcriptions += 1
+                if isinstance(item.get("transcription_seconds"), (int, float)):
+                    voice_transcription_seconds.append(float(item["transcription_seconds"]))
 
         feedback_up = feedback_down = 0
         if MongoDB.db is not None:
@@ -217,6 +270,14 @@ class AnalyticsService:
                 "feedback_down": feedback_down,
                 "feedback_total": feedback_up + feedback_down,
                 "byok_enhancements": byok_count,
+                "voice_enhancements": input_methods.get("voice", 0),
+                "voice_transcriptions": voice_transcriptions,
+                "voice_transcription_failures": sum(
+                    1 for x in failures if x.get("operation") == "voice_transcribe"
+                ),
+                "avg_voice_transcription_seconds": round(
+                    sum(voice_transcription_seconds) / len(voice_transcription_seconds), 3
+                ) if voice_transcription_seconds else 0.0,
                 "avg_latency_seconds": round(sum(latencies) / len(latencies), 3) if latencies else 0.0,
                 "p50_latency_seconds": _percentile(latencies, 50),
                 "p95_latency_seconds": _percentile(latencies, 95),
@@ -230,6 +291,7 @@ class AnalyticsService:
                 "platforms": dict(platforms.most_common()),
                 "providers": dict(providers.most_common()),
                 "models": dict(models.most_common()),
+                "input_methods": dict(input_methods.most_common()),
             },
             "failures": [
                 {

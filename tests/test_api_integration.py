@@ -20,7 +20,8 @@ from backend.core.config import settings
 from backend.core.security import create_jwt_token
 from backend.core import usage, ratelimit
 from backend.core.database import (
-    in_memory_prompt_logs, in_memory_saved_prompts, in_memory_users,
+    in_memory_analytics_events, in_memory_prompt_logs, in_memory_saved_prompts,
+    in_memory_users,
 )
 from backend.routers import prompts
 
@@ -42,6 +43,7 @@ def _reset():
         usage._counts.clear()
         ratelimit._hits.clear()
         in_memory_prompt_logs.clear()
+        in_memory_analytics_events.clear()
         in_memory_saved_prompts.clear()
         in_memory_users.clear()
 
@@ -287,6 +289,126 @@ def test_voice_route_still_has_an_upper_bound(client):
     res = client.post("/voice-enhance", content=b"x" * (settings.MAX_AUDIO_BYTES + 1),
                       headers={"Content-Type": "application/octet-stream"})
     assert res.status_code == 413
+
+
+# ── voice transcription ──────────────────────────────────────────────────
+
+class _FakeWhisperTranscriptions:
+    def __init__(self, result):
+        self.result = result
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        return self.result
+
+
+class _FakeWhisperClient:
+    def __init__(self, result):
+        self.audio = type("Audio", (), {"transcriptions": _FakeWhisperTranscriptions(result)})()
+
+
+def test_voice_transcription_returns_an_editable_transcript_without_storing_audio_or_text(client, auth, monkeypatch):
+    whisper = _FakeWhisperClient({"text": "draft a launch plan", "language": "en"})
+    monkeypatch.setattr(prompts, "get_groq_client", lambda _key=None: whisper)
+
+    response = client.post(
+        "/voice-transcribe",
+        headers=auth,
+        data={"platform": "chatgpt.com", "recording_duration_seconds": "7.25"},
+        files={"audio": ("recording.webm", b"a" * 200, "audio/webm")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["transcription"] == "draft a launch plan"
+    assert response.json()["detected_language"] == "en"
+    assert whisper.audio.transcriptions.calls[0]["model"] == "whisper-large-v3-turbo"
+    assert in_memory_prompt_logs == [], "transcription alone must not create prompt history"
+    assert len(in_memory_analytics_events) == 1
+    event = in_memory_analytics_events[0]
+    assert event["event"] == "voice_transcribed"
+    assert event["duration_seconds"] == 7.25
+    assert "draft a launch plan" not in str(event)
+    assert b"a" * 20 not in str(event).encode()
+
+
+def test_voice_transcription_rejects_anonymous_uploads(client):
+    response = client.post(
+        "/voice-transcribe",
+        files={"audio": ("recording.webm", b"a" * 200, "audio/webm")},
+    )
+    assert response.status_code in (401, 403)
+
+
+def test_voice_transcription_returns_safe_errors_and_records_only_metadata(client, auth):
+    response = client.post(
+        "/voice-transcribe",
+        headers=auth,
+        files={"audio": ("recording.webm", b"too short", "audio/webm")},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"] == "audio_too_short"
+    assert len(in_memory_analytics_events) == 1
+    event = in_memory_analytics_events[0]
+    assert event["event"] == "failure"
+    assert event["reason"] == "audio_too_short"
+    assert "too short" not in str(event)
+
+
+def test_voice_transcription_hides_provider_errors_and_records_a_reason(client, auth, monkeypatch):
+    def unavailable(_key=None):
+        raise RuntimeError("provider token=should-never-reach-the-client")
+
+    monkeypatch.setattr(prompts, "get_groq_client", unavailable)
+    response = client.post(
+        "/voice-transcribe",
+        headers=auth,
+        files={"audio": ("recording.webm", b"a" * 200, "audio/webm")},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["error"] == "transcription_unavailable"
+    assert "token=" not in response.text
+    assert in_memory_analytics_events[0]["reason"] == "transcription_unavailable"
+
+
+def test_legacy_voice_enhance_stays_compatible_and_marks_voice_input(client, auth, monkeypatch):
+    whisper = _FakeWhisperClient({"text": "turn this into a plan", "language": "en"})
+    monkeypatch.setattr(prompts, "get_groq_client", lambda _key=None: whisper)
+    _stub_llm(monkeypatch)
+    monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+
+    response = client.post(
+        "/voice-enhance",
+        headers=auth,
+        data={"recording_duration_seconds": "6.5"},
+        files={"audio": ("recording.webm", b"a" * 200, "audio/webm")},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["transcription"] == "turn this into a plan"
+    assert in_memory_prompt_logs[0]["input_method"] == "voice"
+    assert in_memory_prompt_logs[0]["input_duration_seconds"] == 6.5
+
+
+def test_voice_input_metadata_is_attached_only_to_the_resulting_enhancement(client, auth, monkeypatch):
+    _stub_llm(monkeypatch)
+    monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+
+    response = client.post(
+        "/enhance",
+        headers=auth,
+        json={
+            "prompt": "make a concise plan",
+            "input_method": "voice",
+            "input_duration_seconds": 8.5,
+        },
+    )
+
+    assert response.status_code == 200
+    assert in_memory_prompt_logs[0]["input_method"] == "voice"
+    assert in_memory_prompt_logs[0]["input_duration_seconds"] == 8.5
 
 
 def test_retention_is_off_unless_explicitly_configured():

@@ -99,6 +99,7 @@ def test_dashboard_returns_aggregate_data_without_prompt_content(client):
             "provider": "groq",
             "model": "test-model",
             "byok": True,
+            "input_method": "voice",
         },
         {
             "user_id": "two",
@@ -115,6 +116,14 @@ def test_dashboard_returns_aggregate_data_without_prompt_content(client):
         "mode": "deep",
         "timestamp": now - timedelta(minutes=30),
     })
+    in_memory_analytics_events.append({
+        "event": "voice_transcribed",
+        "operation": "voice_transcribe",
+        "duration_seconds": 4.2,
+        "transcription_seconds": 0.8,
+        "language": "en",
+        "timestamp": now - timedelta(minutes=20),
+    })
 
     response = client.get(
         "/builder/dashboard/summary?days=7",
@@ -128,7 +137,11 @@ def test_dashboard_returns_aggregate_data_without_prompt_content(client):
     assert body["summary"]["passive_events"] == 1
     assert body["summary"]["failures"] == 1
     assert body["summary"]["byok_enhancements"] == 1
+    assert body["summary"]["voice_enhancements"] == 1
+    assert body["summary"]["voice_transcriptions"] == 1
+    assert body["summary"]["voice_transcription_failures"] == 0
     assert body["breakdowns"]["platforms"] == {"chatgpt.com": 1}
+    assert body["breakdowns"]["input_methods"] == {"voice": 1}
     assert body["failures"][0]["reason"] == "provider_unavailable"
     serialized = response.text
     assert "private original prompt" not in serialized

@@ -195,7 +195,7 @@ class MemoryService:
         return recent_prompts
 
     @staticmethod
-    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep", platform: str = None, provider: str = None, model: str = None, byok: bool = False):
+    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep", platform: str = None, provider: str = None, model: str = None, byok: bool = False, input_method: str = "text", input_duration_seconds: float = None):
         """Logs prompt to Mongo or Memory."""
         log_entry = {
             "user_id": user_id,
@@ -207,6 +207,11 @@ class MemoryService:
             "source": source,
             "mode": mode,
         }
+        # Only allow known values into analytics. This is metadata supplied by
+        # a client, not a source of truth about the user's prompt.
+        log_entry["input_method"] = "voice" if input_method == "voice" else "text"
+        if isinstance(input_duration_seconds, (int, float)) and input_duration_seconds > 0:
+            log_entry["input_duration_seconds"] = round(float(input_duration_seconds), 3)
         if platform:
             log_entry["platform"] = platform
         if provider:
