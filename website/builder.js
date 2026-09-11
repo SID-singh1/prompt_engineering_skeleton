@@ -75,6 +75,7 @@ function render(data) {
     ["Active users", number(s.active_users), `${number(s.total_users)} total accounts`],
     ["Failures", number(s.failures), s.failures ? "Needs attention" : "No recorded failures"],
     ["Passive events", number(s.passive_events), "Learning signals"],
+    ["Voice input", number(s.voice_enhancements), `${number(s.voice_transcriptions)} transcribed · ${number(s.voice_transcription_failures)} failed`],
     ["Saved prompts", number(s.saved_prompts), "Across all accounts"],
     ["Feedback", number(s.feedback_total), `${number(s.feedback_up)} positive · ${number(s.feedback_down)} negative`],
   ].map(([label, value, detail]) => `<article class="metric"><div class="metric-label">${label}</div><div class="metric-value">${value}</div><div class="metric-detail">${detail}</div></article>`).join("");
@@ -83,6 +84,7 @@ function render(data) {
   renderBars("platforms", data.breakdowns?.platforms || {});
   renderBars("modes", data.breakdowns?.modes || {});
   renderBars("providers", data.breakdowns?.providers || {});
+  renderBars("input-methods", data.breakdowns?.input_methods || {});
   renderFeedback(s.feedback_up, s.feedback_down);
   $("latency").innerHTML = [["Average", s.avg_latency_seconds], ["P50", s.p50_latency_seconds], ["P95", s.p95_latency_seconds]].map(([label, value]) => `<div class="latency-card"><span>${label}</span><strong>${seconds(value)}</strong></div>`).join("");
   renderStatus(data.system || {});

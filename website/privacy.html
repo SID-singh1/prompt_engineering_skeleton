@@ -91,7 +91,7 @@
         <ul>
             <li><strong>Prompts you enhance</strong> — when you explicitly click "Enhance" or use the keyboard shortcut, your prompt text is sent to our server for AI-powered enhancement. This is the core functionality of the extension.</li>
             <li><strong>Conversation context</strong> — when you enhance a prompt, the last few messages from the current chat page may be read to provide better context for enhancement. This only happens when you initiate an enhancement.</li>
-            <li><strong>Passive prompt tracking</strong> — when enabled (default), prompts you submit on AI platforms are logged to improve future suggestions. <strong>You can disable this at any time</strong> via the ⚙ settings gear in the sidebar.</li>
+            <li><strong>Passive prompt tracking</strong> — when enabled (off by default), prompts you submit on AI platforms are logged to improve future suggestions. <strong>You can disable this at any time</strong> via the ⚙ settings gear in the sidebar.</li>
         </ul>
 
         <div class="highlight-box">
@@ -105,7 +105,7 @@
 
         <p><strong>Voice Data</strong></p>
         <ul>
-            <li><strong>Audio recordings</strong> — when you use the voice-to-prompt feature, your microphone audio is sent to our server for transcription (via Whisper AI). Audio is processed in real-time and <strong>not stored permanently</strong>.</li>
+            <li><strong>Audio recordings</strong> — when you use Voice-to-Prompt, microphone audio is sent to our server for one Whisper transcription request. Audio is <strong>not written to our database or retained</strong>. Transcription alone does not create prompt history. If you explicitly choose “Enhance transcript,” the corrected text is handled as a normal enhanced prompt under the Prompt Data and retention terms above. Aggregate voice telemetry contains no audio or transcript text.</li>
         </ul>
 
         <p><strong>Feedback</strong></p>

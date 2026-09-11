@@ -25,6 +25,7 @@
 | 🔍 **Semantic Memory** | Finds similar past prompts using vector similarity — learns from your history |
 | ⚡ **Instant Shortcut** | Press `Ctrl+Shift+E` (`⌘+Shift+E` on Mac) to enhance in-place, instantly |
 | 🎯 **Mode-Aware** | Switches between Balanced, Technical, and Creative refinement styles |
+| 🎙️ **Voice-to-Prompt** | Record a thought, review the Whisper transcript, then enhance it |
 | 🌐 **Multi-Platform** | Works on **ChatGPT**, **Claude**, **Gemini**, **Perplexity**, **Grok** |
 | 🔐 **Secure Auth** | Google OAuth with JWT sessions (7-day expiry) |
 | 👍 **Feedback Loop** | Thumbs up/down on enhancements to continuously improve quality |
@@ -225,18 +226,15 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+E` | Enhance the current prompt instantly |
-| `Ctrl+Shift+V` | Voice-to-Prompt *(prototype — see below)* |
+| `Ctrl+Shift+V` | Voice-to-Prompt |
 
 ---
 
 ## 🎙️ Voice-to-Prompt
 
-> [!NOTE]
-> **🚧 Prototype — Coming in the next update**
->
-> Voice-to-Prompt is currently in early prototype stage. The feature leverages the browser's built-in Web Speech API to let you speak your prompts naturally, with live transcription and automatic enhancement after you stop speaking.
->
-> The shortcut (`Ctrl+Shift+V`) and underlying infrastructure are wired up, but full stability and UX polish are planned for the **next release**.
+Press `Ctrl+Shift+V` (or `⌘+Shift+V` on macOS) to record a spoken draft. The extension records a short WebM audio clip, sends it to Whisper for transcription, then gives you an editable transcript before any enhancement request is made. You can discard it, put it into the composer as a draft, or enhance the corrected version.
+
+Audio is used only for the transcription request and is not stored by Prompt Memory. The private builder dashboard records safe operational metadata—such as transcription duration, success/failure, and latency—without transcript text or audio. Voice transcription requires a signed-in account so the backend cannot be used as an anonymous audio proxy.
 
 ---
 
@@ -276,7 +274,7 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 - [x] Keyboard shortcut (`Ctrl+Shift+E`)
 - [x] Diff preview with accept/dismiss
 - [x] Thumbs up/down feedback loop
-- [ ] 🎙️ Voice-to-Prompt (prototype → full release)
+- [x] 🎙️ Voice-to-Prompt with transcript review
 - [x] Private builder analytics dashboard
 - [ ] Team / shared prompt libraries
 - [ ] Firefox & Edge extension support
