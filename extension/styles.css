@@ -1316,6 +1316,56 @@
     font-weight: 600;
 }
 
+.pm-voice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 9px;
+}
+
+.pm-voice-review-card {
+    max-width: 600px;
+    text-align: left;
+}
+
+.pm-voice-review-card .pm-voice-indicator {
+    justify-content: flex-start;
+    margin-bottom: 8px;
+}
+
+.pm-voice-transcript-label {
+    display: block;
+    margin: 0 0 7px;
+    color: var(--pm-text-muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.pm-voice-transcript {
+    width: 100%;
+    min-height: 136px;
+    margin-bottom: 16px;
+    padding: 12px;
+    resize: vertical;
+    border: 1px solid var(--pm-border);
+    border-radius: 10px;
+    outline: none;
+    background: var(--pm-bg-secondary);
+    color: var(--pm-text);
+    font: inherit;
+    line-height: 1.5;
+}
+
+.pm-voice-transcript:focus {
+    border-color: var(--pm-accent);
+    box-shadow: 0 0 0 3px var(--pm-accent-light);
+}
+
+@media (max-width: 480px) {
+    .pm-voice-card { padding: 26px 20px; }
+    .pm-voice-actions { flex-wrap: wrap; }
+    .pm-voice-actions .pm-btn:last-child { flex: 1 0 100%; }
+}
+
 /* ══════════════════════════════════════════════════════════════
    HISTORY TAB
    ══════════════════════════════════════════════════════════════ */

@@ -31,6 +31,7 @@ let currentMode = "deep";   // "quick" | "deep" | "creative"
 let lastEnhanceResult = null;
 let searchQuery = "";
 let isRecording = false;
+let voiceState = "idle"; // idle | recording | stopping | transcribing | reviewing | enhancing
 let enhanceHistory = [];
 let usageData = { count: 0, limit: 30 };
 let isLoadingTab = false;
@@ -223,7 +224,7 @@ async function enhancePrompt(prompt, selectedPromptIds) {
   return null;
 }
 
-async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone) {
+async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}) {
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return null;
 
@@ -236,6 +237,15 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone) {
   };
   if (selectedPromptIds && selectedPromptIds.length > 0) {
     body.selected_prompt_ids = selectedPromptIds;
+  }
+  if (inputMetadata.inputMethod === "voice") {
+    body.input_method = "voice";
+    if (Number.isFinite(inputMetadata.inputDurationSeconds) && inputMetadata.inputDurationSeconds > 0) {
+      body.input_duration_seconds = inputMetadata.inputDurationSeconds;
+    }
+    if (inputMetadata.sourceLanguage && inputMetadata.sourceLanguage !== "unknown") {
+      body.source_language = inputMetadata.sourceLanguage;
+    }
   }
 
   // Attach the user's own key, if they have one, so a signed-in user keeps the
@@ -1393,7 +1403,7 @@ async function runDirectEnhance(inputText, route) {
 }
 
 /** Signed in: go through the backend so memory features still apply. */
-async function runBackendEnhance(inputText) {
+async function runBackendEnhance(inputText, inputMetadata = {}) {
   let parts = [];
   let finished = false;
 
@@ -1434,7 +1444,8 @@ async function runBackendEnhance(inputText) {
         usageData.count++;
       }
       updateUsageBar();
-    }
+    },
+    inputMetadata
   );
 
   // enhancePromptStream returns without ever invoking onDone if the request
@@ -1490,6 +1501,7 @@ let cardResult = null;
 let cardShowingOriginal = false;
 let cardOriginal = "";
 let cardReposition = null;
+let cardHasBaseline = false;
 
 // The composer text this rewrite was actually built from, normalised.
 //
@@ -1612,6 +1624,7 @@ function closeCard() {
   cardResult = null;
   cardShowingOriginal = false;
   cardBasedOn = "";
+  cardHasBaseline = false;
   cardStale = false;
 }
 
@@ -1625,6 +1638,7 @@ const cardKey = (k) => `<span class="pm-card-key">${k}</span>`;
 function showStreamingDiffModal(originalText) {
   cardOriginal = originalText;
   cardBasedOn = norm(originalText);
+  cardHasBaseline = true;
   cardStale = false;
   cardState = "streaming";
   cardShowingOriginal = false;
@@ -1674,7 +1688,10 @@ function showDiffModal(result) {
   lastEnhanceResult = result;
 
   // Entry points other than the streaming flow (voice, history) never set this.
-  if (!cardBasedOn) cardBasedOn = norm(result.original || cardOriginal || "");
+  if (!cardHasBaseline) {
+    cardBasedOn = norm(result.original || cardOriginal || "");
+    cardHasBaseline = true;
+  }
 
   // Recomputed on every render, so a rewrite that was in flight while the user
   // edited arrives stale rather than appearing fresh and wrong.
@@ -1864,6 +1881,12 @@ function overlayHasInput() {
 }
 
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && document.querySelector(".pm-voice-overlay.pm-visible")) {
+    e.preventDefault();
+    e.stopPropagation();
+    cancelVoice();
+    return;
+  }
   if (cardState === "idle") return;
   const card = document.getElementById("pm-card");
   if (!card) return;
@@ -2591,53 +2614,130 @@ function setupPassiveTracking() {
 // VOICE-TO-PROMPT ENGINE (MediaRecorder → Groq Whisper → LLM)
 // ══════════════════════════════════════════════════════════════
 
+const VOICE_MAX_RECORDING_SECONDS = 120;
 let mediaRecorder = null;
+let mediaStream = null;
 let audioChunks = [];
 let recordingStartTime = 0;
 let recordingTimer = null;
+let voiceStopTimer = null;
+let voiceAbortController = null;
+let voiceDiscardRecording = false;
+let voiceRecordingDurationSeconds = 0;
+let voiceDetectedLanguage = "unknown";
+let voiceComposerBaseline = "";
+
+function supportedVoiceMimeType() {
+  if (!window.MediaRecorder?.isTypeSupported) return "";
+  return ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]
+    .find((type) => MediaRecorder.isTypeSupported(type)) || "";
+}
+
+function releaseVoiceCapture() {
+  clearInterval(recordingTimer);
+  clearTimeout(voiceStopTimer);
+  recordingTimer = null;
+  voiceStopTimer = null;
+  if (mediaStream) mediaStream.getTracks().forEach((track) => track.stop());
+  mediaStream = null;
+  mediaRecorder = null;
+  isRecording = false;
+  updateVoiceUI(false);
+}
+
+function cleanupVoice({ hideOverlay = true } = {}) {
+  voiceAbortController?.abort();
+  voiceAbortController = null;
+  audioChunks = [];
+  voiceDiscardRecording = false;
+  voiceRecordingDurationSeconds = 0;
+  voiceDetectedLanguage = "unknown";
+  voiceComposerBaseline = "";
+  voiceState = "idle";
+  releaseVoiceCapture();
+  if (hideOverlay) hideVoiceOverlay();
+}
+
+async function getVoiceAuthToken() {
+  const auth = await getAuth();
+  if (!auth || isTokenExpired(auth.token)) {
+    showToast("Voice transcription requires signing in first.", "error");
+    openSettings();
+    return null;
+  }
+  if (tokenExpiresWithinDays(auth.token, 2)) {
+    return (await tryRefreshToken(auth)) || auth.token;
+  }
+  return auth.token;
+}
 
 function toggleVoice() {
-  if (isRecording) {
-    stopVoice();
-  } else {
-    startVoice();
-  }
+  if (voiceState === "recording") return stopVoice();
+  if (voiceState === "idle") return startVoice();
+  if (voiceState === "reviewing") return cancelVoice();
 }
 
 async function startVoice() {
-  let stream;
+  if (voiceState !== "idle") return;
+  const token = await getVoiceAuthToken();
+  if (!token) return;
+  // A voice result may replace the composer only if it has not changed since
+  // recording began. An empty composer is a real, valid baseline—not a signal
+  // to skip the stale-write guard.
+  voiceComposerBaseline = norm(getCurrentInputText());
+
+  if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+    showToast("Voice recording is not supported by this browser.", "error");
+    return;
+  }
+
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  } catch (e) {
-    showToast("Microphone access denied. Allow it in browser settings.", "error");
+    mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (error) {
+    const detail = error?.name === "NotFoundError"
+      ? "No microphone was found. Connect one and try again."
+      : "Microphone access was denied. Allow it in browser settings and try again.";
+    showToast(detail, "error");
     return;
   }
 
   audioChunks = [];
-  mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
+  voiceDiscardRecording = false;
+  const mimeType = supportedVoiceMimeType();
+  try {
+    mediaRecorder = mimeType
+      ? new MediaRecorder(mediaStream, { mimeType })
+      : new MediaRecorder(mediaStream);
+  } catch (error) {
+    releaseVoiceCapture();
+    showToast("This browser could not start an audio recording.", "error");
+    return;
+  }
 
-  mediaRecorder.ondataavailable = (e) => {
-    if (e.data.size > 0) audioChunks.push(e.data);
+  mediaRecorder.ondataavailable = (event) => {
+    if (event.data.size > 0) audioChunks.push(event.data);
   };
-
-  mediaRecorder.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    clearInterval(recordingTimer);
-
-    if (audioChunks.length === 0) {
-      cleanupVoice();
-      showToast("No audio recorded.", "error");
-      return;
-    }
-
-    const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
+  mediaRecorder.onstop = () => {
+    void finishVoiceRecording(token, mediaRecorder?.mimeType || mimeType || "audio/webm");
+  };
+  mediaRecorder.onerror = () => {
+    voiceDiscardRecording = true;
     audioChunks = [];
-
-    updateVoiceOverlayState("processing");
-    await sendAudioToBackend(audioBlob);
+    voiceState = "idle";
+    releaseVoiceCapture();
+    hideVoiceOverlay();
+    showToast("Recording stopped unexpectedly. Please try again.", "error");
   };
 
-  mediaRecorder.start(250);
+  try {
+    mediaRecorder.start(250);
+  } catch (error) {
+    cleanupVoice();
+    showToast("Could not start recording. Please try again.", "error");
+    return;
+  }
+
+  voiceState = "recording";
   isRecording = true;
   recordingStartTime = Date.now();
   updateVoiceUI(true);
@@ -2650,80 +2750,175 @@ async function startVoice() {
     const timerEl = document.getElementById("pm-voice-timer");
     if (timerEl) timerEl.textContent = `${mins}:${secs}`;
   }, 1000);
+  voiceStopTimer = setTimeout(() => {
+    if (voiceState !== "recording") return;
+    showToast(`Recording limit reached (${VOICE_MAX_RECORDING_SECONDS}s). Preparing your transcript…`, "info");
+    stopVoice();
+  }, VOICE_MAX_RECORDING_SECONDS * 1000);
 
-  showToast("🎤 Recording... speak your prompt", "info");
+  showToast("🎤 Recording… you will review the transcript before enhancement.", "info");
 }
 
 function stopVoice() {
-  if (!mediaRecorder || mediaRecorder.state === "inactive") return;
+  if (voiceState !== "recording" || !mediaRecorder || mediaRecorder.state === "inactive") return;
+  voiceState = "stopping";
   isRecording = false;
   updateVoiceUI(false);
   try {
     mediaRecorder.stop();
-  } catch (e) { }
+  } catch (error) {
+    cleanupVoice();
+    showToast("Could not stop the recording. Please try again.", "error");
+  }
 }
 
-async function sendAudioToBackend(audioBlob) {
-  const auth = await getAuth();
-  if (!auth || isTokenExpired(auth.token)) {
-    hideVoiceOverlay();
-    showToast("Please log in first.", "error");
+function cancelVoice() {
+  const wasRecording = voiceState === "recording" || voiceState === "stopping";
+  voiceDiscardRecording = true;
+  if (mediaRecorder && mediaRecorder.state !== "inactive") {
+    try {
+      voiceState = "stopping";
+      mediaRecorder.stop();
+      if (wasRecording) showToast("Voice recording discarded.", "info");
+      return;
+    } catch { /* cleanup below */ }
+  }
+  cleanupVoice();
+  if (wasRecording) showToast("Voice recording discarded.", "info");
+}
+
+async function finishVoiceRecording(token, mimeType) {
+  const chunks = audioChunks;
+  audioChunks = [];
+  const durationSeconds = Math.max(0, (Date.now() - recordingStartTime) / 1000);
+  const discarded = voiceDiscardRecording;
+  releaseVoiceCapture();
+
+  if (discarded) {
+    cleanupVoice();
+    return;
+  }
+  if (!chunks.length) {
+    cleanupVoice();
+    showToast("No audio was recorded. Please try again.", "error");
     return;
   }
 
-  const conversationCtx = scrapeConversation();
+  voiceState = "transcribing";
+  voiceRecordingDurationSeconds = durationSeconds;
+  updateVoiceOverlayState("transcribing");
+  await transcribeVoiceAudio(new Blob(chunks, { type: mimeType }), token, durationSeconds);
+}
 
+async function transcribeVoiceAudio(audioBlob, token, durationSeconds) {
   const formData = new FormData();
   formData.append("audio", audioBlob, "recording.webm");
-  formData.append("mode", currentMode);
   formData.append("platform", window.location.hostname);
-  formData.append("conversation_context", JSON.stringify(conversationCtx));
-  formData.append("selected_prompt_ids", JSON.stringify(Array.from(selectedIds)));
+  formData.append("recording_duration_seconds", durationSeconds.toFixed(3));
 
+  // The service worker owns the BYOK secret. A signed-in Groq BYOK user can
+  // spend their own transcription quota without exposing the key to the host page.
+  const byok = await askWorker({ type: "PM_GET_BYOK_FOR_BACKEND" });
+  if (byok?.key) {
+    formData.append("byok_provider", byok.provider || "");
+    formData.append("byok_key", byok.key);
+  }
+
+  voiceAbortController = new AbortController();
   try {
-    const resp = await fetch(`${API_URL}/voice-enhance`, {
+    const response = await fetch(`${API_URL}/voice-transcribe`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${auth.token}` },
+      headers: { Authorization: `Bearer ${token}` },
       body: formData,
+      signal: voiceAbortController.signal,
     });
-    const data = await resp.json();
-
-    hideVoiceOverlay();
-
-    if (data.error) {
-      showToast(data.error, "error");
-      return;
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.error) {
+      throw new Error(data.detail || "Voice transcription failed. Please try again.");
     }
+    if (voiceState !== "transcribing") return; // cancelled while the request was in flight
 
-    const langLabel = data.detected_language && data.detected_language !== "unknown"
-      ? ` · Language: ${data.detected_language}`
-      : "";
-
-    lastEnhanceResult = {
-      original: data.transcription || data.original,
-      enhanced: data.enhanced,
-      mode: data.mode,
-      latency: data.total_time,
-      context_used: data.context_used,
-      log_id: data.log_id,
-    };
-
-    showToast(`Transcribed in ${data.transcription_time}s · Enhanced in ${data.total_time}s${langLabel}`, "success");
-    showDiffModal(lastEnhanceResult);
-  } catch (e) {
-    hideVoiceOverlay();
-    console.error("Voice enhance error:", e);
-    showToast("Voice enhance failed. Check connection.", "error");
+    voiceDetectedLanguage = data.detected_language || "unknown";
+    showVoiceTranscriptReview(data.transcription || "", data.transcription_time);
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    cleanupVoice();
+    console.error("Voice transcription error:", error);
+    showToast(error?.message || "Voice transcription failed. Check your connection.", "error");
+  } finally {
+    voiceAbortController = null;
   }
 }
 
-function cleanupVoice() {
-  isRecording = false;
-  mediaRecorder = null;
-  audioChunks = [];
-  clearInterval(recordingTimer);
-  updateVoiceUI(false);
+function showVoiceTranscriptReview(transcript, transcriptionTime) {
+  if (!transcript.trim()) {
+    cleanupVoice();
+    showToast("Could not understand the recording. Please try again.", "error");
+    return;
+  }
+
+  voiceState = "reviewing";
+  const overlay = document.getElementById("pm-voice-overlay");
+  if (!overlay) return;
+  const language = voiceDetectedLanguage === "unknown" ? "Language auto-detected" : `Language: ${voiceDetectedLanguage}`;
+  overlay.innerHTML = `
+    <div class="pm-voice-card pm-voice-review-card" role="dialog" aria-modal="true" aria-label="Review voice transcript">
+      <div class="pm-voice-indicator"><span class="pm-voice-label">Review transcript</span></div>
+      <p class="pm-voice-hint">${escHtml(language)} · transcribed in ${Number(transcriptionTime || 0).toFixed(2)}s. Edit anything before it is enhanced.</p>
+      <label class="pm-voice-transcript-label" for="pm-voice-transcript">Transcript</label>
+      <textarea id="pm-voice-transcript" class="pm-voice-transcript" rows="7" spellcheck="true">${escHtml(transcript)}</textarea>
+      <div class="pm-voice-actions">
+        <button class="pm-btn pm-btn-secondary" id="pm-voice-draft" type="button">Use as draft</button>
+        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Discard</button>
+        <button class="pm-btn pm-btn-primary" id="pm-voice-enhance" type="button">Enhance transcript</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
+  document.getElementById("pm-voice-draft")?.addEventListener("click", async () => {
+    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
+    if (!value) return showToast("Transcript is empty.", "error");
+    await applyOrFallback(value, "Transcript added to the chat input.");
+    cleanupVoice();
+  });
+  document.getElementById("pm-voice-enhance")?.addEventListener("click", () => {
+    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
+    void enhanceVoiceTranscript(value);
+  });
+  requestAnimationFrame(() => document.getElementById("pm-voice-transcript")?.focus());
+}
+
+async function enhanceVoiceTranscript(transcript) {
+  if (transcript.length < 3) {
+    showToast("Transcript is too short to enhance.", "error");
+    return;
+  }
+  if (enhanceInFlight) {
+    showToast("Already enhancing — hang on a moment.", "info");
+    return;
+  }
+
+  voiceState = "enhancing";
+  updateVoiceOverlayState("enhancing");
+  const inputMetadata = {
+    inputMethod: "voice",
+    inputDurationSeconds: voiceRecordingDurationSeconds,
+    sourceLanguage: voiceDetectedLanguage,
+  };
   hideVoiceOverlay();
+  enhanceInFlight = true;
+  showStreamingDiffModal(transcript);
+  cardBasedOn = voiceComposerBaseline;
+  cardHasBaseline = true;
+  try {
+    await runBackendEnhance(transcript, inputMetadata);
+  } catch (error) {
+    console.error("Voice enhancement error:", error);
+    failStreamingModal("Could not enhance the transcript. Please try again.");
+  } finally {
+    enhanceInFlight = false;
+    cleanupVoice({ hideOverlay: false });
+  }
 }
 
 // ── Voice UI: Recording Overlay ──
@@ -2753,14 +2948,16 @@ function showVoiceOverlay() {
         <span class="pm-voice-label">Recording</span>
       </div>
       <div class="pm-voice-timer" id="pm-voice-timer">00:00</div>
-      <div class="pm-voice-hint">Speak naturally — Whisper AI will transcribe & auto-detect language</div>
-      <button class="pm-btn pm-btn-primary pm-voice-stop" id="pm-voice-stop">Stop & Enhance</button>
+      <div class="pm-voice-hint">Speak naturally. You will review the transcript before anything is enhanced.</div>
+      <div class="pm-voice-actions">
+        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
+        <button class="pm-btn pm-btn-primary pm-voice-stop" id="pm-voice-stop" type="button">Stop recording</button>
+      </div>
     </div>
   `;
 
-  overlay.addEventListener("click", (e) => {
-    if (e.target === overlay) stopVoice();
-  });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) cancelVoice(); });
+  document.getElementById("pm-voice-cancel").addEventListener("click", cancelVoice);
   document.getElementById("pm-voice-stop").addEventListener("click", stopVoice);
 
   requestAnimationFrame(() => overlay.classList.add("pm-visible"));
@@ -2770,14 +2967,20 @@ function updateVoiceOverlayState(state) {
   const card = document.querySelector(".pm-voice-card");
   if (!card) return;
 
-  if (state === "processing") {
+  if (state === "transcribing" || state === "enhancing") {
+    const label = state === "transcribing" ? "Transcribing recording…" : "Enhancing transcript…";
+    const hint = state === "transcribing"
+      ? "Whisper is processing your audio. Audio is not saved by Prompt Memory."
+      : "Building your improved prompt…";
     card.innerHTML = `
       <div class="pm-voice-indicator">
         <div class="pm-voice-spinner"></div>
-        <span class="pm-voice-label">Transcribing & enhancing...</span>
+        <span class="pm-voice-label">${label}</span>
       </div>
-      <div class="pm-voice-hint">Whisper AI is processing your audio</div>
+      <div class="pm-voice-hint">${hint}</div>
+      <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
     `;
+    document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
   }
 }
 
@@ -2785,7 +2988,9 @@ function hideVoiceOverlay() {
   const overlay = document.getElementById("pm-voice-overlay");
   if (overlay) {
     overlay.classList.remove("pm-visible");
-    setTimeout(() => overlay.remove(), 300);
+    setTimeout(() => {
+      if (!overlay.classList.contains("pm-visible")) overlay.remove();
+    }, 300);
   }
 }
 

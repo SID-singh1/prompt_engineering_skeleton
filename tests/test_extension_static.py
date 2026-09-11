@@ -445,6 +445,29 @@ def test_lazy_created_voice_overlay_inherits_the_current_theme():
     assert "data-pm-theme" in body and "pm-panel" in body
 
 
+def test_voice_flow_requires_review_before_it_can_enhance():
+    """A spoken draft must be editable, cancellable, and bounded before LLM use."""
+    start = _function_bodies(CONTENT_JS, r"startVoice")["startVoice"]
+    transcribe = _function_bodies(CONTENT_JS, r"transcribeVoiceAudio")["transcribeVoiceAudio"]
+    review = _function_bodies(CONTENT_JS, r"showVoiceTranscriptReview")["showVoiceTranscriptReview"]
+
+    assert "VOICE_MAX_RECORDING_SECONDS" in CONTENT_JS
+    assert "getVoiceAuthToken" in start
+    assert "supportedVoiceMimeType" in start
+    assert "/voice-transcribe" in transcribe
+    assert "AbortController" in transcribe
+    assert "Enhance transcript" in review
+    assert "Use as draft" in review
+    assert "cancelVoice" in review
+    assert "voice-enhance" not in transcribe
+
+
+def test_voice_result_keeps_the_composer_stale_write_guard():
+    body = _function_bodies(CONTENT_JS, r"enhanceVoiceTranscript")["enhanceVoiceTranscript"]
+    assert "voiceComposerBaseline" in body
+    assert "cardHasBaseline" in body
+
+
 def test_builder_dashboard_never_persists_its_bearer_key_or_accepts_any_https_api():
     """A dashboard URL must not turn its key header into an exfiltration channel."""
     dashboard_js = (ROOT / "website" / "builder.js").read_text(encoding="utf-8")
