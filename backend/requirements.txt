@@ -16,8 +16,24 @@ python-dotenv>=1.0.1
 # Vector DB
 qdrant-client>=1.12.0
 
-# Free embeddings (MiniLM) — use [onnx] for CPU-only / lighter install
-sentence-transformers[onnx]>=3.0.0
+# Free embeddings (MiniLM).
+#
+# Do NOT re-add the [onnx] extra. As of 2026-09 it makes this file
+# UNSATISFIABLE, and pip does not fail — it backtracks through the entire
+# release history of transformers and tqdm, downloading an 11 MB wheel every
+# ~30s, so the Space build hangs for hours instead of erroring:
+#
+#   sentence-transformers 6.x  requires  transformers >=5.0,<6.0
+#   sentence-transformers[onnx] -> optimum-onnx 0.1.0
+#   optimum-onnx 0.1.0         requires  transformers >=4.36,<4.58
+#
+# Those ranges do not intersect. Without the extra this file resolves in ~7s.
+#
+# Nothing is lost in output quality: ONNX and torch are two runtimes for the
+# same MiniLM weights and produce the same vectors. The ONNX path was only
+# faster per call, and llm_service.preload_embedding_model already falls back
+# to the torch backend automatically. torch is a dependency either way.
+sentence-transformers>=5.0.0,<7.0.0
 
 # APIs
 groq>=0.11.0
@@ -36,5 +52,11 @@ requests>=2.31.0
 # File Upload (voice-to-prompt)
 python-multipart
 
-# Rate Limiting
-slowapi>=0.1.9
+# Rate limiting is implemented in backend/core/ratelimit.py, not slowapi.
+#
+# slowapi resolves the caller by looking for an endpoint parameter named
+# `request`, and that name is already the Pydantic body model on /enhance and
+# /enhance/stream, so its decorator cannot find the HTTP request. It also keys
+# on IP by default, and every request to the Space arrives from one proxy
+# address — an IP-keyed limiter would throttle the whole user base as a single
+# client. The replacement is ~60 lines and keys on the authenticated user.

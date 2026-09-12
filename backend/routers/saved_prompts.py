@@ -2,11 +2,26 @@
 import uuid
 from datetime import datetime
 from bson import ObjectId
+from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException
 from ..models.schemas import SavedPromptCreate, SavedPromptUpdate
 from ..core.security import verify_jwt
 from ..core.database import MongoDB, in_memory_saved_prompts
 from ..services.memory_service import MemoryService
+
+
+def _object_id(prompt_id: str) -> ObjectId:
+    """
+    Parse a Mongo id, turning a malformed one into a 404.
+
+    ObjectId() raises InvalidId on anything that is not 24 hex characters, and
+    an unhandled InvalidId surfaces as a 500. A caller passing a nonsense id is
+    asking for a document that does not exist, which is a 404.
+    """
+    try:
+        return ObjectId(prompt_id)
+    except (InvalidId, TypeError):
+        raise HTTPException(status_code=404, detail="Prompt not found.")
 
 
 def _serialize_dt(val):
@@ -119,7 +134,7 @@ def update_saved_prompt(prompt_id: str, body: SavedPromptUpdate, user_id: str = 
 
     if MongoDB.saved_prompts_col is not None:
         result = MongoDB.saved_prompts_col.update_one(
-            {"_id": ObjectId(prompt_id), "user_id": user_id},
+            {"_id": _object_id(prompt_id), "user_id": user_id},
             {"$set": update_fields}
         )
         if result.matched_count == 0:
@@ -127,7 +142,7 @@ def update_saved_prompt(prompt_id: str, body: SavedPromptUpdate, user_id: str = 
         
         # If content changed, re-embed
         if "content" in update_fields:
-            updated_doc = MongoDB.saved_prompts_col.find_one({"_id": ObjectId(prompt_id)})
+            updated_doc = MongoDB.saved_prompts_col.find_one({"_id": _object_id(prompt_id)})
             MemoryService.embed_saved_prompt(
                 user_id=user_id,
                 mongo_id=prompt_id,
@@ -159,7 +174,7 @@ def delete_saved_prompt(prompt_id: str, user_id: str = Depends(verify_jwt)):
     """Delete a saved prompt from Mongo and Qdrant."""
     if MongoDB.saved_prompts_col is not None:
         result = MongoDB.saved_prompts_col.delete_one(
-            {"_id": ObjectId(prompt_id), "user_id": user_id}
+            {"_id": _object_id(prompt_id), "user_id": user_id}
         )
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Prompt not found.")
@@ -171,5 +186,5 @@ def delete_saved_prompt(prompt_id: str, user_id: str = Depends(verify_jwt)):
             raise HTTPException(status_code=404, detail="Prompt not found.")
         del in_memory_saved_prompts[prompt_id]
 
-    MemoryService.delete_saved_prompt_vector(prompt_id)
+    MemoryService.delete_saved_prompt_vector(prompt_id, user_id)
     return {"message": "Prompt deleted."}

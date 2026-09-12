@@ -25,8 +25,9 @@
 | 🔍 **Semantic Memory** | Finds similar past prompts using vector similarity — learns from your history |
 | ⚡ **Instant Shortcut** | Press `Ctrl+Shift+E` (`⌘+Shift+E` on Mac) to enhance in-place, instantly |
 | 🎯 **Mode-Aware** | Switches between Balanced, Technical, and Creative refinement styles |
+| 🎙️ **Voice-to-Prompt** | Record a thought, review the Whisper transcript, then enhance it |
 | 🌐 **Multi-Platform** | Works on **ChatGPT**, **Claude**, **Gemini**, **Perplexity**, **Grok** |
-| 🔐 **Secure Auth** | Google OAuth + email OTP login with JWT sessions |
+| 🔐 **Secure Auth** | Google OAuth with JWT sessions (7-day expiry) |
 | 👍 **Feedback Loop** | Thumbs up/down on enhancements to continuously improve quality |
 
 ---
@@ -54,15 +55,16 @@ prompt_engineering_skeleton/
 │   │   └── security.py      # JWT verification
 │   │
 │   ├── routers/
-│   │   ├── auth.py          # Google OAuth + OTP endpoints
+│   │   ├── auth.py          # Google OAuth endpoints
 │   │   ├── prompts.py       # Enhance, track & feedback endpoints
 │   │   ├── saved_prompts.py # CRUD for saved prompt library
 │   │   └── users.py         # User profile endpoints
 │   │
 │   ├── services/
-│   │   ├── llm_service.py   # Groq API + sentence-transformer embeddings
+│   │   ├── providers.py     # Provider-agnostic LLM chain + failover
+│   │   ├── llm_service.py   # Whisper client + sentence-transformer embeddings
 │   │   ├── memory_service.py# Semantic retrieval, logging & memorization
-│   │   └── email_service.py # SendGrid OTP delivery
+│   │   └── email_service.py # SendGrid helper (currently unused)
 │   │
 │   └── models/
 │       └── schemas.py       # Pydantic request/response models
@@ -80,7 +82,7 @@ prompt_engineering_skeleton/
 - **Python 3.10+**
 - **Google Chrome** (or any Chromium-based browser)
 - API keys for: **Groq**, **MongoDB Atlas**, **Qdrant Cloud** (or use `:memory:`)
-- *(Optional)* SendGrid API key for email OTP, Google OAuth credentials
+- Google OAuth credentials (Client ID + Secret)
 
 ### 1 · Backend Setup
 
@@ -105,7 +107,16 @@ Create or edit `backend/.env` with your credentials:
 
 ```env
 # ── LLM ──
+# Only GROQ_API_KEY is required. The others add server-side fallback providers;
+# users who bring their own key need none of these set.
 GROQ_API_KEY=your_groq_api_key
+GROQ_API_KEY_2=optional_second_key_for_rotation
+# GEMINI_API_KEY=
+# OPENROUTER_API_KEY=
+
+# Model selection lives in backend/services/providers.py as an ordered fallback
+# chain — do NOT pin a single model id here. Set this only to force one:
+# MODEL_OVERRIDE=
 
 # ── Databases ──
 MONGO_URI= make one on your own 
@@ -116,6 +127,16 @@ QDRANT_API_KEY=your_qdrant_api_key
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 JWT_SECRET=your_secure_random_secret
+
+# ── Private builder dashboard ──
+# Generate a long random value. Never commit it or put it in a URL.
+BUILDER_DASHBOARD_KEY=your_long_random_dashboard_key
+# Add this only when builder.html is hosted on a DIFFERENT origin from the API.
+# Same-origin hosting needs no CORS entry.
+# BUILDER_DASHBOARD_ORIGINS=https://your-private-dashboard.example
+# Limits a dashboard request to its newest N logs; failure events expire after 90 days.
+# DASHBOARD_MAX_LOGS=50000
+# ANALYTICS_EVENT_TTL_DAYS=90
 
 # ── Email (Optional) ──
 SENDGRID_API_KEY=your_sendgrid_api_key
@@ -150,13 +171,24 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 
 ---
 
-### 3 · Login & Start Using
+### 3 · Start Using
 
 1. Click the **⊕ Prompt Memory** icon in your toolbar
-2. Sign in with **Google** or enter your email for a one-time code
+2. **Add your own free API key** (recommended) — grab one at
+   [console.groq.com/keys](https://console.groq.com/keys), paste it in, hit
+   *Save & test*. No credit card, no account here, and you get **1,000
+   enhancements a day** instead of the 15 available on the shared key.
+   *Or* sign in with Google to use the shared key plus saved prompts and history.
 3. Navigate to any supported AI platform — a floating **⊕** button appears
 4. Type a prompt, then click **Enhance** or press `Ctrl+Shift+E`
 5. Review the before/after diff → accept, edit, or dismiss
+
+> **Why bring your own key?** Groq's free tier is 1,000 requests/day and 8,000
+> tokens/minute *per account*. Because every user shares this project's single
+> server key, that ceiling is spent by everyone at once — roughly 4 enhancements
+> per minute for the entire user base. With your own key the same free allowance
+> is yours alone, and with no sign-in your prompts go straight from your browser
+> to the provider without touching this server at all.
 
 ---
 
@@ -194,18 +226,15 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+E` | Enhance the current prompt instantly |
-| `Ctrl+Shift+V` | Voice-to-Prompt *(prototype — see below)* |
+| `Ctrl+Shift+V` | Voice-to-Prompt |
 
 ---
 
 ## 🎙️ Voice-to-Prompt
 
-> [!NOTE]
-> **🚧 Prototype — Coming in the next update**
->
-> Voice-to-Prompt is currently in early prototype stage. The feature leverages the browser's built-in Web Speech API to let you speak your prompts naturally, with live transcription and automatic enhancement after you stop speaking.
->
-> The shortcut (`Ctrl+Shift+V`) and underlying infrastructure are wired up, but full stability and UX polish are planned for the **next release**.
+Press `Ctrl+Shift+V` (or `⌘+Shift+V` on macOS) to record a spoken draft. The extension records a short WebM audio clip, sends it to Whisper for transcription, then gives you an editable transcript before any enhancement request is made. You can discard it, put it into the composer as a draft, or enhance the corrected version.
+
+Audio is used only for the transcription request and is not stored by Prompt Memory. The private builder dashboard records safe operational metadata—such as transcription duration, success/failure, and latency—without transcript text or audio. Voice transcription requires a signed-in account so the backend cannot be used as an anonymous audio proxy.
 
 ---
 
@@ -227,11 +256,11 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 |---|---|
 | **Extension** | Chrome Manifest V3, Vanilla JS, CSS |
 | **Backend** | FastAPI, Uvicorn |
-| **LLM** | Groq API (Llama / Mixtral) |
-| **Embeddings** | Sentence-Transformers (`all-MiniLM-L6-v2`) |
+| **LLM** | Groq (`qwen/qwen3.8-27b` primary, with an automatic fallback chain) — or your own key on Groq / Gemini / OpenRouter |
+| **Embeddings** | Sentence-Transformers (`paraphrase-multilingual-MiniLM-L12-v2`) |
 | **Vector DB** | Qdrant (cloud or in-memory) |
 | **Database** | MongoDB Atlas |
-| **Auth** | Google OAuth 2.0, Email OTP, JWT |
+| **Auth** | Google OAuth 2.0, JWT |
 | **Email** | SendGrid |
 
 ---
@@ -241,12 +270,12 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 - [x] Context-aware prompt enhancement
 - [x] Saved prompt library with semantic search
 - [x] Multi-platform support (ChatGPT, Claude, Gemini, Perplexity, Grok)
-- [x] Google OAuth + OTP authentication
+- [x] Google OAuth authentication
 - [x] Keyboard shortcut (`Ctrl+Shift+E`)
 - [x] Diff preview with accept/dismiss
 - [x] Thumbs up/down feedback loop
-- [ ] 🎙️ Voice-to-Prompt (prototype → full release)
-- [ ] Prompt analytics dashboard
+- [x] 🎙️ Voice-to-Prompt with transcript review
+- [x] Private builder analytics dashboard
 - [ ] Team / shared prompt libraries
 - [ ] Firefox & Edge extension support
 

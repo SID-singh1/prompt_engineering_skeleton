@@ -28,6 +28,7 @@ from qdrant_client.models import VectorParams, Distance, PointStruct
 from sentence_transformers import SentenceTransformer
 
 from .core.config import settings
+from .services.memory_service import point_id_for
 
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
@@ -185,7 +186,11 @@ def main():
 
         try:
             vec = embed(content)
-            point_id = abs(hash(mongo_id)) % (2**63)
+            # Must match memory_service.point_id_for(). This was
+            # `abs(hash(mongo_id)) % (2**63)`, which is randomised per process,
+            # so migrated points landed at ids the running server could never
+            # recompute — the same defect the app itself had.
+            point_id = point_id_for(mongo_id)
             batch_points.append(PointStruct(
                 id=point_id,
                 vector=vec,
@@ -224,5 +229,62 @@ def main():
     print("   python -m uvicorn backend.main:app --reload")
 
 
+def purge_orphans():
+    """
+    Delete saved-prompt vectors whose Mongo document no longer exists.
+
+    Needed once, for data written before point ids became deterministic. Those
+    points were created with a randomised hash, so DELETE /saved-prompts/{id}
+    never reached them: the document went away and the vector stayed, still
+    matching similarity searches and still being spliced into that user's
+    enhancements as "### RELATED SAVED PROMPTS".
+
+    Deleting a saved prompt now cleans up its own vector by payload filter, so
+    this only has to cover prompts that were already deleted in the past — no
+    future user action will ever target those points again.
+
+        python -m backend.migrate_embeddings --purge-orphans
+    """
+    from qdrant_client.models import PointIdsList
+
+    mongo = MongoClient(settings.MONGO_URI, serverSelectionTimeoutMS=5000)
+    mongo.admin.command("ping")
+    db = mongo["prompt_engine_db"]
+    qdrant = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
+
+    live_ids = {str(doc["_id"]) for doc in db["saved_prompts"].find({}, {"_id": 1})}
+    print(f"📄 {len(live_ids)} saved prompts in Mongo")
+
+    orphan_ids, scanned, offset = [], 0, None
+    while True:
+        points, offset = qdrant.scroll(
+            collection_name=SAVED_PROMPTS_COLLECTION,
+            limit=256, offset=offset, with_payload=True, with_vectors=False,
+        )
+        if not points:
+            break
+        for p in points:
+            scanned += 1
+            if (p.payload or {}).get("mongo_id") not in live_ids:
+                orphan_ids.append(p.id)
+        if offset is None:
+            break
+
+    print(f"🔍 scanned {scanned} vectors — {len(orphan_ids)} orphaned")
+    if not orphan_ids:
+        print("✅ nothing to clean up")
+        return
+
+    for i in range(0, len(orphan_ids), 256):
+        qdrant.delete(
+            collection_name=SAVED_PROMPTS_COLLECTION,
+            points_selector=PointIdsList(points=orphan_ids[i:i + 256]),
+        )
+    print(f"🗑️  deleted {len(orphan_ids)} orphaned vectors")
+
+
 if __name__ == "__main__":
-    main()
+    if "--purge-orphans" in sys.argv:
+        purge_orphans()
+    else:
+        main()

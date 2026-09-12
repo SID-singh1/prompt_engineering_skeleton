@@ -1,12 +1,79 @@
 
+import re
 import time
 import uuid
 from datetime import datetime
 from typing import List, Tuple, Optional
-from qdrant_client.models import PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.models import (
+    PointStruct, Filter, FieldCondition, MatchValue, FilterSelector,
+)
 from ..core.config import settings
 from ..core.database import QdrantDB, MongoDB, in_memory_prompt_logs, in_memory_saved_prompts
+from ..core import usage
 from ..services.llm_service import get_embedding
+
+
+# Namespace for deriving a stable Qdrant point id from a Mongo document id.
+# Any fixed UUID works; this one must never change, or every existing point
+# becomes unreachable by id again.
+_POINT_NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+
+
+def point_id_for(mongo_id: str) -> str:
+    """
+    Stable Qdrant point id for a saved prompt.
+
+    Was `abs(hash(mongo_id)) % (2**63)`. Python randomises str hashing per
+    process (PEP 456), so the id computed when a prompt was saved and the id
+    computed when it was later deleted came from different seeds and did not
+    match. Qdrant does not error on deleting a point that does not exist, so
+    every delete was a silent no-op and the vector kept being retrieved and
+    spliced into that user's future enhancements forever.
+    """
+    return str(uuid.uuid5(_POINT_NS, mongo_id))
+
+
+# Credentials that get pasted into a chat box by accident. Anything matching is
+# masked before it is written to Mongo or embedded into Qdrant — an embedded
+# secret is otherwise permanent and gets re-injected verbatim into later
+# unrelated prompts as "context".
+_SECRET_PATTERNS = [
+    # Prefixed provider keys. Both separators: Groq issues gsk_, OpenAI sk-.
+    re.compile(r"\b(?:sk|gsk|pk|rk)[-_](?:ant[-_])?[A-Za-z0-9_\-]{16,}"),
+    re.compile(r"\bAIza[A-Za-z0-9_\-]{30,}"),                       # Google API
+    re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}"),                    # GitHub tokens
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),                            # AWS access key id
+    re.compile(r"\bxox[baprs]-[A-Za-z0-9\-]{10,}"),                 # Slack
+    re.compile(r"\bey[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),  # JWT
+]
+
+# Labelled form: KEY=value / "password": "...". No leading \b — the label is
+# often glued to a prefix by an underscore (GROQ_API_KEY=...), and _ is a word
+# character, so \b never matches there.
+_LABELLED_SECRET = re.compile(
+    r"(?i)(?:api[_\- ]?key|secret[_\- ]?key|secret|password|passwd|token|bearer)"
+    r"\s*[:=]\s*[\"\']?([A-Za-z0-9_\-]{12,})[\"\']?"
+)
+
+_REDACTED = "[REDACTED]"
+
+
+def redact_secrets(text: str) -> str:
+    """Mask anything that looks like a credential. Never raises."""
+    if not text:
+        return text
+    try:
+        out = text
+        for pat in _SECRET_PATTERNS:
+            out = pat.sub(_REDACTED, out)
+        # The labelled form keeps its label so the sentence still reads.
+        out = _LABELLED_SECRET.sub(
+            lambda m: m.group(0).replace(m.group(1), _REDACTED), out
+        )
+        return out
+    except Exception:
+        return text
+
 
 class MemoryService:
 
@@ -88,7 +155,8 @@ class MemoryService:
                 limit=limit
             ).points
         except Exception as e:
-            print(f"⚠️ Passive context search failed: {e}")
+            print(f"❌ Passive context search FAILED (not empty — failed): {e}")
+            QdrantDB.reset()
             return []
 
         matched = []
@@ -127,28 +195,53 @@ class MemoryService:
         return recent_prompts
 
     @staticmethod
-    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep"):
+    def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep", platform: str = None, provider: str = None, model: str = None, byok: bool = False, input_method: str = "text", input_duration_seconds: float = None):
         """Logs prompt to Mongo or Memory."""
         log_entry = {
             "user_id": user_id,
             "timestamp": datetime.now(),
-            "original": original,
-            "enhanced": enhanced,
+            "original": redact_secrets(original),
+            "enhanced": redact_secrets(enhanced),
             "score": score,
             "latency": latency,
             "source": source,
             "mode": mode,
         }
-        
+        # Only allow known values into analytics. This is metadata supplied by
+        # a client, not a source of truth about the user's prompt.
+        log_entry["input_method"] = "voice" if input_method == "voice" else "text"
+        if isinstance(input_duration_seconds, (int, float)) and input_duration_seconds > 0:
+            log_entry["input_duration_seconds"] = round(float(input_duration_seconds), 3)
+        if platform:
+            log_entry["platform"] = platform
+        if provider:
+            log_entry["provider"] = provider
+        if model:
+            log_entry["model"] = model
+        log_entry["byok"] = bool(byok)
+
+        # Count the enhancement before attempting the write, and count it on
+        # exactly the shape check_daily_limit() counts in Mongo (an active log
+        # that produced an enhancement). Doing it here rather than in the
+        # success branch means the tally holds even when the write fails, which
+        # is the case that previously handed the user an unlimited allowance.
+        if source == "active" and enhanced:
+            usage.record(user_id)
+
         log_id = "memory-only"
         if MongoDB.prompts_col is not None:
             try:
                 res = MongoDB.prompts_col.insert_one(log_entry)
                 log_id = str(res.inserted_id)
-            except: pass
+            except Exception as e:
+                # Was a bare `except: pass`, which also swallowed
+                # KeyboardInterrupt and SystemExit and left no trace anywhere —
+                # the endpoint still returned 200 with an incremented usage
+                # count, so a dead database looked exactly like a healthy one.
+                print(f"⚠️ Prompt log write failed: {e}")
         else:
             in_memory_prompt_logs.append(log_entry)
-        
+
         return log_id
 
     @staticmethod
@@ -196,6 +289,8 @@ class MemoryService:
     @staticmethod
     def memorize_strategy(user_id: str, original: str, refined: str):
         """Saves high-quality prompts to passive tracking Vector DB."""
+        original = redact_secrets(original)
+        refined = redact_secrets(refined)
         try:
             vec = get_embedding(original)
             if vec:
@@ -249,7 +344,11 @@ class MemoryService:
                 limit=limit + (len(exclude_ids) if exclude_ids else 0),
             ).points
         except Exception as e:
-            print(f"⚠️ Saved prompts search failed: {e}")
+            # Distinguished from "no matches" on purpose. These read identically
+            # to the caller — an empty list — which is how a dead vector store
+            # stayed invisible for months while the library appeared to work.
+            print(f"❌ Saved-prompt search FAILED (not empty — failed): {e}")
+            QdrantDB.reset()
             return []
 
         exclude_set = set(exclude_ids or [])
@@ -276,11 +375,21 @@ class MemoryService:
     def embed_saved_prompt(user_id: str, mongo_id: str, content: str, title: str = "", tags: list = None):
         """Embed a saved prompt into the saved_prompt_vectors Qdrant collection."""
         try:
+            content = redact_secrets(content)
             vec = get_embedding(content)
+            if not vec:
+                # Silent before. The prompt still saved to Mongo and appeared in
+                # the user's library, but no vector existed, so it could never
+                # be retrieved — a library that looks fine and never matches.
+                print("❌ Saved prompt NOT embedded: embedding model unavailable "
+                      f"(mongo_id={mongo_id}). Saved-prompt search will not find it.")
             if vec:
                 q_client = QdrantDB.get_client()
                 if q_client:
-                    point_id = abs(hash(mongo_id)) % (2**63)
+                    # Deterministic, so re-embedding after an edit overwrites
+                    # the old point instead of leaving the pre-edit text in the
+                    # index to outrank the correction.
+                    point_id = point_id_for(mongo_id)
                     q_client.upsert(
                         collection_name=QdrantDB.SAVED_COLLECTION,
                         points=[PointStruct(
@@ -297,22 +406,62 @@ class MemoryService:
                     )
                     print(f"💾 Saved prompt embedded (id={mongo_id})")
         except Exception as e:
-            print(f"❌ Saved prompt embedding failed: {e}")
+            print(f"❌ Saved prompt embedding FAILED (mongo_id={mongo_id}): {e}")
+            print("   This prompt is in the library but will never be retrieved.")
+            QdrantDB.reset()
 
     @staticmethod
-    def delete_saved_prompt_vector(mongo_id: str):
-        """Remove a saved prompt's vector from Qdrant."""
+    def delete_saved_prompt_vector(mongo_id: str, user_id: str = None):
+        """
+        Remove a saved prompt's vector from Qdrant.
+
+        Deletes by payload filter rather than by point id. Point ids written
+        before the switch to point_id_for() came from a per-process randomised
+        hash and cannot be recomputed, so an id-based delete could never reach
+        them. Matching on the mongo_id payload field reaches every point
+        regardless of which scheme wrote it, which also means this call cleans
+        up its own historical orphans the next time a user deletes something.
+        """
         try:
             q_client = QdrantDB.get_client()
-            if q_client:
-                point_id = abs(hash(mongo_id)) % (2**63)
-                q_client.delete(
-                    collection_name=QdrantDB.SAVED_COLLECTION,
-                    points_selector=[point_id],
-                )
-                print(f"🗑️ Saved prompt vector deleted (id={mongo_id})")
+            if q_client is None:
+                return
+            must = [FieldCondition(key="mongo_id", match=MatchValue(value=mongo_id))]
+            if user_id:
+                must.append(FieldCondition(key="user_id", match=MatchValue(value=user_id)))
+            q_client.delete(
+                collection_name=QdrantDB.SAVED_COLLECTION,
+                points_selector=FilterSelector(filter=Filter(must=must)),
+            )
+            print(f"🗑️ Saved prompt vector deleted (mongo_id={mongo_id})")
         except Exception as e:
             print(f"⚠️ Could not delete saved prompt vector: {e}")
+
+    @staticmethod
+    def purge_user_vectors(user_id: str) -> dict:
+        """
+        Delete every vector belonging to a user from both Qdrant collections.
+
+        Backs the "delete your data" right the privacy policy promises. Filter
+        based, so it does not depend on being able to recompute any point id.
+        """
+        removed = {}
+        try:
+            q_client = QdrantDB.get_client()
+            if q_client is None:
+                return {"qdrant": "unavailable"}
+            selector = FilterSelector(filter=Filter(must=[
+                FieldCondition(key="user_id", match=MatchValue(value=user_id))
+            ]))
+            for collection in (settings.COLLECTION_NAME, QdrantDB.SAVED_COLLECTION):
+                try:
+                    q_client.delete(collection_name=collection, points_selector=selector)
+                    removed[collection] = "deleted"
+                except Exception as e:
+                    removed[collection] = f"failed: {e}"
+        except Exception as e:
+            removed["error"] = str(e)
+        return removed
 
     @staticmethod
     def get_user_feedback_summary(user_id: str, limit: int = 20) -> str:

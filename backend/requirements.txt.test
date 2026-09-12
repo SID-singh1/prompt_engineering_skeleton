@@ -1,0 +1,8 @@
+# The subset of backend/requirements.txt the test suite actually imports.
+fastapi>=0.110.0
+pydantic>=2.6.1
+python-dotenv>=1.0.1
+python-multipart
+pyjwt>=2.8.0
+httpx>=0.24.1
+pymongo>=4.6.1

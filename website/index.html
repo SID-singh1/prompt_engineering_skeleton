@@ -39,8 +39,12 @@
                 Prompt Memory rewrites your prompts in real-time to get dramatically better responses 
                 from ChatGPT, Claude, Gemini, and more. One click. No prompt engineering expertise needed.
             </p>
+            <!-- INSTALL LINK — every install CTA on this page points here.
+                 There is no Chrome Web Store listing yet, so this goes to the
+                 repo's install-from-source instructions. Replace all four
+                 occurrences of this URL with the store URL at listing time. -->
             <div class="hero-ctas">
-                <a href="#pricing" class="btn btn-primary btn-lg">
+                <a href="https://github.com/siddhm11/prompt_engineering_skeleton#installation" class="btn btn-primary btn-lg">
                     <span>Install Free Extension</span>
                     <span class="btn-arrow">→</span>
                 </a>
@@ -191,15 +195,19 @@
                         <span class="price-period">/mo</span>
                     </div>
                     <p class="price-desc">Get started with prompt enhancement</p>
+                    <!-- These must track backend/core/config.py TIER_LIMITS.
+                         The page said "20 enhancements/day" against a
+                         configured 15, and "3 saved prompts" against no saved-
+                         prompt cap anywhere in the code. -->
                     <ul class="price-features">
-                        <li><span class="check">✓</span> 20 enhancements/day</li>
-                        <li><span class="check">✓</span> Quick & Deep modes</li>
-                        <li><span class="check">✓</span> 3 saved prompts</li>
+                        <li><span class="check">✓</span> 15 enhancements/day on our key</li>
+                        <li><span class="check">✓</span> 1,000/day with your own free API key</li>
+                        <li><span class="check">✓</span> Quick, Deep &amp; Creative modes</li>
+                        <li><span class="check">✓</span> Unlimited saved prompts</li>
                         <li><span class="check">✓</span> All 6 platforms</li>
-                        <li class="muted"><span class="cross">✗</span> Voice to Prompt</li>
-                        <li class="muted"><span class="cross">✗</span> Passive learning</li>
+                        <li><span class="check">✓</span> Voice to Prompt</li>
                     </ul>
-                    <a href="#" class="btn btn-secondary btn-full">Install Free</a>
+                    <a href="https://github.com/siddhm11/prompt_engineering_skeleton#installation" class="btn btn-secondary btn-full">Install Free</a>
                 </div>
 
                 <!-- Pro -->
@@ -220,7 +228,13 @@
                         <li><span class="check">✓</span> Passive learning</li>
                         <li><span class="check">✓</span> Enhancement history</li>
                     </ul>
-                    <a href="#" class="btn btn-primary btn-full">Get Pro</a>
+                    <!-- No Stripe integration and no tier enforcement exists
+                         yet (config.py has empty STRIPE_* keys; nothing reads
+                         subscription_tier on the write path). A working "Get
+                         Pro" button would take money for something that cannot
+                         be delivered or revoked. -->
+                    <a href="#" class="btn btn-primary btn-full" aria-disabled="true"
+                       onclick="return false;" style="opacity:.6;cursor:not-allowed">Coming soon</a>
                 </div>
 
                 <!-- Enterprise -->
@@ -240,7 +254,8 @@
                         <li><span class="check">✓</span> Team features</li>
                         <li><span class="check">✓</span> Priority support</li>
                     </ul>
-                    <a href="#" class="btn btn-secondary btn-full">Contact Us</a>
+                    <a href="#" class="btn btn-secondary btn-full" aria-disabled="true"
+                       onclick="return false;" style="opacity:.6;cursor:not-allowed">Coming soon</a>
                 </div>
             </div>
         </div>
@@ -267,8 +282,10 @@
             </div>
             <div class="footer-links">
                 <a href="privacy.html">Privacy Policy</a>
-                <a href="#">Terms</a>
-                <a href="#">Contact</a>
+                <a href="https://github.com/siddhm11/prompt_engineering_skeleton">GitHub</a>
+                <!-- TODO: add a real contact address before the store listing;
+                     the Chrome Web Store requires a reachable developer
+                     contact, and privacy.html promises one. -->
             </div>
             <p class="footer-copy">© 2026 Prompt Memory. All rights reserved.</p>
         </div>

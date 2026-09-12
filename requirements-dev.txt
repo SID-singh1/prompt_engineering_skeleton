@@ -1,0 +1,7 @@
+# Test-only dependencies.
+#
+# The suite stubs sentence-transformers, groq and qdrant-client (see
+# tests/conftest.py) so a CI run does not have to download torch to check a
+# regex. Everything listed here is imported for real.
+-r backend/requirements.txt.test
+pytest>=8.0

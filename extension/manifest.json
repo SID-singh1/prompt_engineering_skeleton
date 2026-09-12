@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Prompt Memory",
-  "version": "2.0",
-  "description": "One-click prompt engineering — turns your raw thoughts into precision-crafted LLM queries.",
+  "version": "4.1",
+  "description": "One-click prompt engineering — turns your raw thoughts into precision-crafted LLM queries. Free, with your own API key.",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -10,11 +10,27 @@
   },
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
-    "https://siddhm11-prompt-engine.hf.space/*"
+    "https://siddhm11-prompt-engine.hf.space/*",
+    "https://api.groq.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://openrouter.ai/*",
+    "https://chatgpt.com/*",
+    "https://gemini.google.com/*",
+    "https://claude.ai/*",
+    "https://www.perplexity.ai/*",
+    "https://grok.com/*",
+    "https://x.com/i/grok*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
   ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "commands": {
     "enhance-prompt": {
       "suggested_key": {
@@ -51,5 +67,9 @@
         "styles.css"
       ]
     }
-  ]
+  ],
+  "options_ui": {
+    "page": "popup.html",
+    "open_in_tab": true
+  }
 }

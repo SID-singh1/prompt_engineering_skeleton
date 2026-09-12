@@ -1,0 +1,188 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prompt Memory — composer write harness</title>
+<style>
+  body{font:14px system-ui;margin:24px;max-width:900px}
+  h1{font-size:18px} p{color:#555}
+  table{border-collapse:collapse;width:100%;margin-top:16px}
+  th,td{border-bottom:1px solid #ddd;padding:8px;text-align:left;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#777}
+  .pass{color:#137333;font-weight:600}.fail{color:#c5221f;font-weight:600}
+  #stage{position:fixed;left:-9999px;top:0}
+  code{background:#f1f3f4;padding:1px 5px;border-radius:3px}
+</style>
+<h1>Composer write harness</h1>
+<p>
+  Exercises the real <code>applyToInput()</code> from <code>../content.js</code> — the function is
+  extracted from that file at run time, so this cannot drift from what ships.
+  The four editors below reproduce how the actual targets track changes:
+  React's <code>_valueTracker</code>, ProseMirror's MutationObserver reconciliation (ChatGPT),
+  Lexical's <code>beforeinput</code> handling, and a plain contenteditable.
+</p>
+<p><b>Run it:</b> <code>python3 -m http.server</code> from the repo root, then open
+  <code>/extension/tests/composer-harness.html</code>. It needs to be served — a
+  <code>file://</code> page cannot fetch the sibling source file.</p>
+<div id="stage"></div>
+<div id="out">Running…</div>
+
+<script type="module">
+const ORIGINAL = "hw do i sort a list";
+const ENHANCED = "How do I sort a list of dictionaries in Python by a specific key?";
+const stage = document.getElementById("stage");
+
+// Pull the real implementation out of content.js. The block is delimited by the
+// COMPOSER_SELECTORS declaration and the passive-tracking section that follows
+// applyOrFallback; keep those markers in place if you move code around.
+async function loadRealCode() {
+  const src = await fetch("../content.js").then(r => {
+    if (!r.ok) throw new Error(`content.js: HTTP ${r.status}`);
+    return r.text();
+  });
+  const from = src.indexOf("const COMPOSER_SELECTORS = [");
+  const to = src.indexOf("function setupPassiveTracking()");
+  if (from < 0 || to < 0) throw new Error("markers not found in content.js");
+  const body = src.slice(from, to)
+    // applyOrFallback is the only part that touches extension-only globals.
+    .replace(/async function applyOrFallback[\s\S]*$/, "");
+  return new Function(`${body}; return { applyToInput, findComposer, composerText };`)();
+}
+
+const mkCE = () => {
+  const el = document.createElement("div");
+  el.setAttribute("contenteditable", "true");
+  el.setAttribute("role", "textbox");
+  el.style.cssText = "width:400px;min-height:60px;display:block";
+  stage.appendChild(el); return el;
+};
+
+const EDITORS = {
+  "React textarea (value tracker)": (init) => {
+    const ta = document.createElement("textarea");
+    ta.value = init; ta.style.cssText = "width:400px;height:80px;display:block";
+    stage.appendChild(ta);
+    let state = init;
+    const proto = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value");
+    let tracked = "" + init;
+    Object.defineProperty(ta, "value", { configurable: true,
+      get() { return proto.get.call(this); },
+      set(v) { tracked = "" + v; proto.set.call(this, v); } });
+    ta.addEventListener("input", () => {
+      const d = proto.get.call(ta); if (d === tracked) return; tracked = d; state = d; });
+    ta.rerender = () => { proto.set.call(ta, state); tracked = "" + state; };
+    ta.getState = () => state; return ta;
+  },
+  "ProseMirror-style (ChatGPT)": (init) => {
+    const el = mkCE(); el.textContent = init; let model = init;
+    new MutationObserver(() => { model = el.textContent; })
+      .observe(el, { childList: true, characterData: true, subtree: true });
+    el.rerender = () => { if (el.textContent !== model) el.textContent = model; };
+    el.getState = () => model; return el;
+  },
+  "Lexical-style (beforeinput)": (init) => {
+    const el = mkCE(); el.textContent = init; let model = init;
+    el.addEventListener("beforeinput", (e) => {
+      if (e.inputType === "insertReplacementText" || e.inputType === "insertText") {
+        e.preventDefault();
+        const s = window.getSelection();
+        const all = s && s.toString() === el.textContent && el.textContent.length > 0;
+        model = all ? (e.data ?? "") : model + (e.data ?? ""); el.textContent = model; } });
+    el.addEventListener("paste", (e) => {
+      e.preventDefault(); model = e.clipboardData.getData("text/plain"); el.textContent = model; });
+    el.rerender = () => { el.textContent = model; };
+    el.getState = () => model; return el;
+  },
+  "Plain contenteditable": (init) => {
+    const el = mkCE(); el.textContent = init;
+    el.rerender = () => {}; el.getState = () => el.textContent; return el;
+  },
+};
+
+const rows = [];
+function record(name, returned, landed) {
+  const honest = returned === landed;
+  rows.push({ name, returned, landed, honest });
+}
+
+try {
+  const { applyToInput } = await loadRealCode();
+
+  for (const [name, make] of Object.entries(EDITORS)) {
+    stage.innerHTML = "";
+    const el = make(ORIGINAL);
+    const returned = await applyToInput(ENHANCED);
+    el.rerender();
+    record(name, returned, el.getState() === ENHANCED);
+  }
+
+  // No composer at all.
+  stage.innerHTML = "";
+  record("no composer on page", await applyToInput(ENHANCED), false);
+
+  // An editor that refuses every write must be reported as a failure, not a
+  // success — reporting success here is the original bug.
+  stage.innerHTML = "";
+  {
+    const el = mkCE(); el.textContent = ORIGINAL;
+    const obs = new MutationObserver(() => {
+      if (el.textContent !== ORIGINAL) { obs.disconnect(); el.textContent = ORIGINAL;
+        obs.observe(el, { childList: true, characterData: true, subtree: true }); } });
+    obs.observe(el, { childList: true, characterData: true, subtree: true });
+    el.addEventListener("beforeinput", (e) => e.preventDefault());
+    el.addEventListener("paste", (e) => e.preventDefault());
+    record("editor rejects every write", await applyToInput(ENHANCED), false);
+  }
+
+  // Readonly composers must not be selected.
+  stage.innerHTML = "";
+  {
+    const ta = document.createElement("textarea");
+    ta.value = ORIGINAL; ta.readOnly = true;
+    ta.style.cssText = "width:400px;height:80px;display:block";
+    stage.appendChild(ta);
+    record("readonly textarea skipped", await applyToInput(ENHANCED), false);
+  }
+
+  // Perplexity-shaped: a selection is not replaced by an insert, so writing
+  // over a full selection APPENDS. Reporting success here would leave the user
+  // with their prompt twice and the extension claiming it worked.
+  stage.innerHTML = "";
+  {
+    const el = mkCE(); el.textContent = ORIGINAL;
+    el.addEventListener("beforeinput", (e) => {
+      if (e.inputType === "insertText" || e.inputType === "insertReplacementText") {
+        e.preventDefault();
+        el.textContent = el.textContent + (e.data ?? "");   // append, never replace
+      }
+      if (e.inputType === "deleteContentBackward") { e.preventDefault(); }
+    });
+    el.addEventListener("paste", (e) => {
+      e.preventDefault();
+      el.textContent = el.textContent + e.clipboardData.getData("text/plain");
+    });
+    const returned = await applyToInput(ENHANCED);
+    const landed = el.textContent.trim() === ENHANCED;
+    record("append-only editor (duplication)", returned, landed);
+  }
+} catch (err) {
+  document.getElementById("out").innerHTML =
+    `<p class="fail">Harness could not run: ${err.message}</p>`;
+  throw err;
+}
+
+const failures = rows.filter((r) => !r.honest).length;
+document.getElementById("out").innerHTML = `
+  <p><b class="${failures ? "fail" : "pass"}">
+    ${failures ? `${failures} case(s) reported the wrong result` : "All cases reported honestly"}
+  </b></p>
+  <table>
+    <tr><th>Editor / case</th><th>applyToInput returned</th><th>text actually landed</th><th>honest?</th></tr>
+    ${rows.map((r) => `<tr>
+      <td>${r.name}</td>
+      <td>${r.returned}</td>
+      <td>${r.landed}</td>
+      <td class="${r.honest ? "pass" : "fail"}">${r.honest ? "yes" : "NO"}</td>
+    </tr>`).join("")}
+  </table>
+  <p>A row is correct when the two middle columns agree. Reporting
+  <code>true</code> while the text did not land is the defect this guards.</p>`;
+</script>
