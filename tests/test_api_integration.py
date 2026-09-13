@@ -308,6 +308,16 @@ class _FakeWhisperClient:
         self.audio = type("Audio", (), {"transcriptions": _FakeWhisperTranscriptions(result)})()
 
 
+def test_voice_transcription_normalises_whisper_language_names_to_codes():
+    # Groq's verbose_json reports "English"/"Hindi"/"Urdu", not ISO codes.
+    # Before this was handled every real transcript came back "unknown".
+    assert prompts._transcription_parts({"text": "hello there", "language": "English"}) == ("hello there", "en")
+    assert prompts._transcription_parts({"text": "namaste", "language": "Hindi"}) == ("namaste", "hi")
+    assert prompts._transcription_parts({"text": "namaste", "language": "Urdu"}) == ("namaste", "hi")
+    assert prompts._transcription_parts({"text": "hola", "language": "es"}) == ("hola", "es")
+    assert prompts._transcription_parts({"text": "x", "language": "Klingon"}) == ("x", "unknown")
+
+
 def test_voice_transcription_returns_an_editable_transcript_without_storing_audio_or_text(client, auth, monkeypatch):
     whisper = _FakeWhisperClient({"text": "draft a launch plan", "language": "en"})
     monkeypatch.setattr(prompts, "get_groq_client", lambda _key=None: whisper)

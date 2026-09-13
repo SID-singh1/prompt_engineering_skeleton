@@ -267,6 +267,15 @@ LANGUAGE_NAMES = {
     "gu": "Gujarati", "kn": "Kannada", "pa": "Punjabi", "ml": "Malayalam",
 }
 
+# Reverse of the plain-name entries above, lower-cased, for normalising the
+# language names Whisper returns. "ur" maps to the name "Hindi" too, so the
+# comprehension is ordered to let the real code for each name win: "hindi" →
+# "hi", "urdu" → "ur".
+_LANGUAGE_CODES_BY_NAME = {
+    **{name.lower(): code for code, name in LANGUAGE_NAMES.items() if code not in ("ur", "hi-Latn")},
+    "urdu": "ur",
+}
+
 
 # Distinctive romanised-Hindi tokens. Deliberately excludes anything that is
 # also an ordinary English word — "me", "to", "is", "so", "the", "hi", "an" —
@@ -940,6 +949,13 @@ def _transcription_parts(transcription) -> tuple[str, str]:
         language = transcription.get("language", "unknown")
     else:
         language = "unknown"
+
+    # Groq's verbose_json returns the language as a capitalised English name
+    # ("English", "Hindi", "Urdu"), not the ISO code the rest of this module
+    # keys on. Checked against the code table alone, every real transcript
+    # came back "unknown", so the enhancer never got the source-language hint
+    # and the Urdu→Hindi mapping below never fired.
+    language = _LANGUAGE_CODES_BY_NAME.get(language.strip().lower(), language)
 
     # Whisper can call Hindi speech Urdu. Preserve the existing product choice
     # while refusing unsupported/hallucinated labels as a source-language hint.
