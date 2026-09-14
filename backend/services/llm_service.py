@@ -178,8 +178,14 @@ def _encode_text(text: str):
 
     return _embedding_model.encode(text, convert_to_numpy=True).tolist()
 
-# LRU cache: avoids re-encoding the same prompt text multiple times
+
 @lru_cache(maxsize=256)
+def _cached_embedding(text: str):
+    """Cache an immutable embedding so callers cannot poison later reads."""
+    encoded = _encode_text(text)
+    return tuple(encoded) if encoded is not None else None
+
+
 def embedding_status() -> dict:
     """
     Whether the embedding model is actually usable.
@@ -190,13 +196,29 @@ def embedding_status() -> dict:
     The visible result is a saved-prompt library that appears to save fine and
     never matches anything — with no error anywhere to explain why.
     """
+    cache = _cached_embedding.cache_info()
     return {
         "model": settings.EMBEDDING_MODEL_NAME,
         "loaded": _embedding_model is not None,
         "unavailable": bool(_embedding_unavailable),
+        "cache": {
+            "hits": cache.hits,
+            "misses": cache.misses,
+            "size": cache.currsize,
+            "max_size": cache.maxsize,
+        },
     }
 
 
 def get_embedding(text: str):
-    """Converts text to 384-dim vector using multilingual MiniLM-L12. Cached for repeated calls."""
-    return _encode_text(text)
+    """Convert text to a vector, reusing identical queries across memory layers."""
+    cached = _cached_embedding(str(text))
+    # Return a fresh list. Qdrant clients should not mutate vectors, but making
+    # the cache's value unreachable prevents one accidental mutation from
+    # corrupting every later search for the same prompt.
+    return list(cached) if cached is not None else None
+
+
+def clear_embedding_cache():
+    """Clear cached vectors after a model/configuration change or in tests."""
+    _cached_embedding.cache_clear()
