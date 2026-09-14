@@ -84,6 +84,7 @@ def test_normal_body_is_not_refused(client):
     ("/enhance/stream", "post"),
     ("/enhance/usage", "get"),
     ("/enhance/history", "get"),
+    ("/enhance/accept", "post"),
     ("/saved-prompts", "get"),
     ("/track", "post"),
     ("/users/me", "delete"),
@@ -460,3 +461,62 @@ def test_both_enhance_endpoints_return_the_same_context_shape(client, auth, monk
         assert key in streamed, f"streaming response is missing {key!r}"
     assert set(plain["context_details"]) == set(streamed["context_details"])
     assert set(plain["context_used"]) == set(streamed["context_used"])
+
+
+def test_only_a_server_owned_applied_rewrite_becomes_passive_memory(client, auth, monkeypatch):
+    _stub_llm(monkeypatch)
+    recorded = []
+    monkeypatch.setattr(
+        prompts.MemoryService, "memorize_strategy",
+        lambda user_id, original, refined, *, approval_id=None:
+            recorded.append((user_id, original, refined, approval_id)) or True,
+    )
+
+    result = client.post("/enhance", json={"prompt": "help with a launch"}, headers=auth)
+    assert result.status_code == 200
+    log_id = result.json()["log_id"]
+    assert log_id and log_id != "memory-only"
+    assert recorded == [], "generation is not user approval"
+    assert "accepted_at" not in in_memory_prompt_logs[0]
+
+    stranger = {"Authorization": f"Bearer {create_jwt_token('stranger', 's@x.com')}"}
+    denied = client.post("/enhance/accept", json={"log_id": log_id}, headers=stranger)
+    assert denied.status_code == 404
+    assert recorded == []
+
+    accepted = client.post(
+        "/enhance/accept",
+        json={"log_id": log_id, "original": "forged", "enhanced": "forged"},
+        headers=auth,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json() == {"status": "accepted", "memory_saved": True}
+    assert recorded == [("integration-user", "help with a launch", "a rewritten prompt", log_id)]
+    assert in_memory_prompt_logs[0]["accepted_at"]
+
+    repeated = client.post("/enhance/accept", json={"log_id": log_id}, headers=auth)
+    assert repeated.status_code == 200
+    assert len(recorded) == 1, "retry must not produce another memory write"
+
+
+def test_streaming_enhancement_waits_for_acceptance_to_memorize(client, auth, monkeypatch):
+    import json as _json
+
+    monkeypatch.setattr(
+        prompts.providers, "chat_stream",
+        lambda **kw: iter([{"token": "Write a concise rollout plan."},
+                           {"meta": {"model": "m", "provider": "p", "byok": False}}]),
+    )
+    calls = []
+    monkeypatch.setattr(
+        prompts.MemoryService, "memorize_strategy",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    response = client.post("/enhance/stream", json={"prompt": "rollout plan"}, headers=auth)
+    assert response.status_code == 200
+    events = [_json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+    done = next(event for event in events if event.get("done"))
+    assert done["log_id"]
+    assert calls == []
+    assert client.post("/enhance/accept", json={"log_id": done["log_id"]}, headers=auth).status_code == 200
+    assert len(calls) == 1
