@@ -34,6 +34,10 @@
 
 ## 🗂️ Project Structure
 
+For a dated, code-verified comparison of the last committed architecture and
+the current local working tree, see
+[`docs/ARCHITECTURE_BEFORE_AFTER.md`](docs/ARCHITECTURE_BEFORE_AFTER.md).
+
 ```
 prompt_engineering_skeleton/
 │
@@ -159,6 +163,28 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 { "status": "running", "service": "Context-Aware Prompt Engine", "production_ready": true }
 ```
 
+### Prompt-quality evaluation
+
+Prompt rewrites are covered by an 82-case evaluation corpus spanning intent
+fidelity, explicit and negative constraints, code preservation, conversation
+context, voice disfluency, multilingual input, numerical fidelity, prompt
+injection, modes, and every supported platform. See
+[`evals/README.md`](evals/README.md) for the scoring rubric and quota-aware live
+runner.
+
+The [product-quality research assessment](evals/PRODUCT_QUALITY_RESEARCH.md)
+explains the original measurement gaps; later provider diagnostics and their
+limitations are documented in
+[`evals/HELDOUT_2026-09-13.md`](evals/HELDOUT_2026-09-13.md).
+
+Validate the corpus without making model calls:
+
+```bash
+pytest tests/test_prompt_eval_dataset.py -q
+python evals/run_prompt_eval.py --dry-run
+python evals/run_context_retrieval_eval.py --validate
+```
+
 ---
 
 ### 2 · Chrome Extension Setup
@@ -182,6 +208,19 @@ The API will be live at **http://localhost:8000**. Hit `/` to verify:
 3. Navigate to any supported AI platform — a floating **⊕** button appears
 4. Type a prompt, then click **Enhance** or press `Ctrl+Shift+E`
 5. Review the before/after diff → accept, edit, or dismiss
+
+For signed-in users, generating a rewrite adds it to History but does **not**
+teach passive memory. Passive memory is written only after the rewritten prompt
+is successfully applied to the composer (including History → Use). Dismissing
+the preview, copying text, or applying the original does not approve it.
+Previously stored passive vectors without an approval marker are excluded from
+retrieval. Saved prompts remain explicit user-managed context. If the database
+or vector store is unavailable, acceptance still applies the text, but memory
+may not be saved; a later History → Use can retry it. When Mongo is configured,
+the server does not write a durable memory vector until the approval log is
+durably stored, so a database outage cannot immediately leave an untracked
+memory behind. Prompt-log retention may later expire that record; a separate
+long-lived consent ledger is still needed before claiming permanent auditability.
 
 > **Why bring your own key?** Groq's free tier is 1,000 requests/day and 8,000
 > tokens/minute *per account*. Because every user shares this project's single
