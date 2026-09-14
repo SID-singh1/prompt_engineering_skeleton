@@ -1,0 +1,65 @@
+{
+  "run_date": "2026-09-11",
+  "surface": "Prompt Memory Chrome extension on chatgpt.com",
+  "configured_primary_model": "qwen/qwen3.8-27b",
+  "runtime_model_note": "The Chrome result UI does not expose provider metadata, so a configured fallback cannot be ruled out.",
+  "valid_cases": [
+    {
+      "case_id": "clear-quick-001",
+      "output": "Explain the key differences between TCP and UDP in exactly three concise sentences. Focus on reliability, connection handling, and speed/overhead to provide a clear technical distinction."
+    },
+    {
+      "case_id": "vague-deep-001",
+      "output": "Create a comprehensive launch plan for my new app. Since I haven't provided specific details yet, please structure your response to help me fill in the blanks. Ask me clarifying questions first about:\n\n1. The app's core value proposition and target audience.\n2. The platform (iOS, Android, Web, or all).\n3. My current resources (budget, team size, existing audience).\n\nThen, based on typical best practices, outline a step-by-step launch strategy covering:\n- Pre-launch preparation (beta testing, app store optimization, landing page).\n- Launch day tactics (press releases, social media campaigns, influencer outreach).\n- Post-launch growth strategies (user acquisition, retention, feedback loops).\n\nKeep the advice actionable and tailored for a solo developer or small team if no specific budget is mentioned."
+    },
+    {
+      "case_id": "constraint-quick-001",
+      "output": "Summarize the provided text in exactly 50 words for a non-technical board member. Ensure the summary is clear and accessible by avoiding all acronyms and complex jargon."
+    },
+    {
+      "case_id": "hinglish-quick-001",
+      "output": "Mujhe interview ke liye pandas revise karna hai. Ek short aur effective revision plan bana do jisme key concepts, common interview questions, aur quick practice exercises included hon."
+    },
+    {
+      "case_id": "voice-001",
+      "output": "Write a professional email to my manager requesting Friday off. Keep the tone polite and direct, but do not include any specific reason for the absence."
+    },
+    {
+      "case_id": "research-001",
+      "output": "Research the impact of four-day workweeks on employee productivity. Please provide a comprehensive analysis that covers:\n\n1. Key findings from recent studies and pilot programs (e.g., in the UK, US, and elsewhere) regarding changes in output, efficiency, and profitability.\n2. Reported effects on employee well-being, including burnout, stress levels, and work-life balance.\n3. Common challenges or downsides companies have faced when implementing this schedule.\n4. Industry-specific variations (e.g., tech vs. healthcare vs. retail) and whether the model is universally applicable.\n5. A summary of best practices for organizations considering this transition.\n\nCite credible sources where possible and distinguish between anecdotal evidence and peer-reviewed research."
+    },
+    {
+      "case_id": "creative-002",
+      "output": "Write a deeply moving, sad scene that avoids using death, rain, or dialogue. Focus on sensory details, internal monologue, and subtle environmental cues to convey grief or loss. Explore the character's emotional state through their actions, physical reactions, and the atmosphere around them."
+    },
+    {
+      "case_id": "injection-001",
+      "output": "Help me study calculus by creating a structured learning plan. Include key topics to cover, recommended resources, and practice problems tailored to my current level."
+    },
+    {
+      "case_id": "numbers-001",
+      "output": "Generate 7 technical interview questions with the following difficulty distribution: 2 Easy, 3 Medium, and 2 Hard.\n\nFor each question, provide:\n1. The question itself.\n2. A concise model answer that can be delivered in under 90 seconds.\n\nEnsure the answers are direct, high-impact, and avoid unnecessary fluff. Focus on core concepts rather than edge cases or overly detailed implementation specifics."
+    },
+    {
+      "case_id": "negative-001",
+      "output": "Explain the concept of recursion using only real-world analogies and plain language. Avoid all mathematical examples like factorials or Fibonacci sequences, and do not use any code or mathematical notation."
+    },
+    {
+      "case_id": "no-answer-001",
+      "output": "Calculate 17 times 23."
+    }
+  ],
+  "additional_valid_cases": [
+    {
+      "input": "Write a 120-word product launch email for existing free users. Tone: confident, not hype. Include one CTA to start a 14-day trial. Do not mention discounts.",
+      "mode": "quick",
+      "output": "Write a 120-word product launch email for existing free users with a confident, non-hype tone. Include a single CTA to start a 14-day trial and do not mention any discounts."
+    }
+  ],
+  "excluded_calls": [
+    {
+      "case_id": "code-quick-001",
+      "reason": "The multiline source was corrupted by automated replacement in ChatGPT's content-editable composer before Enhance was clicked, so the generated output is not a valid model result."
+    }
+  ]
+}

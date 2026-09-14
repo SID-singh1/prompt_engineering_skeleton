@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "purpose": "Independent synthetic holdout; do not tune thresholds on these labels",
+  "memories": [
+    {"id":"nina-service","user_id":"nina","source":"saved","content":"The customer-facing service is written in Go and deployed on Google Cloud Run; its data store is Cloud Spanner."},
+    {"id":"nina-style","user_id":"nina","source":"passive","content":"Architecture explanations should start with the trade-off, then give a small implementation checklist.","original":"explain this architecture choice","refined":"Explain the architecture trade-off first, then give a small implementation checklist."},
+    {"id":"nina-cycling","user_id":"nina","source":"saved","content":"Planning a weekend cycling route through coastal roads near Chennai."},
+
+    {"id":"elena-class","user_id":"elena","source":"saved","content":"The grade six science class is learning about ecosystems and food webs; lessons must be accessible to English-language learners."},
+    {"id":"elena-assessment","user_id":"elena","source":"passive","content":"End each classroom activity with three low-stakes comprehension questions instead of a graded quiz.","original":"make an activity for my students","refined":"Create a classroom activity ending with three low-stakes comprehension questions, not a graded quiz."},
+    {"id":"elena-bakery","user_id":"elena","source":"saved","content":"Home bakery sells egg-free birthday cakes for local pickup only."},
+
+    {"id":"tariq-client","user_id":"tariq","source":"saved","content":"Current consulting client is a nonprofit food bank in Manchester seeking recurring donors, not one-off event sponsors."},
+    {"id":"tariq-privacy","user_id":"tariq","source":"passive","content":"Fundraising copy should avoid sharing beneficiary names, photographs, or identifiable stories without consent.","original":"write a donation appeal","refined":"Draft a donation appeal without beneficiary names, photographs, or identifiable stories unless consented."},
+    {"id":"tariq-marathon","user_id":"tariq","source":"saved","content":"Training for a spring marathon and prefers flat routes for long runs."},
+
+    {"id":"sofia-museum","user_id":"sofia","source":"saved","content":"The museum exhibition covers women astronomers in Latin America during the twentieth century; wall labels need bilingual Spanish and English text."},
+    {"id":"sofia-style","user_id":"sofia","source":"passive","content":"Public-facing exhibit text uses plain language and defines unfamiliar scientific terms.","original":"describe this exhibit","refined":"Describe this exhibit in plain language and define unfamiliar scientific terms."},
+    {"id":"sofia-finance","user_id":"sofia","source":"saved","content":"Personal budget spreadsheet tracks rent, utilities, and groceries in euros."},
+
+    {"id":"dev-data","user_id":"dev","source":"saved","content":"Analytics pipeline uses dbt models on BigQuery, with daily incremental loads and a seven-day late-arrival window."},
+    {"id":"dev-governance","user_id":"dev","source":"passive","content":"Data-quality proposals should include a rollback plan and a check for personally identifiable information.","original":"propose a data quality check","refined":"Propose a data-quality check with a rollback plan and a personally identifiable information check."},
+    {"id":"dev-guitar","user_id":"dev","source":"saved","content":"Practising jazz guitar chord inversions for an evening jam session."},
+
+    {"id":"amina-studio","user_id":"amina","source":"saved","content":"Small interior-design studio works on rental apartments; recommendations must be removable and avoid drilling into walls."},
+    {"id":"amina-format","user_id":"amina","source":"passive","content":"Client proposals should state a budget range and distinguish must-have items from optional upgrades.","original":"prepare a client proposal","refined":"Prepare a client proposal with a budget range and separate must-have items from optional upgrades."},
+    {"id":"amina-recipe","user_id":"amina","source":"saved","content":"Family recipe notes include a dairy-free lentil soup with lemon and cumin."}
+  ],
+  "cases": [
+    {"id":"hold-nina-01","user_id":"nina","slice":"entity_resolution","query":"How can we reduce cold starts without migrating the service or its database?","relevance":{"nina-service":3},"k":3},
+    {"id":"hold-nina-02","user_id":"nina","slice":"style_only","query":"Explain the reliability trade-offs in my usual architecture format.","relevance":{"nina-style":3},"k":3},
+    {"id":"hold-nina-03","user_id":"nina","slice":"abstention","query":"Suggest a bedtime story about a sleepy whale.","relevance":{},"k":3},
+
+    {"id":"hold-elena-01","user_id":"elena","slice":"multi_relevant","query":"Plan a food-web activity for my class, including a quick check for understanding.","relevance":{"elena-class":3,"elena-assessment":2},"k":3},
+    {"id":"hold-elena-02","user_id":"elena","slice":"constraint_memory","query":"Write a short advertisement for my birthday cake side business.","relevance":{"elena-bakery":3},"k":3},
+    {"id":"hold-elena-03","user_id":"elena","slice":"abstention","query":"How do I fix a leaking bicycle tyre?","relevance":{},"k":3},
+
+    {"id":"hold-tariq-01","user_id":"tariq","slice":"multi_relevant","query":"Draft a recurring-donation appeal for the current client without exposing recipients.","relevance":{"tariq-client":3,"tariq-privacy":2},"k":3},
+    {"id":"hold-tariq-02","user_id":"tariq","slice":"entity_resolution","query":"Who should this donor retention campaign serve?","relevance":{"tariq-client":3},"k":3},
+    {"id":"hold-tariq-03","user_id":"tariq","slice":"abstention","query":"Explain how black holes bend light.","relevance":{},"k":3},
+
+    {"id":"hold-sofia-01","user_id":"sofia","slice":"language_memory","query":"Draft an introductory wall label for the exhibition.","relevance":{"sofia-museum":3,"sofia-style":2},"k":3},
+    {"id":"hold-sofia-02","user_id":"sofia","slice":"single_relevant","query":"Which historical figures should our astronomy show highlight?","relevance":{"sofia-museum":3},"k":3},
+    {"id":"hold-sofia-03","user_id":"sofia","slice":"abstention","query":"Compare two gaming graphics cards.","relevance":{},"k":3},
+
+    {"id":"hold-dev-01","user_id":"dev","slice":"multi_relevant","query":"Add a data-quality check for late-arriving warehouse records, with a safe recovery path.","relevance":{"dev-data":3,"dev-governance":2},"k":3},
+    {"id":"hold-dev-02","user_id":"dev","slice":"constraint_memory","query":"How should I rebuild a failed daily analytics partition?","relevance":{"dev-data":3},"k":3},
+    {"id":"hold-dev-03","user_id":"dev","slice":"abstention","query":"Write a haiku about autumn rain.","relevance":{},"k":3},
+
+    {"id":"hold-amina-01","user_id":"amina","slice":"constraint_memory","query":"Suggest a living-room refresh that a tenant can reverse when moving out.","relevance":{"amina-studio":3},"k":3},
+    {"id":"hold-amina-02","user_id":"amina","slice":"multi_relevant","query":"Prepare a renovation proposal for the client, with clear spending priorities.","relevance":{"amina-studio":3,"amina-format":2},"k":3},
+    {"id":"hold-amina-03","user_id":"amina","slice":"abstention","query":"Explain the difference between TCP and UDP.","relevance":{},"k":3}
+  ]
+}
