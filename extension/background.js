@@ -28,6 +28,23 @@ import {
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";
 
 // ─────────────────────────────────────────────────────────────
+// DRAFT STORAGE ACCESS
+// ─────────────────────────────────────────────────────────────
+//
+// The content script keeps the current draft (the enhanced prompt waiting in
+// the pill) in chrome.storage.session, so it survives chat navigation and
+// reloads but not the browser closing. Session storage is off-limits to
+// content scripts unless the worker opens it; without this line every
+// session.get() in the page rejects and the draft store silently falls back
+// to local storage. Nothing sensitive goes in there — no keys, no tokens —
+// so widening access to the page's isolated world is fine.
+try {
+  chrome.storage.session?.setAccessLevel?.({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+} catch (e) {
+  console.warn("Prompt Memory: could not open session storage to content scripts", e);
+}
+
+// ─────────────────────────────────────────────────────────────
 // SHORTCUTS
 // ─────────────────────────────────────────────────────────────
 
