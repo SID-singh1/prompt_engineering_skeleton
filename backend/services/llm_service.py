@@ -4,6 +4,8 @@ from groq import Groq
 from sentence_transformers import SentenceTransformer
 from ..core.config import settings
 import time
+from ..core.logger import logger
+
 
 # Global singletons
 _embedding_model = None
@@ -44,12 +46,12 @@ class GroqClientPool:
                 self._clients.append(client)
                 self._key_labels.append(label)
             except Exception as e:
-                print(f"⚠️ Failed to init Groq client with {label}: {e}")
+                logger.warning(f"⚠️ Failed to init Groq client with {label}: {e}")
 
         if self._clients:
-            print(f"✅ Groq client pool initialized: {len(self._clients)} key(s) ({', '.join(self._key_labels)})")
+            logger.info(f"✅ Groq client pool initialized: {len(self._clients)} key(s) ({', '.join(self._key_labels)})")
         else:
-            print("❌ No Groq API keys available!")
+            logger.error("❌ No Groq API keys available!")
 
     @property
     def available(self):
@@ -91,7 +93,7 @@ class GroqClientPool:
         next_label = self._key_labels[next_idx]
         self._current_index = next_idx
 
-        print(f"🔄 Key rotation: {label} rate-limited → switching to {next_label} (cooldown {retry_after_seconds}s)")
+        logger.info(f"🔄 Key rotation: {label} rate-limited → switching to {next_label} (cooldown {retry_after_seconds}s)")
 
     def get_status(self):
         """Return pool status for health checks."""
@@ -129,7 +131,7 @@ def get_groq_client(api_key: str = None):
         try:
             return Groq(api_key=api_key.strip())
         except Exception as e:
-            print(f"⚠️ BYOK Groq client init failed, falling back to server key: {e}")
+            logger.warning(f"⚠️ BYOK Groq client init failed, falling back to server key: {e}")
     return _pool.get_client()
 
 
@@ -153,16 +155,16 @@ def preload_embedding_model():
     if _embedding_model is not None or _embedding_unavailable:
         return
     try:
-        print("⏳ Pre-loading embedding model on startup...")
+        logger.info("⏳ Pre-loading embedding model on startup...")
         try:
             _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME, backend="onnx")
-            print("✅ Embedding model pre-loaded (ONNX backend)")
+            logger.info("✅ Embedding model pre-loaded (ONNX backend)")
         except Exception:
             _embedding_model = SentenceTransformer(settings.EMBEDDING_MODEL_NAME)
-            print("✅ Embedding model pre-loaded (default backend)")
+            logger.info("✅ Embedding model pre-loaded (default backend)")
     except Exception as e:
         _embedding_unavailable = True
-        print(f"⚠️ Embedding unavailable: {e}")
+        logger.warning(f"⚠️ Embedding unavailable: {e}")
 
 def _encode_text(text: str):
     """Internal encoder — separated so we can cache the tuple-based wrapper."""

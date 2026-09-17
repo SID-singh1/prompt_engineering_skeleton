@@ -46,6 +46,7 @@ class EnhanceRequest(BaseModel):
     conversation_context: Optional[List[str]] = None
     selected_prompt_ids: Optional[List[str]] = None
     source_language: Optional[str] = None  # ISO code from Whisper (e.g., "en", "hi")
+    tracking_enabled: Optional[bool] = True
 
     # Input metadata is deliberately separate from the prompt body. It lets the
     # private builder dashboard measure voice reliability without retaining an

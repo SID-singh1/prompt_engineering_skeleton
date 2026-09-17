@@ -6,7 +6,9 @@ from fastapi.responses import JSONResponse
 
 from .core.config import settings
 from .core.database import MongoDB, QdrantDB
-from .routers import auth, users, prompts, saved_prompts, feedback, builder_dashboard
+from .routers import auth, users, prompts, saved_prompts, feedback, builder_dashboard, voice
+from backend.core.logger import logger
+
 
 app = FastAPI(
     title="Context-Aware Prompt Engine",
@@ -55,9 +57,9 @@ async def log_requests(request: Request, call_next):
     path = request.url.path
     origin = request.headers.get("origin", "direct")
 
-    print(f"\n{'='*60}")
-    print(f"📥 {method} {path}")
-    print(f"   Origin: {origin}")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"📥 {method} {path}")
+    logger.info(f"   Origin: {origin}")
 
     try:
         response = await call_next(request)
@@ -65,13 +67,13 @@ async def log_requests(request: Request, call_next):
         status = response.status_code
 
         emoji = "✅" if status < 400 else "⚠️" if status < 500 else "❌"
-        print(f"   {emoji} Status: {status}  |  ⏱ {duration}ms")
-        print(f"{'='*60}")
+        logger.info(f"   {emoji} Status: {status}  |  ⏱ {duration}ms")
+        logger.info(f"{'='*60}")
         return response
     except Exception as e:
         duration = round((_time.time() - start) * 1000)
-        print(f"   ❌ ERROR: {e}  |  ⏱ {duration}ms")
-        print(f"{'='*60}")
+        logger.error(f"   ❌ ERROR: {e}  |  ⏱ {duration}ms")
+        logger.info(f"{'='*60}")
         raise
 
 # CORS — environment-aware (dev: allow all, prod: whitelist only)
@@ -129,17 +131,17 @@ def startup_db_client():
         from .services.llm_service import preload_embedding_model
         preload_embedding_model()
     except Exception as e:
-        print(f"⚠️ Embedding preload skipped: {e}")
+        logger.warning(f"⚠️ Embedding preload skipped: {e}")
 
     env_label = "🔧 DEVELOPMENT" if not settings.is_production else "🚀 PRODUCTION"
     cors_label = "* (all origins)" if not settings.is_production else ", ".join(settings.cors_origins) or "(none configured!)"
-    print(f"\n{'='*60}")
-    print(f"🚀 Prompt Memory v4.0 — Server Ready!")
-    print(f"   Environment: {env_label}")
-    print(f"   CORS Origins: {cors_label}")
-    print(f"   http://localhost:8000")
-    print(f"   Docs: http://localhost:8000/docs")
-    print(f"{'='*60}\n")
+    logger.info(f"\n{'='*60}")
+    logger.info(f"🚀 Prompt Memory v4.0 — Server Ready!")
+    logger.info(f"   Environment: {env_label}")
+    logger.info(f"   CORS Origins: {cors_label}")
+    logger.info(f"   http://localhost:8000")
+    logger.info(f"   Docs: http://localhost:8000/docs")
+    logger.info(f"{'='*60}\n")
 
 @app.on_event("shutdown")
 def shutdown_clients():
@@ -148,7 +150,7 @@ def shutdown_clients():
         from .services.providers import close_http_client
         close_http_client()
     except Exception as e:
-        print(f"⚠️ HTTP client shutdown: {e}")
+        logger.warning(f"⚠️ HTTP client shutdown: {e}")
 
 
 @app.get("/")
@@ -199,6 +201,7 @@ app.include_router(prompts.router)
 app.include_router(saved_prompts.router)
 app.include_router(feedback.router)
 app.include_router(builder_dashboard.router)
+app.include_router(voice.router)
 
 if __name__ == "__main__":
     import uvicorn

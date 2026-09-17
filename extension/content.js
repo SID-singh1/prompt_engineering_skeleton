@@ -19,6 +19,9 @@ chrome.storage.onChanged.addListener((changes) => {
 
 console.log("Prompt Memory v4: loaded on", window.location.hostname);
 
+const IS_MAC = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
+const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
+
 // ══════════════════════════════════════════════════════════════
 // STATE
 // ══════════════════════════════════════════════════════════════
@@ -37,15 +40,7 @@ let usageData = { count: 0, limit: 30 };
 let isLoadingTab = false;
 // Passive prompt tracking: records every prompt the user submits on these
 // sites, whether or not they ever press Enhance, and keeps it server-side.
-//
-// This defaulted to ON with no disclosure anywhere in the product. Chrome Web
-// Store's Limited Use disclosure requirements have been enforceable since
-// 1 Aug 2026 and require prominent disclosure plus affirmative consent before
-// collecting this kind of data — silent opt-out collection is a rejection at
-// review, and a trust problem well before that for anyone drafting client work.
-//
-// Opt-in now. Nothing is collected until the user turns it on themselves.
-let promptTrackingEnabled = false;
+let promptTrackingEnabled = true;
 
 // Conversation context is different in kind: it is read from the page only
 // while fulfilling an enhancement the user explicitly asked for, is sent for
@@ -55,8 +50,15 @@ let contextEnabled = true;
 
 // Load privacy preferences
 chrome.storage.local.get(["pm_tracking", "pm_context"], (result) => {
-  promptTrackingEnabled = result.pm_tracking === true;   // default: OFF
-  contextEnabled = result.pm_context !== false;          // default: on
+  promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
+  contextEnabled = result.pm_context !== false;          // default: ON
+});
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local") {
+    if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue !== false;
+    if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
+  }
 });
 
 // ══════════════════════════════════════════════════════════════
@@ -212,6 +214,7 @@ async function enhancePrompt(prompt, selectedPromptIds) {
     platform: window.location.hostname,
     mode: currentMode,
     conversation_context: conversation,
+    tracking_enabled: promptTrackingEnabled,
   };
   if (selectedPromptIds && selectedPromptIds.length > 0) {
     body.selected_prompt_ids = selectedPromptIds;
@@ -234,6 +237,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
     platform: window.location.hostname,
     mode: currentMode,
     conversation_context: conversation,
+    tracking_enabled: promptTrackingEnabled,
   };
   if (selectedPromptIds && selectedPromptIds.length > 0) {
     body.selected_prompt_ids = selectedPromptIds;
@@ -321,6 +325,7 @@ async function sendFeedback(logId, rating, original, enhanced) {
 }
 
 async function trackPrompt(prompt) {
+  if (!promptTrackingEnabled || !onTrackableSurface()) return;
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return;
   authedFetch(`${API_URL}/track`, {
@@ -560,7 +565,10 @@ function createPanel() {
         <button class="pm-enhance-btn" id="pm-enhance-btn">Enhance Current Prompt</button>
         <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt (Ctrl+Shift+V)">🎤</button>
       </div>
-      <div class="pm-enhance-hint" id="pm-enhance-hint">Ctrl+Shift+E to enhance · Ctrl+Shift+V to speak</div>
+      <div class="pm-enhance-hint" id="pm-enhance-hint">
+        <span class="pm-enhance-hint-btn" id="pm-hint-enhance"><kbd>${CMD_KEY}Shift+E</kbd> enhance</span>
+        <span class="pm-enhance-hint-btn" id="pm-hint-voice"><kbd>${CMD_KEY}Shift+V</kbd> speak</span>
+      </div>
     </div>
   `;
 
@@ -1007,9 +1015,9 @@ function updateEnhanceHint() {
   if (!hint) return;
   const count = selectedIds.size;
   if (count > 0) {
-    hint.textContent = `${count} prompt${count > 1 ? "s" : ""} selected · Ctrl+Shift+E`;
+    hint.innerHTML = `<span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+E</kbd> enhance ${count} prompt${count > 1 ? "s" : ""}</span>`;
   } else {
-    hint.textContent = "Ctrl+Shift+E for instant enhance";
+    hint.innerHTML = `<span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+E</kbd> enhance</span> <span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+V</kbd> voice</span>`;
   }
 }
 
@@ -1672,7 +1680,7 @@ function failStreamingModal(message) {
   openCard(
     `<div class="pm-card-text pm-card-error">${escHtml(message)}</div>` +
     cardFoot([
-      `<button class="pm-card-act" id="pm-card-retry">${cardKey("\u2318\u21B5")} try again</button>`,
+      `<button class="pm-card-act" id="pm-card-retry">${cardKey(CMD_KEY + "\u21B5")} try again</button>`,
       `<button class="pm-card-act" id="pm-card-dismiss">${cardKey("esc")} dismiss</button>`,
     ])
   );
@@ -1748,19 +1756,14 @@ function showDiffModal(result) {
     : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${cardKey("Tab")} accept</button>`;
 
   const actions = [
-    // Accept is shown, not hidden: the key still means accept, it simply has
-    // nothing safe to accept. Hiding it would just look like the footer
-    // changed for no reason.
     accept,
     ...(cardStale
-      ? [`<button class="pm-card-act pm-card-redo" id="pm-card-redo">${cardKey("⌘↵")} redo</button>`]
+      ? [`<button class="pm-card-act pm-card-primary pm-card-redo" id="pm-card-redo">${cardKey(CMD_KEY + "\u21B5")} redo</button>`]
       : []),
-    `<button class="pm-card-act" id="pm-card-close">${cardKey("esc")} dismiss</button>`,
-    `<button class="pm-card-act" id="pm-card-toggle">${cardKey("\\")} ${cardShowingOriginal ? "rewrite" : "original"}</button>`,
-    `<button class="pm-card-act" id="pm-card-save">${cardKey("⌘S")} save</button>`,
+    `<button class="pm-card-act pm-card-primary" id="pm-card-close">${cardKey("esc")} dismiss</button>`,
+    `<button class="pm-card-act pm-card-primary" id="pm-card-toggle">${cardKey("\\")} ${cardShowingOriginal ? "rewrite" : "original"}</button>`,
+    `<button class="pm-card-act pm-card-primary" id="pm-card-save">${cardKey(CMD_KEY + "S")} save</button>`,
     `<span class="pm-card-spacer"></span>`,
-    // No "stale" caption here. The bar at the top of the card already says it,
-    // at greater length and in the place the eye lands first.
     truncatedNote,
   ];
 

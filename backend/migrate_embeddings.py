@@ -29,6 +29,8 @@ from sentence_transformers import SentenceTransformer
 
 from .core.config import settings
 from .services.memory_service import point_id_for
+from backend.core.logger import logger
+
 
 
 # ─── CONFIG ────────────────────────────────────────────────────────────────────
@@ -43,7 +45,7 @@ def _create_collection(qdrant: QdrantClient, name: str):
     # Delete old collection
     try:
         qdrant.delete_collection(name)
-        print(f"  🗑️  Deleted old collection: '{name}'")
+        logger.info(f"  🗑️  Deleted old collection: '{name}'")
     except Exception:
         pass  # didn't exist
 
@@ -52,7 +54,7 @@ def _create_collection(qdrant: QdrantClient, name: str):
         collection_name=name,
         vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
     )
-    print(f"  ✅ Created collection: '{name}'")
+    logger.info(f"  ✅ Created collection: '{name}'")
 
     # Add user_id payload index
     try:
@@ -66,23 +68,23 @@ def _create_collection(qdrant: QdrantClient, name: str):
 
 
 def main():
-    print("=" * 60)
-    print("🔄 Embedding Migration Script")
-    print(f"   New model: {NEW_MODEL_NAME}")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("🔄 Embedding Migration Script")
+    logger.info(f"   New model: {NEW_MODEL_NAME}")
+    logger.info("=" * 60)
 
     # ── 1. Connect to MongoDB ──────────────────────────────────────────────
     mongo_uri = settings.MONGO_URI
     if not mongo_uri:
-        print("❌ MONGO_URI not set in .env — cannot migrate.")
+        logger.error("❌ MONGO_URI not set in .env — cannot migrate.")
         sys.exit(1)
 
-    print("\n📦 Connecting to MongoDB...")
+    logger.info("\n📦 Connecting to MongoDB...")
     mongo_client = MongoClient(mongo_uri, serverSelectionTimeoutMS=5000)
     try:
         mongo_client.admin.command("ping")
     except Exception as e:
-        print(f"❌ MongoDB connection failed: {e}")
+        logger.error(f"❌ MongoDB connection failed: {e}")
         sys.exit(1)
 
     db = mongo_client["prompt_engine_db"]
@@ -91,40 +93,40 @@ def main():
 
     prompt_logs_count = prompt_logs_col.count_documents({})
     saved_prompts_count = saved_prompts_col.count_documents({})
-    print(f"   ✅ MongoDB connected — {prompt_logs_count} prompt logs, {saved_prompts_count} saved prompts")
+    logger.info(f"   ✅ MongoDB connected — {prompt_logs_count} prompt logs, {saved_prompts_count} saved prompts")
 
     # ── 2. Connect to Qdrant ──────────────────────────────────────────────
-    print("\n📦 Connecting to Qdrant...")
+    logger.info("\n📦 Connecting to Qdrant...")
     qdrant_url = settings.QDRANT_URL
     qdrant_api_key = settings.QDRANT_API_KEY
 
     if not qdrant_url or qdrant_url == ":memory:":
-        print("❌ QDRANT_URL not set or is :memory: — cannot migrate a persistent instance.")
+        logger.error("❌ QDRANT_URL not set or is :memory: — cannot migrate a persistent instance.")
         sys.exit(1)
 
     qdrant = QdrantClient(url=qdrant_url, api_key=qdrant_api_key)
-    print(f"   ✅ Qdrant connected ({qdrant_url})")
+    logger.info(f"   ✅ Qdrant connected ({qdrant_url})")
 
     # ── 3. Recreate collections ───────────────────────────────────────────
-    print("\n🔨 Recreating Qdrant collections...")
+    logger.info("\n🔨 Recreating Qdrant collections...")
     _create_collection(qdrant, PROMPT_MEMORY_COLLECTION)
     _create_collection(qdrant, SAVED_PROMPTS_COLLECTION)
 
     # ── 4. Load the new embedding model ───────────────────────────────────
-    print(f"\n⏳ Loading embedding model: {NEW_MODEL_NAME}")
+    logger.info(f"\n⏳ Loading embedding model: {NEW_MODEL_NAME}")
     start_load = time.time()
     try:
         model = SentenceTransformer(NEW_MODEL_NAME, backend="onnx")
-        print(f"   ✅ Model loaded (ONNX backend) in {time.time() - start_load:.1f}s")
+        logger.info(f"   ✅ Model loaded (ONNX backend) in {time.time() - start_load:.1f}s")
     except Exception:
         model = SentenceTransformer(NEW_MODEL_NAME)
-        print(f"   ✅ Model loaded (default backend) in {time.time() - start_load:.1f}s")
+        logger.info(f"   ✅ Model loaded (default backend) in {time.time() - start_load:.1f}s")
 
     def embed(text: str):
         return model.encode(text, convert_to_numpy=True).tolist()
 
     # ── 5. Re-embed prompt_logs → prompt_memory ───────────────────────────
-    print(f"\n📝 Re-embedding {prompt_logs_count} prompt logs → '{PROMPT_MEMORY_COLLECTION}'...")
+    logger.info(f"\n📝 Re-embedding {prompt_logs_count} prompt logs → '{PROMPT_MEMORY_COLLECTION}'...")
     success_logs = 0
     skipped_logs = 0
     batch_points = []
@@ -157,10 +159,10 @@ def main():
             if len(batch_points) >= BATCH_SIZE:
                 qdrant.upsert(collection_name=PROMPT_MEMORY_COLLECTION, points=batch_points)
                 batch_points = []
-                print(f"   ... processed {i + 1}/{prompt_logs_count}")
+                logger.info(f"   ... processed {i + 1}/{prompt_logs_count}")
 
         except Exception as e:
-            print(f"   ⚠️  Failed to embed prompt log (id={doc.get('_id')}): {e}")
+            logger.warning(f"   ⚠️  Failed to embed prompt log (id={doc.get('_id')}): {e}")
             skipped_logs += 1
 
     # Flush remaining
@@ -168,10 +170,10 @@ def main():
         qdrant.upsert(collection_name=PROMPT_MEMORY_COLLECTION, points=batch_points)
         batch_points = []
 
-    print(f"   ✅ Done — {success_logs} embedded, {skipped_logs} skipped")
+    logger.info(f"   ✅ Done — {success_logs} embedded, {skipped_logs} skipped")
 
     # ── 6. Re-embed saved_prompts → saved_prompt_vectors ──────────────────
-    print(f"\n📝 Re-embedding {saved_prompts_count} saved prompts → '{SAVED_PROMPTS_COLLECTION}'...")
+    logger.info(f"\n📝 Re-embedding {saved_prompts_count} saved prompts → '{SAVED_PROMPTS_COLLECTION}'...")
     success_saved = 0
     skipped_saved = 0
 
@@ -207,26 +209,26 @@ def main():
             if len(batch_points) >= BATCH_SIZE:
                 qdrant.upsert(collection_name=SAVED_PROMPTS_COLLECTION, points=batch_points)
                 batch_points = []
-                print(f"   ... processed {i + 1}/{saved_prompts_count}")
+                logger.info(f"   ... processed {i + 1}/{saved_prompts_count}")
 
         except Exception as e:
-            print(f"   ⚠️  Failed to embed saved prompt (id={mongo_id}): {e}")
+            logger.warning(f"   ⚠️  Failed to embed saved prompt (id={mongo_id}): {e}")
             skipped_saved += 1
 
     if batch_points:
         qdrant.upsert(collection_name=SAVED_PROMPTS_COLLECTION, points=batch_points)
 
-    print(f"   ✅ Done — {success_saved} embedded, {skipped_saved} skipped")
+    logger.info(f"   ✅ Done — {success_saved} embedded, {skipped_saved} skipped")
 
     # ── 7. Summary ────────────────────────────────────────────────────────
-    print("\n" + "=" * 60)
-    print("✅ MIGRATION COMPLETE")
-    print(f"   Model:           {NEW_MODEL_NAME}")
-    print(f"   prompt_memory:   {success_logs} vectors ({skipped_logs} skipped)")
-    print(f"   saved_prompts:   {success_saved} vectors ({skipped_saved} skipped)")
-    print("=" * 60)
-    print("\nYou can now restart the server:")
-    print("   python -m uvicorn backend.main:app --reload")
+    logger.info("\n" + "=" * 60)
+    logger.info("✅ MIGRATION COMPLETE")
+    logger.info(f"   Model:           {NEW_MODEL_NAME}")
+    logger.info(f"   prompt_memory:   {success_logs} vectors ({skipped_logs} skipped)")
+    logger.info(f"   saved_prompts:   {success_saved} vectors ({skipped_saved} skipped)")
+    logger.info("=" * 60)
+    logger.info("\nYou can now restart the server:")
+    logger.info("   python -m uvicorn backend.main:app --reload")
 
 
 def purge_orphans():
@@ -253,7 +255,7 @@ def purge_orphans():
     qdrant = QdrantClient(url=settings.QDRANT_URL, api_key=settings.QDRANT_API_KEY)
 
     live_ids = {str(doc["_id"]) for doc in db["saved_prompts"].find({}, {"_id": 1})}
-    print(f"📄 {len(live_ids)} saved prompts in Mongo")
+    logger.info(f"📄 {len(live_ids)} saved prompts in Mongo")
 
     orphan_ids, scanned, offset = [], 0, None
     while True:
@@ -270,9 +272,9 @@ def purge_orphans():
         if offset is None:
             break
 
-    print(f"🔍 scanned {scanned} vectors — {len(orphan_ids)} orphaned")
+    logger.info(f"🔍 scanned {scanned} vectors — {len(orphan_ids)} orphaned")
     if not orphan_ids:
-        print("✅ nothing to clean up")
+        logger.info("✅ nothing to clean up")
         return
 
     for i in range(0, len(orphan_ids), 256):
@@ -280,7 +282,7 @@ def purge_orphans():
             collection_name=SAVED_PROMPTS_COLLECTION,
             points_selector=PointIdsList(points=orphan_ids[i:i + 256]),
         )
-    print(f"🗑️  deleted {len(orphan_ids)} orphaned vectors")
+    logger.info(f"🗑️  deleted {len(orphan_ids)} orphaned vectors")
 
 
 if __name__ == "__main__":

@@ -26,6 +26,8 @@ from typing import Iterator, Optional
 import httpx
 
 from ..core.config import settings
+from ..core.logger import logger
+
 
 
 # ══════════════════════════════════════════════════════════════
@@ -301,7 +303,7 @@ def _cool_down(provider_name: str, index: int, seconds: float = 60.0) -> None:
     if index < 0:
         return
     _key_cooldowns.setdefault(provider_name, {})[index] = time.time() + seconds
-    print(f"🔄 {provider_name} key #{index + 1} rate-limited — cooling down {seconds:.0f}s")
+    logger.info(f"🔄 {provider_name} key #{index + 1} rate-limited — cooling down {seconds:.0f}s")
 
 
 def pool_status() -> dict:
@@ -593,7 +595,7 @@ def chat(
                 _cool_down(spec.provider, key_index, _retry_after(res))
         elif kind == "dead_model":
             _dead_models.add(spec.label)
-            print(f"💀 {spec.label} is decommissioned — removed from the chain. {body[:160]}")
+            logger.error(f"💀 {spec.label} is decommissioned — removed from the chain. {body[:160]}")
 
     raise NoProviderAvailable(attempts)
 
@@ -643,7 +645,7 @@ def chat_stream(
                             _cool_down(spec.provider, key_index)
                         elif kind == "dead_model":
                             _dead_models.add(spec.label)
-                            print(f"💀 {spec.label} is decommissioned — removed from the chain.")
+                            logger.error(f"💀 {spec.label} is decommissioned — removed from the chain.")
                         continue
 
                     for line in res.iter_lines():

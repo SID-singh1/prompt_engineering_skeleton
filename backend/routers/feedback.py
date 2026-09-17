@@ -4,6 +4,8 @@ from fastapi import APIRouter, Depends
 from ..models.schemas import UserFeedbackRequest
 from ..core.security import verify_jwt
 from ..core.database import MongoDB
+from ..core.logger import logger
+
 
 router = APIRouter()
 
@@ -14,7 +16,7 @@ def submit_feedback(request: UserFeedbackRequest, user_id: str = Depends(verify_
     Submit general feedback / bug report.
     Stored in the 'user_feedback' collection (separate from prompt_feedback).
     """
-    print(f"\n💬 /feedback — user={user_id[:8]}... type={request.type}")
+    logger.info(f"\n💬 /feedback — user={user_id[:8]}... type={request.type}")
 
     feedback_doc = {
         "user_id": user_id,
@@ -31,11 +33,11 @@ def submit_feedback(request: UserFeedbackRequest, user_id: str = Depends(verify_
     if MongoDB.feedback_col is not None:
         try:
             MongoDB.feedback_col.insert_one(feedback_doc)
-            print(f"   ✅ Feedback stored")
+            logger.info(f"   ✅ Feedback stored")
         except Exception as e:
-            print(f"   ⚠️ Feedback store error: {e}")
+            logger.warning(f"   ⚠️ Feedback store error: {e}")
     else:
-        print(f"   ⚠️ MongoDB unavailable — feedback lost")
+        logger.warning(f"   ⚠️ MongoDB unavailable — feedback lost")
 
     return {"status": "received", "type": request.type}
 
@@ -62,6 +64,6 @@ def get_my_feedback(user_id: str = Depends(verify_jwt)):
                     "status": doc.get("status", "new"),
                 })
         except Exception as e:
-            print(f"⚠️ Error fetching user feedback: {e}")
+            logger.warning(f"⚠️ Error fetching user feedback: {e}")
 
     return {"feedback": items}

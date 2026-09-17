@@ -5,6 +5,8 @@ from pymongo import MongoClient
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 from .config import settings
+from ..core.logger import logger
+
 
 # MongoDB
 class MongoDB:
@@ -64,10 +66,10 @@ class MongoDB:
                     settings.ANALYTICS_EVENT_TTL_DAYS * 86400,
                 )
 
-            print("✅ MongoDB Indexes Verified")
-            print("✅ MongoDB Connected")
+            logger.info("✅ MongoDB Indexes Verified")
+            logger.info("✅ MongoDB Connected")
         except Exception as e:
-            print(f"⚠️ MongoDB not available ({e}) — using in-memory fallback.")
+            logger.warning(f"⚠️ MongoDB not available ({e}) — using in-memory fallback.")
             # db and client must be cleared too. Leaving them set produced a
             # split brain: feedback writes (which test `MongoDB.db is not None`)
             # kept targeting a dead client while everything else fell back to
@@ -86,7 +88,7 @@ class MongoDB:
         try:
             col.create_index(field, expireAfterSeconds=seconds)
         except Exception as e:
-            print(f"⚠️ TTL index on {col.name}.{field} skipped: {e}")
+            logger.warning(f"⚠️ TTL index on {col.name}.{field} skipped: {e}")
 
 # Qdrant
 class QdrantDB:
@@ -147,13 +149,13 @@ class QdrantDB:
                 cls.client = candidate
                 cls._last_error = None
                 cls._connected_at = time.time()
-                print(f"✅ Qdrant connected ({cls._host_only()})")
+                logger.info(f"✅ Qdrant connected ({cls._host_only()})")
             except Exception as e:
                 cls.client = None
                 cls._collections_ready = False
                 cls._last_error = f"{type(e).__name__}: {e}"[:200]
-                print(f"❌ Qdrant unreachable ({cls._host_only()}): {cls._last_error}")
-                print("   Saved-prompt search and passive memory are disabled until it recovers.")
+                logger.error(f"❌ Qdrant unreachable ({cls._host_only()}): {cls._last_error}")
+                logger.info("   Saved-prompt search and passive memory are disabled until it recovers.")
                 return None
 
         if not cls._collections_ready:
@@ -164,7 +166,7 @@ class QdrantDB:
                        cls._ensure_collection(cls.SAVED_COLLECTION)]
             cls._collections_ready = all(results)
             if not cls._collections_ready:
-                print("⚠️ Qdrant collections not ready — will retry on the next call.")
+                logger.warning("⚠️ Qdrant collections not ready — will retry on the next call.")
 
         return cls.client
 
@@ -198,7 +200,7 @@ class QdrantDB:
                     f"collection '{name}' is {size}-dim, embeddings are "
                     f"{cls.VECTOR_SIZE}-dim"
                 )
-                print(f"❌ {cls._last_error}. Recreate the collection or change the model.")
+                logger.error(f"❌ {cls._last_error}. Recreate the collection or change the model.")
                 return False
         except Exception:
             try:
@@ -206,10 +208,10 @@ class QdrantDB:
                     collection_name=name,
                     vectors_config=VectorParams(size=cls.VECTOR_SIZE, distance=Distance.COSINE),
                 )
-                print(f"✅ Created Qdrant collection '{name}'")
+                logger.info(f"✅ Created Qdrant collection '{name}'")
             except Exception as e:
                 cls._last_error = f"create '{name}' failed: {e}"[:200]
-                print(f"⚠️ {cls._last_error}")
+                logger.warning(f"⚠️ {cls._last_error}")
                 return False
 
         # Filtering is by user_id on every search and by mongo_id on delete.

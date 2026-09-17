@@ -2,6 +2,8 @@ import os
 import sys
 from pathlib import Path
 from dotenv import load_dotenv
+from ..core.logger import logger
+
 
 env_path = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(dotenv_path=env_path)
@@ -175,11 +177,11 @@ class Settings:
     def validate(self):
         """Run safety checks. Call on startup."""
         if self.is_production and self.JWT_SECRET == "unsafedefaultsecret":
-            print("\n" + "=" * 60)
-            print("❌ FATAL: JWT_SECRET is set to the default value!")
-            print("   In production, you MUST set a secure JWT_SECRET.")
-            print("   Set it in your .env file or environment variables.")
-            print("=" * 60 + "\n")
+            logger.info("\n" + "=" * 60)
+            logger.error("❌ FATAL: JWT_SECRET is set to the default value!")
+            logger.info("   In production, you MUST set a secure JWT_SECRET.")
+            logger.info("   Set it in your .env file or environment variables.")
+            logger.info("=" * 60 + "\n")
             sys.exit(1)
 
         # The extension's content script calls /enhance, /track, /saved-prompts
@@ -194,19 +196,19 @@ class Settings:
             configured = {o.strip().rstrip("/") for o in self.FRONTEND_ORIGINS if o.strip()}
             missing = [o for o in self.EXTENSION_ORIGINS if o not in configured]
             if not configured:
-                print("\n" + "=" * 60)
-                print("⚠️  FRONTEND_ORIGINS is empty in production.")
-                print("   CORS will block EVERY request the extension makes from a chat page.")
-                print(f"   FRONTEND_ORIGINS={','.join(self.EXTENSION_ORIGINS)}")
-                print("=" * 60 + "\n")
+                logger.info("\n" + "=" * 60)
+                logger.warning("⚠️  FRONTEND_ORIGINS is empty in production.")
+                logger.info("   CORS will block EVERY request the extension makes from a chat page.")
+                logger.info(f"   FRONTEND_ORIGINS={','.join(self.EXTENSION_ORIGINS)}")
+                logger.info("=" * 60 + "\n")
             elif missing:
-                print("\n" + "=" * 60)
-                print("⚠️  FRONTEND_ORIGINS is missing platforms the extension runs on.")
-                print("   Enhancement will fail with a CORS error on:")
+                logger.info("\n" + "=" * 60)
+                logger.warning("⚠️  FRONTEND_ORIGINS is missing platforms the extension runs on.")
+                logger.info("   Enhancement will fail with a CORS error on:")
                 for o in missing:
-                    print(f"     - {o}")
-                print(f"   Full list: FRONTEND_ORIGINS={','.join(self.EXTENSION_ORIGINS)}")
-                print("=" * 60 + "\n")
+                    logger.info(f"     - {o}")
+                logger.info(f"   Full list: FRONTEND_ORIGINS={','.join(self.EXTENSION_ORIGINS)}")
+                logger.info("=" * 60 + "\n")
 
     @property
     def cors_origins(self) -> list:

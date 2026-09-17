@@ -11,6 +11,10 @@ from ..core.config import settings
 from ..core.database import QdrantDB, MongoDB, in_memory_prompt_logs, in_memory_saved_prompts
 from ..core import usage
 from ..services.llm_service import get_embedding
+from ..core.logger import logger
+from ..core.logger import logger
+
+
 
 
 # Namespace for deriving a stable Qdrant point id from a Mongo document id.
@@ -111,7 +115,7 @@ class MemoryService:
                 limit=limit
             ).points
         except Exception as e:
-            print(f"⚠️ Search failed: {e}")
+            logger.warning(f"⚠️ Search failed: {e}")
             return "No relevant past context found.", 0.0
         
         context_str = ""
@@ -155,7 +159,7 @@ class MemoryService:
                 limit=limit
             ).points
         except Exception as e:
-            print(f"❌ Passive context search FAILED (not empty — failed): {e}")
+            logger.error(f"❌ Passive context search FAILED (not empty — failed): {e}")
             QdrantDB.reset()
             return []
 
@@ -185,7 +189,7 @@ class MemoryService:
                     if "original" in doc:
                         recent_prompts.append(doc["original"])
             except Exception as e:
-                print(f"⚠️ Error fetching recent prompts from Mongo: {e}")
+                logger.warning(f"⚠️ Error fetching recent prompts from Mongo: {e}")
 
         if MongoDB.prompts_col is None:
             user_logs = [log for log in in_memory_prompt_logs if log.get("user_id") == user_id]
@@ -238,7 +242,7 @@ class MemoryService:
                 # KeyboardInterrupt and SystemExit and left no trace anywhere —
                 # the endpoint still returned 200 with an incremented usage
                 # count, so a dead database looked exactly like a healthy one.
-                print(f"⚠️ Prompt log write failed: {e}")
+                logger.warning(f"⚠️ Prompt log write failed: {e}")
         else:
             in_memory_prompt_logs.append(log_entry)
 
@@ -266,7 +270,7 @@ class MemoryService:
                         "timestamp": doc.get("timestamp").isoformat() if doc.get("timestamp") else None,
                     })
             except Exception as e:
-                print(f"⚠️ Error fetching enhance history: {e}")
+                logger.warning(f"⚠️ Error fetching enhance history: {e}")
         else:
             user_logs = [
                 log for log in in_memory_prompt_logs
@@ -310,9 +314,9 @@ class MemoryService:
                             }
                         )]
                     )
-                    print("💾 New strategy memorized.")
+                    logger.info("💾 New strategy memorized.")
         except Exception as e:
-            print(f"❌ Memorization failed: {e}")
+            logger.error(f"❌ Memorization failed: {e}")
 
     # =========================================================================
     # SAVED PROMPTS (searches the saved_prompt_vectors collection)
@@ -347,7 +351,7 @@ class MemoryService:
             # Distinguished from "no matches" on purpose. These read identically
             # to the caller — an empty list — which is how a dead vector store
             # stayed invisible for months while the library appeared to work.
-            print(f"❌ Saved-prompt search FAILED (not empty — failed): {e}")
+            logger.error(f"❌ Saved-prompt search FAILED (not empty — failed): {e}")
             QdrantDB.reset()
             return []
 
@@ -381,7 +385,7 @@ class MemoryService:
                 # Silent before. The prompt still saved to Mongo and appeared in
                 # the user's library, but no vector existed, so it could never
                 # be retrieved — a library that looks fine and never matches.
-                print("❌ Saved prompt NOT embedded: embedding model unavailable "
+                logger.error("❌ Saved prompt NOT embedded: embedding model unavailable "
                       f"(mongo_id={mongo_id}). Saved-prompt search will not find it.")
             if vec:
                 q_client = QdrantDB.get_client()
@@ -404,10 +408,10 @@ class MemoryService:
                             }
                         )]
                     )
-                    print(f"💾 Saved prompt embedded (id={mongo_id})")
+                    logger.info(f"💾 Saved prompt embedded (id={mongo_id})")
         except Exception as e:
-            print(f"❌ Saved prompt embedding FAILED (mongo_id={mongo_id}): {e}")
-            print("   This prompt is in the library but will never be retrieved.")
+            logger.error(f"❌ Saved prompt embedding FAILED (mongo_id={mongo_id}): {e}")
+            logger.info("   This prompt is in the library but will never be retrieved.")
             QdrantDB.reset()
 
     @staticmethod
@@ -433,9 +437,9 @@ class MemoryService:
                 collection_name=QdrantDB.SAVED_COLLECTION,
                 points_selector=FilterSelector(filter=Filter(must=must)),
             )
-            print(f"🗑️ Saved prompt vector deleted (mongo_id={mongo_id})")
+            logger.info(f"🗑️ Saved prompt vector deleted (mongo_id={mongo_id})")
         except Exception as e:
-            print(f"⚠️ Could not delete saved prompt vector: {e}")
+            logger.warning(f"⚠️ Could not delete saved prompt vector: {e}")
 
     @staticmethod
     def purge_user_vectors(user_id: str) -> dict:

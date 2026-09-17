@@ -1,11 +1,13 @@
 
 import requests
 from ..core.config import settings
+from ..core.logger import logger
+
 
 def send_email_sendgrid(to_email: str, subject: str, content: str):
     """Sends authentic email via SendGrid if Key is present."""
     if not settings.SENDGRID_API_KEY:
-        print(f"⚠️ No SendGrid Key. Simulating email to {to_email}")
+        logger.warning(f"⚠️ No SendGrid Key. Simulating email to {to_email}")
         return False
         
     url = "https://api.sendgrid.com/v3/mail/send"
@@ -23,8 +25,8 @@ def send_email_sendgrid(to_email: str, subject: str, content: str):
     try:
         res = requests.post(url, headers=headers, json=data)
         if res.status_code >= 400:
-            print(f"❌ SendGrid Error: {res.text}")
+            logger.error(f"❌ SendGrid Error: {res.text}")
         else:
-            print(f"✅ Email sent to {to_email}")
+            logger.info(f"✅ Email sent to {to_email}")
     except Exception as e:
-        print(f"❌ Email Failed: {e}")
+        logger.error(f"❌ Email Failed: {e}")
