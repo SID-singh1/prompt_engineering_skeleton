@@ -67,6 +67,11 @@ class FeedbackRequest(BaseModel):
     original: Optional[str] = None
     enhanced: Optional[str] = None
 
+
+class AcceptEnhancementRequest(BaseModel):
+    """Approve one server-owned enhancement for passive personalization."""
+    log_id: str
+
 class RefreshRequest(BaseModel):
     token: str
 

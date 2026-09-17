@@ -94,6 +94,13 @@ class Settings:
     EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     COLLECTION_NAME = "prompt_memory"
 
+    # Calibrated on evals/context_retrieval_cases.json. Saved prompts are
+    # concrete user-authored facts and can use a slightly stricter gate;
+    # passive patterns are phrased less like the current query and otherwise
+    # disappear almost entirely at the former 0.50 threshold.
+    SAVED_CONTEXT_MIN_SCORE = float(os.getenv("SAVED_CONTEXT_MIN_SCORE", "0.24"))
+    PASSIVE_CONTEXT_MIN_SCORE = float(os.getenv("PASSIVE_CONTEXT_MIN_SCORE", "0.20"))
+
     # Rate Limiting. Enforced per authenticated user by core.ratelimit, not by
     # IP: the Space sits behind a proxy, so every request shares one source
     # address and an IP-keyed limiter would throttle the whole user base as one.

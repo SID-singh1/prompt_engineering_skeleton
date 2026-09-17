@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "memories": [
+    {"id":"alex-api","user_id":"alex","source":"saved","content":"FastAPI service uses PostgreSQL on AWS RDS; preserve this stack in architecture advice."},
+    {"id":"alex-style","user_id":"alex","source":"passive","content":"Prefers concise technical explanations with a short example and no long introduction."},
+    {"id":"alex-kyoto","user_id":"alex","source":"saved","content":"Planning a seven-day Kyoto trip in November with a vegetarian food preference."},
+
+    {"id":"priya-pandas","user_id":"priya","source":"saved","content":"Preparing for a pandas data analyst interview; focus on joins, groupby, missing values, and time series."},
+    {"id":"priya-style","user_id":"priya","source":"passive","content":"Likes short revision plans split into learn, practise, and self-test sections."},
+    {"id":"priya-aws","user_id":"priya","source":"saved","content":"AWS project budget ceiling is 4,000 Indian rupees per month; do not recommend enterprise services."},
+
+    {"id":"maya-launch","user_id":"maya","source":"saved","content":"Product launch copy should target existing free users, sound confident without hype, and use one trial call to action."},
+    {"id":"maya-dental","user_id":"maya","source":"saved","content":"Dental clinic client is in Pune and wants appointment bookings, not follower growth."},
+    {"id":"maya-accessibility","user_id":"maya","source":"passive","content":"Marketing deliverables should include accessible alt text and avoid emoji-only calls to action."},
+
+    {"id":"omar-audience","user_id":"omar","source":"saved","content":"The B2B SaaS product sells cash-flow forecasting to chief financial officers at companies with 50 to 500 employees."},
+    {"id":"omar-pricing","user_id":"omar","source":"saved","content":"Pricing position is premium and annual; never introduce discounts or a free plan."},
+    {"id":"omar-uae","user_id":"omar","source":"passive","content":"Legal and privacy questions concern the United Arab Emirates unless another jurisdiction is explicitly named."},
+
+    {"id":"lucia-fiction","user_id":"lucia","source":"saved","content":"Current story is quiet literary fiction; sadness should be conveyed without death, rain, or dialogue."},
+    {"id":"lucia-language","user_id":"lucia","source":"passive","content":"When the request is written in Spanish, keep the rewritten prompt in Spanish."},
+    {"id":"lucia-newsletter","user_id":"lucia","source":"saved","content":"Monthly author newsletter has a warm reflective voice and must stay under 350 words."},
+
+    {"id":"ravi-investing","user_id":"ravi","source":"saved","content":"Investment research is for a long-term Indian index-fund portfolio; present risks and do not issue buy or sell orders."},
+    {"id":"ravi-manager","user_id":"ravi","source":"passive","content":"Messages to the manager should be direct and polite and should not invent a reason for leave."},
+    {"id":"ravi-running","user_id":"ravi","source":"saved","content":"Training for a first half marathon; recurring knee pain requires cautious general guidance rather than diagnosis."}
+  ],
+  "cases": [
+    {"id":"alex-01","user_id":"alex","slice":"single_relevant","query":"How should I add read replicas without changing my database choice?","relevance":{"alex-api":3},"k":3},
+    {"id":"alex-02","user_id":"alex","slice":"multi_relevant","query":"Explain connection pooling for my API in my usual concise format.","relevance":{"alex-api":3,"alex-style":2},"k":3},
+    {"id":"alex-03","user_id":"alex","slice":"abstention","query":"Write a birthday poem for my sister.","relevance":{},"k":3},
+    {"id":"alex-04","user_id":"alex","slice":"cross_topic_distractor","query":"Give me a short November travel checklist.","relevance":{"alex-kyoto":3,"alex-style":1},"k":3},
+
+    {"id":"priya-01","user_id":"priya","slice":"single_relevant","query":"Make a plan to revise pandas before my interview.","relevance":{"priya-pandas":3,"priya-style":2},"k":3},
+    {"id":"priya-02","user_id":"priya","slice":"constraint_memory","query":"How can I host this side project cheaply on AWS?","relevance":{"priya-aws":3},"k":3},
+    {"id":"priya-03","user_id":"priya","slice":"abstention","query":"Suggest a vegetarian dinner for tonight.","relevance":{},"k":3},
+    {"id":"priya-04","user_id":"priya","slice":"style_only","query":"Give me a quick plan for revising SQL joins.","relevance":{"priya-style":2},"k":3},
+
+    {"id":"maya-01","user_id":"maya","slice":"single_relevant","query":"Rewrite the launch email with one clear CTA.","relevance":{"maya-launch":3,"maya-accessibility":1},"k":3},
+    {"id":"maya-02","user_id":"maya","slice":"entity_resolution","query":"Build a campaign for the clinic focused on the real goal.","relevance":{"maya-dental":3},"k":3},
+    {"id":"maya-03","user_id":"maya","slice":"style_only","query":"Create social captions and make them accessible.","relevance":{"maya-accessibility":3},"k":3},
+    {"id":"maya-04","user_id":"maya","slice":"abstention","query":"Explain Python generators.","relevance":{},"k":3},
+
+    {"id":"omar-01","user_id":"omar","slice":"multi_relevant","query":"Prepare positioning and pricing copy for our SaaS buyer.","relevance":{"omar-audience":3,"omar-pricing":3},"k":3},
+    {"id":"omar-02","user_id":"omar","slice":"constraint_memory","query":"Could a free tier improve conversion?","relevance":{"omar-pricing":3},"k":3},
+    {"id":"omar-03","user_id":"omar","slice":"jurisdiction","query":"Research the privacy rules that apply to our customer data.","relevance":{"omar-uae":3},"k":3},
+    {"id":"omar-04","user_id":"omar","slice":"abstention","query":"Write a children's story about a moon rabbit.","relevance":{},"k":3},
+
+    {"id":"lucia-01","user_id":"lucia","slice":"constraint_memory","query":"Write the sad scene in the style we established.","relevance":{"lucia-fiction":3},"k":3},
+    {"id":"lucia-02","user_id":"lucia","slice":"language_memory","query":"Mejora este correo para mis lectores.","relevance":{"lucia-language":3,"lucia-newsletter":2},"k":3},
+    {"id":"lucia-03","user_id":"lucia","slice":"single_relevant","query":"Draft this month's note to subscribers.","relevance":{"lucia-newsletter":3},"k":3},
+    {"id":"lucia-04","user_id":"lucia","slice":"abstention","query":"Compare two laptop processors for gaming.","relevance":{},"k":3},
+
+    {"id":"ravi-01","user_id":"ravi","slice":"high_stakes","query":"Analyze whether this fund belongs in my portfolio.","relevance":{"ravi-investing":3},"k":3},
+    {"id":"ravi-02","user_id":"ravi","slice":"voice_context","query":"Um write that Friday leave message without saying why.","relevance":{"ravi-manager":3},"k":3},
+    {"id":"ravi-03","user_id":"ravi","slice":"high_stakes","query":"What should I ask a professional about this knee pain while training?","relevance":{"ravi-running":3},"k":3},
+    {"id":"ravi-04","user_id":"ravi","slice":"abstention","query":"Create a launch plan for a mobile game.","relevance":{},"k":3}
+  ]
+}

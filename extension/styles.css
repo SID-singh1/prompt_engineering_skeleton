@@ -76,9 +76,49 @@
        .pm-onboarding is deliberately absent: it is `position: absolute` inside
        the panel, so its z-index is local to that stacking context and means
        nothing here. */
+    /* ── The floating console ────────────────────────────────────────
+       The pill, the card, the library button and the toasts are one object
+       family: an instrument that floats OVER the page rather than a widget
+       belonging to it. So they do not theme with the host — they are always
+       this near-black, on a white page and a dark one alike. That constancy
+       is what makes the pill recognisable at a glance and is the whole
+       reason it can be called black at all; --pm-bg-panel inverted to white
+       in the light theme, which is why the old trigger could not be.
+
+       The black is not #000: a pure black reads as a hole punched in the
+       page and bands against dark hosts. It carries a whisper of the mint
+       accent's hue so the one colour on the object looks native to it. */
+    --pm-con-bg: rgba(12, 15, 14, 0.93);
+    --pm-con-bg-solid: #0c0f0e;
+    --pm-con-soft: rgba(255, 255, 255, 0.035);
+    --pm-con-elev: rgba(255, 255, 255, 0.08);
+    --pm-con-hover: rgba(255, 255, 255, 0.09);
+    --pm-con-border: rgba(255, 255, 255, 0.10);
+    --pm-con-border-hover: rgba(255, 255, 255, 0.19);
+    --pm-con-text: #ecefee;
+    --pm-con-text-2: #a7b0ad;
+    --pm-con-muted: #7c8683;
+    --pm-con-blur: blur(14px) saturate(150%);
+    /* Two layers, because one reads flat: a tight contact shadow that seats
+       the object, and a wide ambient one that lifts it. The inset highlight
+       on top is light catching the curve — the single detail that does most
+       of the work of looking made rather than drawn. */
+    --pm-con-edge: inset 0 1px 0 rgba(255, 255, 255, 0.07);
+    --pm-con-shadow: var(--pm-con-edge),
+                     0 1px 2px rgba(0, 0, 0, 0.34),
+                     0 10px 28px -10px rgba(0, 0, 0, 0.62);
+    --pm-con-shadow-lg: var(--pm-con-edge),
+                        0 2px 6px rgba(0, 0, 0, 0.38),
+                        0 18px 44px -14px rgba(0, 0, 0, 0.7);
+
     --pm-z-panel: 2147482100;
     --pm-z-trigger: 2147482200;
     --pm-z-card: 2147482300;
+    /* A pill being dragged is the one thing that may pass over the card: it
+       is under the user's finger, and a handle that vanishes mid-drag is a
+       handle they let go of in the wrong place. Placement puts it back below
+       the card, and clear of it, on release. */
+    --pm-z-drag: 2147482350;
     --pm-z-overlay: 2147482400;
     --pm-z-toast: 2147482500;
 }
@@ -143,43 +183,317 @@
 .pm-trigger,
 .pm-modal,
 .pm-voice-card,
-.pm-feedback-toast,
 .pm-toast {
     transition: background 200ms ease, color 200ms ease, border-color 200ms ease,
                 box-shadow 200ms ease, opacity var(--pm-transition-slow),
                 transform var(--pm-transition-slow);
 }
 
-/* ── Trigger Button ── */
+/* ── The pill ────────────────────────────────────────────────────────────
+   The trigger and the draft holder are one object. Idle it is a 32px black
+   disc with a drawn ⊕ centred in it. Once a draft exists it grows sideways —
+   away from the edge it is docked to — into a thin capsule: a status light,
+   a short preview, ONE verb, and ×.
+
+   The grammar is the design. Every non-idle state carries exactly one verb,
+   and it is always the verb that resolves that state: ready → Insert, stale
+   → Redo, error → Retry, applied → rate it. The chip wears the state's colour
+   and is the only coloured thing on the object, so the colour means
+   something rather than decorating.
+
+   It gets THINNER as it gains parts, which sounds backwards and is the
+   point. The ⊕ is what you aim at when there is nothing to show; the moment
+   there is a draft, the status light and the preview say everything the
+   glyph did, so the glyph collapses to zero width and leaves.
+
+   32px, not the 36px of the first cut: the host's send buttons are 32–36px
+   and the pill should read as lighter than them, not as a peer. */
 .pm-trigger {
     position: fixed;
-    right: 20px;
+    right: 16px;
     bottom: 24px;
     z-index: var(--pm-z-trigger);
-    width: 46px;
-    height: 46px;
-    border-radius: 14px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-bg-panel);
-    backdrop-filter: var(--pm-backdrop);
-    -webkit-backdrop-filter: var(--pm-backdrop);
+    height: 32px;
+    min-width: 32px;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 0;
+    box-sizing: border-box;
+    border-radius: 16px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
     color: var(--pm-accent);
-    font-size: 20px;
     cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: center;
-    box-shadow: var(--pm-shadow-md), var(--pm-shadow-glow);
-    transition: box-shadow var(--pm-transition), transform var(--pm-transition), border-color var(--pm-transition);
+    /* No gap while idle, or the collapsed label still costs 8px and the ⊕
+       sits off-centre in what should be a plain round button. */
+    gap: 0;
+    box-shadow: var(--pm-con-shadow);
+    transition: box-shadow var(--pm-transition), transform var(--pm-transition),
+                border-color var(--pm-transition), gap var(--pm-transition-slow),
+                padding var(--pm-transition-slow), bottom var(--pm-transition-slow),
+                right var(--pm-transition-slow), left var(--pm-transition-slow);
     font-family: var(--pm-font);
     line-height: 1;
-    padding: 0;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
 }
 
+/* Lift, not glow. A glowing button is not a sleek one; the accent stays
+   spent on the status light and the verb, which are the two things that
+   mean something. */
 .pm-trigger:hover {
-    box-shadow: var(--pm-shadow-lg), 0 0 24px rgba(80, 200, 168, 0.15);
-    transform: translateY(-2px);
-    border-color: var(--pm-border-accent);
+    box-shadow: var(--pm-con-shadow-lg);
+    transform: translateY(-1px);
+    border-color: var(--pm-con-border-hover);
+}
+
+.pm-trigger:active { transform: translateY(0) scale(0.985); }
+
+.pm-trigger:focus-visible {
+    outline: 2px solid var(--pm-accent);
+    outline-offset: 3px;
+}
+
+.pm-trigger.pm-pill-dragging {
+    cursor: grabbing;
+    z-index: var(--pm-z-drag);
+    transition: none;
+    transform: scale(1.02);
+    box-shadow: var(--pm-con-shadow-lg);
+}
+
+/* Reading order is the same in both docks: status light, preview, verb, ×.
+   An earlier cut reversed the row when docked left, to keep the ⊕ against the
+   outer edge — but the ⊕ collapses the moment the pill is open, so reversing
+   bought nothing and cost the order. Idle the pill is a circle, where a dock
+   has no order to get wrong.
+
+   The padding is asymmetric because the contents are: 11px of air before a
+   6px dot, 5px after a 22px × that carries its own. */
+.pm-trigger[data-dock="left"] { flex-direction: row; }
+.pm-trigger.pm-pill-open { gap: 8px; padding: 0 5px 0 11px; }
+
+/* The glyph is an inline SVG at a 1.5px stroke, not the U+2295 character:
+   a text glyph is whatever the host page's fallback font makes of it — thin
+   on one machine, off-baseline on another. Idle it fills the whole disc so
+   it is optically centred without nudging. Open: collapses out of the row. */
+.pm-pill-glyph {
+    flex: none;
+    /* 30, inside a 32px border-box capsule with a 1px border each side. */
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    transition: width var(--pm-transition-slow), opacity var(--pm-transition);
+}
+.pm-pill-glyph svg { width: 16px; height: 16px; display: block; }
+
+.pm-trigger.pm-pill-open .pm-pill-glyph { width: 0; opacity: 0; }
+
+/* The status light takes the lead position the glyph vacated. The halo is a
+   spread-only shadow rather than a second element, so it costs nothing in
+   the flex row and cannot drift out of alignment with the dot. */
+.pm-pill-dot {
+    flex: none;
+    width: 0;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--pm-con-muted);
+    opacity: 0;
+    transition: width var(--pm-transition-slow), opacity var(--pm-transition),
+                background var(--pm-transition), box-shadow var(--pm-transition);
+    pointer-events: none;
+}
+
+.pm-trigger.pm-pill-open .pm-pill-dot { width: 6px; opacity: 1; }
+.pm-trigger[data-state="streaming"] .pm-pill-dot,
+.pm-trigger[data-state="ready"] .pm-pill-dot,
+.pm-trigger[data-state="applied"] .pm-pill-dot {
+    background: var(--pm-accent);
+    box-shadow: 0 0 0 3px rgba(80, 200, 168, 0.16);
+}
+.pm-trigger[data-state="streaming"] .pm-pill-dot {
+    animation: pm-pill-pulse 1.4s ease-in-out infinite;
+}
+.pm-trigger[data-state="stale"] .pm-pill-dot {
+    background: var(--pm-warn);
+    box-shadow: 0 0 0 3px rgba(212, 160, 106, 0.16);
+}
+.pm-trigger[data-state="error"] .pm-pill-dot {
+    background: var(--pm-danger);
+    box-shadow: 0 0 0 3px rgba(239, 106, 96, 0.16);
+}
+
+@keyframes pm-pill-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.3; }
+}
+
+/* The preview opens from zero to its content width: a grid track going
+   0fr → 1fr is the one CSS transition that animates to `auto`, so the pill's
+   width follows the label frame by frame instead of snapping. (max-width
+   transitions eased against a number the label never reached, which is why
+   the first cut opened fast and closed slow.)
+
+   Capped short on purpose. The pill says THAT there is a draft and WHAT it
+   will do; reading the draft is the card's job. A shorter pill also reaches
+   the composer far less often, so the step-up in placePill() stays rare.
+   Faded at the end, not ellipsised: three dots spend 12px to say what a fade
+   says for free. */
+.pm-pill-labelwrap {
+    display: grid;
+    grid-template-columns: 0fr;
+    min-width: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: grid-template-columns var(--pm-transition-slow), opacity var(--pm-transition);
+}
+.pm-trigger.pm-pill-open .pm-pill-labelwrap { grid-template-columns: 1fr; opacity: 1; }
+/* Compact: the library panel owns the corner, so the preview folds away and
+   only the parts that act — dot, verb, × — stay. */
+.pm-trigger.pm-pill-open.pm-pill-compact .pm-pill-labelwrap { grid-template-columns: 0fr; opacity: 0; }
+
+.pm-pill-label {
+    min-width: 0;
+    max-width: 150px;
+    overflow: hidden;
+    white-space: nowrap;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--pm-con-text);
+    letter-spacing: -0.005em;
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+}
+/* Short labels — "Rewriting…", "Inserted" — fit, and a fade on text that is
+   all there would dim its last letter for nothing. renderPill() measures. */
+.pm-pill-label.pm-pill-label-fits { -webkit-mask-image: none; mask-image: none; }
+
+/* Streaming: the card beside it shows the text arriving; the pill only has to
+   say that something is happening. A shimmer across the word does that
+   without a spinner, which would be a second animated thing next to the
+   pulsing dot. */
+.pm-trigger[data-state="streaming"] .pm-pill-label {
+    color: transparent;
+    background: linear-gradient(90deg, var(--pm-con-text-2) 0 40%, var(--pm-con-text) 50%, var(--pm-con-text-2) 60% 100%);
+    background-size: 200% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: pm-pill-shimmer 1.6s linear infinite;
+}
+@keyframes pm-pill-shimmer {
+    from { background-position: 200% 0; }
+    to   { background-position: 0 0; }
+}
+.pm-trigger[data-state="stale"]   .pm-pill-label { color: var(--pm-con-text-2); }
+.pm-trigger[data-state="error"]   .pm-pill-label { color: var(--pm-con-text-2); }
+.pm-trigger[data-state="applied"] .pm-pill-label { color: var(--pm-accent); font-weight: 600; }
+
+/* The verb. Soft-filled rather than solid: a solid mint block that never
+   leaves the corner competes with the host's own send button, and the first
+   cut's was the brightest thing on the page after it. A tint carries the
+   accent and still reads as part of the instrument. 22px inside a 32px
+   capsule leaves 5px of air top and bottom — inset, not bursting out.
+
+   One class, three colours: the state attribute on the pill decides. */
+.pm-pill-insert {
+    flex: none;
+    height: 22px;
+    padding: 0 9px 0 10px;
+    border-radius: 11px;
+    border: 1px solid rgba(80, 200, 168, 0.32);
+    background: rgba(80, 200, 168, 0.14);
+    color: var(--pm-accent);
+    font-family: var(--pm-font);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1;
+    cursor: pointer;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background var(--pm-transition), border-color var(--pm-transition),
+                transform var(--pm-transition);
+}
+.pm-pill-insert kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+    font-weight: 500;
+    opacity: 0.7;
+}
+.pm-pill-insert:hover { background: rgba(80, 200, 168, 0.22); border-color: rgba(80, 200, 168, 0.5); }
+.pm-pill-insert:active { transform: scale(0.97); }
+.pm-pill-insert:focus-visible { outline: 2px solid var(--pm-con-text); outline-offset: 2px; }
+.pm-trigger[data-state="stale"] .pm-pill-insert {
+    color: var(--pm-warn);
+    background: rgba(212, 160, 106, 0.14);
+    border-color: rgba(212, 160, 106, 0.34);
+}
+.pm-trigger[data-state="stale"] .pm-pill-insert:hover { background: rgba(212, 160, 106, 0.22); }
+.pm-trigger[data-state="error"] .pm-pill-insert {
+    color: #ef6a60;
+    background: rgba(239, 106, 96, 0.14);
+    border-color: rgba(239, 106, 96, 0.34);
+}
+.pm-trigger[data-state="error"] .pm-pill-insert:hover { background: rgba(239, 106, 96, 0.22); }
+
+/* Applied: the rating question lives in the pill for six seconds. It was a
+   separate toast beside a pill that had already collapsed — two objects
+   reporting one event. */
+.pm-pill-rate { flex: none; display: inline-flex; gap: 2px; }
+.pm-pill-rate button {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--pm-con-text-2);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-pill-rate button:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
+.pm-pill-rate button:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+.pm-pill-rate svg { width: 13px; height: 13px; display: block; }
+
+.pm-pill-x {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--pm-con-muted);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-pill-x svg { width: 11px; height: 11px; display: block; }
+.pm-pill-x:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
+.pm-pill-x:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+
+/* `hidden` must win over display:flex on the buttons. */
+.pm-trigger [hidden] { display: none !important; }
+
+@media (prefers-reduced-motion: reduce) {
+    .pm-trigger, .pm-pill-labelwrap, .pm-pill-glyph, .pm-pill-dot { transition: none; }
+    .pm-trigger[data-state="streaming"] .pm-pill-dot { animation: none; }
+    .pm-trigger[data-state="streaming"] .pm-pill-label {
+        animation: none;
+        background: none;
+        color: var(--pm-con-text-2);
+    }
 }
 
 /* ── Panel ── */
@@ -963,13 +1277,26 @@
 }
 
 .pm-toast {
+    /* Same family as the pill and the card: these appear right beside them,
+       and a white toast landing next to a black capsule reads as two
+       different products. Pinned rather than themed, for the same reason
+       they are. */
+    --pm-bg: var(--pm-con-bg-solid);
+    --pm-text: var(--pm-con-text);
+    --pm-border: var(--pm-con-border);
+    --pm-accent: #50c8a8;
+    --pm-border-accent: rgba(80, 200, 168, 0.32);
+    --pm-danger: #ef6a60;
+
     max-width: min(520px, calc(100vw - 32px));
-    padding: 9px 16px;
-    border-radius: 10px;
-    font-size: 13px;
+    padding: 8px 15px;
+    border-radius: 14px;
+    font-size: 12.5px;
     font-weight: 500;
     line-height: 1.45;
-    box-shadow: var(--pm-shadow-md);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    box-shadow: var(--pm-con-shadow);
     opacity: 0;
     transform: translateY(6px);
     transition: opacity 200ms ease, transform 200ms ease;
@@ -999,101 +1326,6 @@
     background: var(--pm-bg);
     color: var(--pm-danger);
     border: 1px solid var(--pm-danger);
-}
-
-/* ── Feedback toast ──
-   Carries the confirmation as well as the question. Accepting a rewrite is one
-   event, so it gets one toast: what happened, then the ask. */
-.pm-feedback-toast {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    max-width: min(520px, calc(100vw - 32px));
-    padding: 7px 8px 7px 14px;
-    background: var(--pm-bg);
-    border: 1px solid var(--pm-border);
-    border-radius: 10px;
-    box-shadow: var(--pm-shadow-md);
-    font-size: 13px;
-    color: var(--pm-text-secondary);
-    opacity: 0;
-    transform: translateY(6px);
-    transition: opacity 200ms ease, transform 200ms ease;
-    pointer-events: auto;
-}
-
-.pm-feedback-toast.pm-toast-visible {
-    opacity: 1;
-    transform: translateY(0);
-}
-
-/* The confirmation half. Reads first and in the accent colour, because "did it
-   work" is the question the user actually has; the rating is the favour they
-   are being asked for second. */
-.pm-fb-done {
-    color: var(--pm-accent);
-    font-weight: 600;
-    white-space: nowrap;
-}
-
-.pm-fb-ask {
-    white-space: nowrap;
-}
-
-.pm-fb-sep {
-    width: 1px;
-    align-self: stretch;
-    margin: 2px 0;
-    background: var(--pm-border);
-}
-
-.pm-fb-btn {
-    width: 30px;
-    height: 30px;
-    border: 1px solid var(--pm-border);
-    border-radius: 8px;
-    background: var(--pm-bg-secondary);
-    cursor: pointer;
-    font-size: 15px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background var(--pm-transition), border-color var(--pm-transition), transform var(--pm-transition);
-    padding: 0;
-    line-height: 1;
-    flex: none;
-}
-
-.pm-fb-btn:hover {
-    background: var(--pm-accent-light);
-    border-color: var(--pm-accent);
-    transform: scale(1.08);
-}
-
-.pm-fb-btn:focus-visible,
-.pm-fb-close:focus-visible {
-    outline: 2px solid var(--pm-accent);
-    outline-offset: 2px;
-}
-
-/* An explicit way out. The toast used to sit for eight seconds with no
-   dismiss, so the only way to get rid of it was to answer it. */
-.pm-fb-close {
-    width: 24px;
-    height: 30px;
-    border: 0;
-    background: none;
-    color: var(--pm-text-muted);
-    font-size: 16px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 0;
-    border-radius: 6px;
-    flex: none;
-}
-
-.pm-fb-close:hover {
-    color: var(--pm-text);
 }
 
 /* ── Status Messages ── */
@@ -1965,12 +2197,38 @@
    like a native part of the host app. */
 
 .pm-card {
+    /* The card is the pill opened up, so it is the same object and wears the
+       same black on both themes. Rather than rewriting every rule below, the
+       theme tokens are REDEFINED here: custom properties cascade, so each
+       `var(--pm-bg)` / `var(--pm-text)` / `var(--pm-warn-*)` inside the card
+       — the stale variant included — resolves to the console palette without
+       a single one of those rules changing. */
+    --pm-bg: var(--pm-con-bg-solid);
+    --pm-bg-soft: var(--pm-con-soft);
+    --pm-bg-elev: var(--pm-con-elev);
+    --pm-bg-hover: var(--pm-con-hover);
+    --pm-border: var(--pm-con-border);
+    --pm-text: var(--pm-con-text);
+    --pm-text-secondary: var(--pm-con-text-2);
+    --pm-text-muted: var(--pm-con-muted);
+    --pm-accent: #50c8a8;
+    --pm-accent-soft: rgba(80, 200, 168, 0.13);
+    --pm-accent-border: rgba(80, 200, 168, 0.32);
+    --pm-danger: #ef6a60;
+    --pm-warn: #d4a06a;
+    --pm-warn-soft: rgba(201, 148, 89, 0.13);
+    --pm-warn-border: rgba(201, 148, 89, 0.30);
+    --pm-warn-wash: rgba(201, 148, 89, 0.055);
+
     position: fixed;
     z-index: var(--pm-z-card);
-    border-radius: 12px;
-    border: 1px solid var(--pm-border);
+    box-sizing: border-box;
+    border-radius: 14px;
+    border: 1px solid var(--pm-con-border);
     background: var(--pm-bg);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, .06), 0 18px 44px -16px rgba(0, 0, 0, .32);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    box-shadow: var(--pm-con-shadow-lg);
     overflow: hidden;
     opacity: 0;
     transform: translateY(6px);
@@ -1983,8 +2241,99 @@
     transform: translateY(0);
 }
 
+/* Opens downward from a pill that has been dragged into the top half. */
+.pm-card.pm-card-below { transform: translateY(-6px); }
+.pm-card.pm-card-below.pm-card-visible { transform: translateY(0); }
+
+/* Minimizing: folds toward the pill, which is where the draft went — down
+   when the pill is below the card, up when it is riding on the card's top
+   corner. Pointer events off at once so a click during the 180ms lands on
+   the page, not on a card that is leaving. */
+.pm-card.pm-card-leaving {
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .16s ease, transform .18s cubic-bezier(.4, 0, 1, 1);
+}
+.pm-card.pm-card-leaving-down { transform: translateY(10px) scale(0.98); }
+.pm-card.pm-card-leaving-up   { transform: translateY(-10px) scale(0.98); }
+
+/* ── Title bar ───────────────────────────────────────────────────────────
+   The one window control the card has, and the card's name. Minimize, not
+   close: from here the draft only ever folds into the pill. It also carries
+   the stale and error notices, so the card has one anatomy in every state —
+   head, text, foot — and a notice is read before the text it qualifies. */
+.pm-card-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    box-sizing: border-box;
+    min-height: 34px;
+    padding: 6px 6px 6px 15px;
+    border-bottom: 1px solid var(--pm-border);
+    background: var(--pm-bg-soft);
+}
+
+.pm-card-head-dot {
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--pm-accent);
+    box-shadow: 0 0 0 3px var(--pm-accent-soft);
+}
+.pm-card-head-live .pm-card-head-dot { animation: pm-pill-pulse 1.4s ease-in-out infinite; }
+.pm-card-head-stale .pm-card-head-dot { background: var(--pm-warn); box-shadow: 0 0 0 3px var(--pm-warn-soft); }
+.pm-card-head-error .pm-card-head-dot { background: var(--pm-danger); box-shadow: 0 0 0 3px rgba(239, 106, 96, 0.16); }
+
+.pm-card-title {
+    flex: 1;
+    min-width: 0;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--pm-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pm-card-head-stale .pm-card-title { color: var(--pm-warn); text-transform: none; letter-spacing: .01em; font-weight: 500; }
+.pm-card-head-error .pm-card-title { color: var(--pm-danger); }
+.pm-card-head-live  .pm-card-title { color: var(--pm-accent); }
+
+.pm-card-min {
+    flex: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    color: var(--pm-text-muted);
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-card-min svg { width: 12px; height: 12px; display: block; }
+.pm-card-min:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-min:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+
+.pm-card.pm-card-stale .pm-card-head { background: var(--pm-warn-soft); border-bottom-color: var(--pm-warn-border); }
+
+.pm-card-error-note {
+    display: block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--pm-text-secondary);
+}
+
+.pm-card-act.pm-card-discard { color: var(--pm-text-muted); }
+.pm-card-act.pm-card-discard:hover { color: var(--pm-danger); }
+
 @media (prefers-reduced-motion: reduce) {
-    .pm-card { transition: none; }
+    .pm-card, .pm-card.pm-card-leaving { transition: none; }
+    .pm-card-head-live .pm-card-head-dot { animation: none; }
 }
 
 .pm-card-text {
@@ -2011,10 +2360,12 @@
     color: var(--pm-text-secondary);
 }
 
+/* The title bar is red; the message itself is not. Two reds shout, and the
+   reason for a failure is something to read, not something to be warned by. */
 .pm-card-text.pm-card-error {
     font-family: var(--pm-font);
     font-size: 14px;
-    color: var(--pm-danger, #e0736a);
+    color: var(--pm-text);
 }
 
 .pm-card-cursor {
@@ -2122,23 +2473,6 @@
     color: var(--pm-text-secondary);
 }
 
-/* A bar across the top, not a pill in the middle.
-   It governs the whole card, so it sits above the content like a header. As a
-   pill wedged between the rewrite and the saved-prompt chip it read as a
-   second content tag — two rounded badges stacked, the status one indented
-   under the text it was invalidating. */
-.pm-card-stale-flag {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    padding: 7px 17px;
-    font-size: 11px;
-    letter-spacing: .03em;
-    color: var(--pm-warn);
-    background: var(--pm-warn-soft);
-    border-bottom: 1px solid var(--pm-warn-border);
-}
-
 /* Shown, not hidden: the key still means accept, it simply has nothing safe to
    accept right now. Removing it would read as the footer changing at random. */
 .pm-card-act.pm-card-disabled {
@@ -2188,17 +2522,17 @@
    and this does not relitigate it. */
 .pm-library-btn {
     position: fixed;
-    right: 74px;
-    bottom: 30px;
+    right: 66px;
+    bottom: 27px;
     z-index: var(--pm-z-trigger);
-    height: 34px;
-    padding: 0 12px;
-    border-radius: 10px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-bg-panel);
-    backdrop-filter: var(--pm-backdrop);
-    -webkit-backdrop-filter: var(--pm-backdrop);
-    color: var(--pm-text-secondary);
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 13px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    color: var(--pm-con-text-2);
     font-family: var(--pm-font);
     font-size: 12px;
     font-weight: 500;
@@ -2207,7 +2541,7 @@
     align-items: center;
     gap: 6px;
     white-space: nowrap;
-    box-shadow: var(--pm-shadow-md);
+    box-shadow: var(--pm-con-shadow);
     opacity: 0;
     transform: translateX(8px);
     pointer-events: none;
@@ -2237,8 +2571,8 @@
 }
 
 .pm-library-btn:hover {
-    color: var(--pm-text);
-    border-color: var(--pm-border-accent);
+    color: var(--pm-con-text);
+    border-color: var(--pm-con-border-hover);
 }
 
 .pm-library-btn:focus-visible {

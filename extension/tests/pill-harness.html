@@ -1,0 +1,98 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Prompt Memory — pill harness</title>
+<!--
+  Drives the REAL content.js and styles.css outside the extension, against a
+  mock chat page, with a chrome.* shim just big enough for the draft flow.
+  Every state the pill and card can be in is reachable from the console:
+
+    H.type(H.ORIG); H.stream(); H.tokens(60); H.done()   -> streaming, then ready
+    H.type("something else")                             -> stale
+    H.fail()                                             -> error
+    Tab in the composer                                  -> applied (rating in the pill)
+    click ⊕ / the — in the card's title bar / esc / ⌘⇧P  -> minimize and restore
+    "navigate", "new-chat", "light" buttons              -> layout changes the pill must survive
+
+  Run it: `python3 -m http.server` from the repo root, then open
+  /extension/tests/pill-harness.html. It must be served — a file:// page
+  cannot load the sibling scripts. Storage is backed by localStorage /
+  sessionStorage, so a reload exercises restoreDraft() for real.
+
+  If Chrome reports document.hidden (the tab is not the visible one in its
+  window), rAF and ResizeObserver are deferred and placement will not run on
+  its own; call placePill() / positionCard() directly.
+-->
+<link rel="stylesheet" href="../styles.css">
+<style>
+  html,body{margin:0;height:100%;font:14px system-ui}
+  body{background:#1a1a19;color:#c9c8c2;overflow:hidden}
+  body.light{background:#fff;color:#2b2b2b}
+  .side{position:fixed;left:0;top:0;bottom:0;width:220px;background:rgba(255,255,255,.04);border-right:1px solid rgba(255,255,255,.06)}
+  body.light .side{background:#f7f7f5;border-right-color:rgba(0,0,0,.06)}
+  .msgs{position:fixed;left:220px;right:0;top:0;bottom:110px;padding:40px 60px;overflow:auto}
+  .msgs p{max-width:720px;margin:0 auto 18px;line-height:1.6}
+  form{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;width:min(760px,calc(100% - 260px));min-height:60px;border-radius:18px;background:#26262a;border:1px solid rgba(255,255,255,.1);display:flex;align-items:flex-end;padding:10px 10px 10px 16px;gap:8px}
+  body.light form{background:#fff;border-color:rgba(0,0,0,.12);box-shadow:0 2px 10px rgba(0,0,0,.06)}
+  body.center .msgs{display:none}
+  body.center form{bottom:auto;top:44%}
+  body.center::before{content:"Welcome back";position:fixed;left:50%;top:33%;transform:translateX(-50%);font:32px Georgia,serif}
+  [contenteditable]{flex:1;min-height:40px;outline:none;padding:6px 0;line-height:1.5;white-space:pre-wrap}
+  [contenteditable]:empty::before{content:"Write a message…";opacity:.5}
+  .send{width:34px;height:34px;border-radius:50%;border:0;background:#d97757;color:#fff;flex:none}
+  #ctl{position:fixed;left:12px;top:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;width:196px}
+  #ctl button{font:12px system-ui;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:inherit;cursor:pointer}
+</style>
+<script>
+// chrome.* shim — enough of the API for content.js to boot and run the draft flow.
+(() => {
+  const mk = (backing) => ({
+    get(keys, cb) {
+      const store = JSON.parse(backing.getItem("pm") || "{}");
+      const ks = typeof keys === "string" ? [keys] : Array.isArray(keys) ? keys : keys == null ? Object.keys(store) : Object.keys(keys);
+      const out = {}; ks.forEach(k => { if (k in store) out[k] = store[k]; });
+      if (cb) cb(out); return Promise.resolve(out);
+    },
+    set(obj, cb) { const store = JSON.parse(backing.getItem("pm") || "{}"); Object.assign(store, obj); backing.setItem("pm", JSON.stringify(store)); if (cb) cb(); return Promise.resolve(); },
+    remove(k, cb) { const store = JSON.parse(backing.getItem("pm") || "{}"); (Array.isArray(k) ? k : [k]).forEach(x => delete store[x]); backing.setItem("pm", JSON.stringify(store)); if (cb) cb(); return Promise.resolve(); },
+  });
+  window.chrome = {
+    storage: { local: mk(localStorage), session: mk(sessionStorage), onChanged: { addListener() {} } },
+    runtime: {
+      lastError: null,
+      sendMessage(msg, cb) { if (cb) cb(undefined); return Promise.resolve(undefined); },
+      onMessage: { addListener() {} },
+      connect() { return { onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} }; },
+      getURL: (p) => p,
+    },
+  };
+})();
+</script>
+<div class="side"></div>
+<div id="ctl">
+  <button onclick="document.body.classList.toggle('light')">light</button>
+  <button onclick="document.body.classList.toggle('center')">new-chat</button>
+  <button onclick="history.pushState({}, '', '/chat/' + Math.random().toString(36).slice(2,8))">navigate</button>
+</div>
+<div class="msgs">
+  <p><b>can you check this whitening gel, is it safe for enamel</b></p>
+  <p>No — that one would actively damage your teeth. It's a root-canal product: the 17% EDTA is a chelating agent that strips calcium, and enamel is calcium. The listing you actually want is two rows down in the same shop.</p>
+  <p><b>ok what about the second one then</b></p>
+  <p>That one is a real whitening system at a sensible 16% concentration. Check whether it's carbamide or hydrogen peroxide, and whether trays are included.</p>
+  <p>Prevest DenPro is a real Indian dental manufacturer, so no import roulette, no expiry gamble. 16% is the right concentration band. It's sold as a whitening system, meaning it may include trays. Four ratings at 4.1 isn't much, but it's an actual product doing an actual job.</p>
+</div>
+<form onsubmit="return false"><div id="composer" contenteditable="true" role="textbox"></div><button class="send" type="button">↑</button></form>
+<script src="../content.js"></script>
+<script>
+// Test drivers, exposed for the session.
+window.H = {
+  DRAFT: "Show me how to sort a list of dictionaries in Python by a specific key, handling cases where some dictionaries might not have that key. Provide a robust solution that avoids KeyError, explain the choice between a default value and filtering, and include a short code example.",
+  ORIG: "hw do i sort a list of dicts by a key in python, some dont have the key",
+  type(t) { const c = document.getElementById("composer"); c.focus(); c.textContent = t; c.dispatchEvent(new InputEvent("input", { bubbles: true })); },
+  stream() { showStreamingDiffModal(this.ORIG); },
+  tokens(n) { updateStreamingText(this.DRAFT.slice(0, n)); },
+  done(log = true) { finalizeStreamingModal({ enhanced: this.DRAFT, original: this.ORIG, log_id: log ? "log_1" : undefined, latency: 1.05 }); },
+  fail() { failStreamingModal("Rate limited — try again in 20 s"); },
+  rect(id) { const e = document.getElementById(id) || document.querySelector(id); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; },
+  key(k, opts = {}) { document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: opts.code || "", bubbles: true, cancelable: true, ...opts })); },
+};
+</script>

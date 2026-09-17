@@ -195,9 +195,11 @@ def test_staleness_is_tracked_as_text_not_a_flag():
     card as stale forever, and a trailing space would trigger it. Comparing
     normalised text makes undo restore freshness for free.
     """
-    body = _function_bodies(CONTENT_JS, r"refreshCardStaleness")["refreshCardStaleness"]
+    body = _function_bodies(CONTENT_JS, r"isStaleAgainstComposer")["isStaleAgainstComposer"]
     assert "cardBasedOn" in body and "norm(" in body, \
         "staleness is not a normalised text comparison"
+    refresh = _function_bodies(CONTENT_JS, r"refreshCardStaleness")["refreshCardStaleness"]
+    assert "isStaleAgainstComposer()" in refresh
 
 
 def test_editing_is_actually_listened_for():
@@ -216,7 +218,7 @@ def test_redo_is_manual_not_automatic():
 
 def test_the_stale_card_is_visually_distinct_and_labelled():
     assert "pm-card-stale" in CONTENT_JS
-    assert "pm-card-stale-flag" in CONTENT_JS, "stale state is dimmed but never explained"
+    assert "pm-card-head-stale" in STYLES_CSS and '"stale")' in CONTENT_JS, "stale state is dimmed but never explained"
     assert re.search(r"\.pm-card\.pm-card-stale\s*{", STYLES_CSS), \
         "the stale class has no styling, so the state is invisible"
 
@@ -227,7 +229,9 @@ def test_a_rewrite_in_flight_lands_stale_if_the_prompt_moved():
     rewrite the user edited underneath arrives dimmed instead of fresh-and-wrong.
     """
     body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
-    assert "cardStale =" in body and "getCurrentInputText()" in body
+    assert "cardStale = isStaleAgainstComposer()" in body
+    helper = _function_bodies(CONTENT_JS, r"isStaleAgainstComposer")["isStaleAgainstComposer"]
+    assert "getCurrentInputText()" in helper
 
 
 # ── how the stale card looks ──────────────────────────────────────────────
@@ -279,12 +283,48 @@ def test_the_warn_palette_is_defined_in_both_themes():
 def test_the_stale_notice_sits_above_the_rewrite():
     """
     It qualifies the whole card. Printed under the body it read as a second
-    content chip, indented beneath the very text it was invalidating.
+    content chip, indented beneath the very text it was invalidating. It is
+    the card's title bar now, so the card has one anatomy in every state.
     """
     body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
     render = body[body.index("openCard("):]
-    assert re.search(r"openCard\(\s*staleFlag \+ body", render), \
+    assert re.search(r"openCard\(\s*head \+ body", render), \
         "the stale notice is rendered after the body it qualifies"
+    assert 'cardHead(' in body and '"stale")' in body
+
+
+def test_the_card_has_a_minimize_control_that_never_discards():
+    """
+    A window control in the corner the hand goes to. Minimize folds the draft
+    into the pill; discard stays a footer action, deliberately further away.
+    """
+    head = _function_bodies(CONTENT_JS, r"cardHead")["cardHead"]
+    assert 'id="pm-card-min"' in head and "Minimize" in head
+    for fn in ("showDiffModal", "showStreamingCardAgain", "failStreamingModal"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert 'getElementById("pm-card-min")?.addEventListener("click", hideCard)' in body, \
+            f"{fn} renders a minimize button that does nothing"
+    assert ".pm-card-min" in STYLES_CSS
+
+
+def test_a_minimized_card_stays_minimized():
+    """
+    A rewrite that finishes after the user minimized it lands in the pill,
+    not over whatever they moved on to. A NEW result still shows itself.
+    """
+    body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
+    assert 'if (result !== cardResult && cardState !== "streaming") cardMinimized = false;' in body
+    assert "if (cardMinimized) { renderPill(); return; }" in body
+    assert "cardMinimized = true" in _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
+    assert "cardMinimized = false" in _function_bodies(CONTENT_JS, r"expandCard")["expandCard"]
+
+
+def test_the_card_comes_back_the_way_it_was_left():
+    """Open or minimized survives a reload with the draft."""
+    assert "expanded: !cardMinimized" in _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
+    restore = _function_bodies(CONTENT_JS, r"restoreDraft")["restoreDraft"]
+    assert "if (draft.expanded) showDiffModal(cardResult);" in restore
+    assert "draftStore.setExpanded(false)" in _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
 
 
 def test_the_stale_footer_still_lists_the_keys_that_still_work():
@@ -366,7 +406,7 @@ def test_toasts_do_not_position_themselves():
     Individually-positioned toasts stack on the same pixels. Layout is the
     container's job so that two toasts lay out instead of overlapping.
     """
-    for sel in (".pm-toast", ".pm-feedback-toast"):
+    for sel in (".pm-toast",):
         block = _css_block(sel)
         assert "position: fixed" not in block, f"{sel} still positions itself"
         assert "bottom:" not in block, f"{sel} still pins itself to the viewport"
@@ -390,22 +430,26 @@ def test_the_toast_stack_outranks_the_card():
 
 
 def test_the_toast_stack_does_not_swallow_clicks():
+    """Toasts are passive now — the rating question moved into the pill — so
+    the whole stack stays transparent to the pointer."""
     assert "pointer-events: none" in _css_block("#pm-toast-stack")
-    assert "pointer-events: auto" in _css_block(".pm-feedback-toast"), \
-        "the feedback toast has buttons but cannot receive clicks"
 
 
-def test_accepting_raises_one_toast_not_two():
+def test_accepting_reports_once_in_the_pill():
     """
-    The confirmation and the rating prompt are one event. Two toasts for it
-    meant the second covered the first.
+    The confirmation and the rating prompt are one event, and the pill is the
+    object the user was looking at. Two toasts for it meant the second covered
+    the first; a toast beside a collapsed pill meant two objects for one event.
     """
     body = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
-    assert "canRate ? null : " in body, \
-        "applyOrFallback is not told to stay quiet when the feedback toast will confirm"
+    assert "applyOrFallback(text, null)" in body, \
+        "applyOrFallback is not told to stay quiet when the pill will confirm"
+    assert "showApplied(canRate ? result : null)" in body
     apply_body = _function_bodies(CONTENT_JS, r"applyOrFallback")["applyOrFallback"]
     assert "if (successMessage) showToast" in apply_body, \
         "applyOrFallback toasts unconditionally, so accept still fires two"
+    rate = _function_bodies(CONTENT_JS, r"ratePill")["ratePill"]
+    assert "sendFeedback(a.result.log_id, rating, a.result.original, a.result.enhanced)" in rate
 
 
 def test_the_rating_prompt_is_skipped_when_it_cannot_be_sent():
@@ -413,6 +457,16 @@ def test_the_rating_prompt_is_skipped_when_it_cannot_be_sent():
     on nothing, and drops the confirmation to show a dead question."""
     body = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
     assert "result.log_id" in body
+
+
+def test_passive_memory_is_approved_only_after_enhanced_text_is_applied():
+    body = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
+    assert "const applyingEnhanced = !cardShowingOriginal" in body
+    assert "if (applied && applyingEnhanced && result.log_id)" in body
+    assert "await approveEnhancement(result.log_id)" in body
+    approval = _function_bodies(CONTENT_JS, r"approveEnhancement")["approveEnhancement"]
+    assert '`${API_URL}/enhance/accept`' in approval
+    assert "JSON.stringify({ log_id: logId })" in approval
 
 
 def test_toasts_carry_a_theme():
@@ -722,7 +776,10 @@ def test_the_library_button_follows_the_trigger_in_the_dom():
 def test_the_primary_action_is_unchanged():
     """Click on ⊕ stays enhance. The library used to be the front door and the
     primary action sat two clicks behind a tab bar; this does not undo that."""
-    assert re.search(r"if \(e\.shiftKey\) togglePanel\(\);\s*\n\s*else handleEnhance\(\);", CONTENT_JS)
+    assert re.search(
+        r"if \(e\.shiftKey\) togglePanel\(\);\s*\n\s*else if \(pillApplied\) clearApplied\(\);[^\n]*\n\s*else handleEnhance\(\);",
+        CONTENT_JS,
+    )
 
 
 def test_the_library_button_is_reachable_by_keyboard():
@@ -774,3 +831,344 @@ def test_the_save_form_keeps_its_text_on_a_duplicate():
     assert "already in your library" in branch, "wrong branch extracted"
     assert '.value = ""' not in branch, "the duplicate branch clears the form"
     assert "fetchSavedPrompts" not in branch, "it refetches as though something changed"
+
+
+# ── the pill: the draft outlives the composer ─────────────────────────────
+# The card held its result in module variables and anchored to the composer.
+# Switch chats and the composer is gone; reload and the rewrite is gone. The
+# ⊕ button now holds the draft (as a pill), the card hangs off the pill, and
+# the draft is written through to extension storage.
+
+
+def test_the_trigger_is_the_pill():
+    """One object: the ⊕ grows into the draft holder rather than a second
+    floating thing appearing next to it."""
+    body = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    for part in ("pm-pill-glyph", "pm-pill-dot", "pm-pill-label", "pm-pill-insert", "pm-pill-x"):
+        assert part in body, f"the pill is missing its {part}"
+    assert 'btn.setAttribute("role", "button")' in body and 'tabindex' in body, \
+        "a div trigger must restore what <button> gave for free"
+
+
+def test_the_pill_grows_away_from_its_docked_edge():
+    """Anchored with left/right, never absolute x, so a draft arriving makes
+    the pill grow into the page instead of off-screen."""
+    body = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert 'pillDock === "left"' in body and 'pillDock === "right"' in body
+    assert re.search(r"\.pm-trigger\[data-dock=\"left\"\]\s*{\s*flex-direction:\s*row;", STYLES_CSS), \
+        "docked left the row must not reverse — it renders the pill backwards"
+
+
+def test_the_idle_pill_is_still_a_round_button():
+    """With no draft the label collapses to nothing and there is no flex gap,
+    so the ⊕ sits centred in a circle. The label opens on a grid track
+    (0fr → 1fr) because that is the one transition that animates to auto."""
+    assert re.search(r"\.pm-pill-labelwrap\s*{[^}]*grid-template-columns:\s*0fr", STYLES_CSS, re.S)
+    trigger = re.search(r"\.pm-trigger\s*{([^}]*)}", STYLES_CSS, re.S).group(1)
+    assert re.search(r"gap:\s*0\s*;", trigger), "the collapsed label still costs a gap"
+    assert re.search(r"\.pm-trigger\.pm-pill-open\s*{\s*gap:", STYLES_CSS)
+
+
+def test_the_draft_is_written_through_to_storage():
+    """Session storage: survives navigation and reloads, dies with the browser,
+    is shared across the matched sites."""
+    assert "chrome.storage.session" in CONTENT_JS
+    body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
+    assert "draftStore.save(" in body, "a finished rewrite is never persisted"
+    assert "restoreDraft()" in _function_bodies(CONTENT_JS, r"init")["init"]
+
+
+def test_the_worker_opens_session_storage_to_content_scripts():
+    """Without setAccessLevel every session.get() in the page rejects and the
+    store silently falls back to local storage."""
+    assert "setAccessLevel" in BACKGROUND_JS
+    assert "TRUSTED_AND_UNTRUSTED_CONTEXTS" in BACKGROUND_JS
+
+
+def test_escape_hides_a_finished_draft_but_discards_a_failed_one():
+    """Esc on a finished rewrite tucks it into the pill. A stream in flight or
+    an error has nothing worth keeping."""
+    assert re.search(r'if \(cardState === "ready"\) hideCard\(\); else closeCard\(\);', CONTENT_JS)
+    body = _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
+    assert "cardState" not in body and "draftStore.clear" not in body, \
+        "hideCard must leave the draft intact"
+    close = _function_bodies(CONTENT_JS, r"closeCard")["closeCard"]
+    assert "draftStore.clear()" in close, "discarding must also clear storage"
+
+
+def test_an_empty_composer_is_not_stale():
+    """A fresh chat with an empty box is where a draft that followed the user is
+    meant to land. Only text that is NOT the baseline can be destroyed."""
+    body = _function_bodies(CONTENT_JS, r"isStaleAgainstComposer")["isStaleAgainstComposer"]
+    assert 'now !== ""' in body
+
+
+def test_the_pill_click_does_not_respend_quota_on_the_same_text():
+    """A click with a draft pending and an unchanged (or empty) composer opens
+    the draft. New text in the composer means a new enhancement."""
+    body = _function_bodies(CONTENT_JS, r"reopenDraftIfRelevant")["reopenDraftIfRelevant"]
+    assert "now && now !== cardBasedOn" in body
+    handle = _function_bodies(CONTENT_JS, r"handleEnhance")["handleEnhance"]
+    assert handle.index("reopenDraftIfRelevant()") < handle.index("getCurrentInputText()")
+
+
+def test_navigation_is_watched_and_rejudges_the_draft():
+    """The hosts pushState without any event; the URL is polled."""
+    body = _function_bodies(CONTENT_JS, r"watchNavigation")["watchNavigation"]
+    assert "popstate" in body and "setInterval(check" in body
+    nav = _function_bodies(CONTENT_JS, r"onNavigated")["onNavigated"]
+    assert "refreshCardStaleness()" in nav and "renderPill()" in nav
+
+
+def test_a_drag_never_fires_the_click_it_ends_with():
+    """pointerup on the same element raises click; a drag must swallow it or
+    every reposition also spends an enhancement."""
+    body = _function_bodies(CONTENT_JS, r"setupPillDrag")["setupPillDrag"]
+    assert "pillSuppressClick = true" in body
+    assert "stopImmediatePropagation" in _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+
+
+def test_the_pill_position_is_remembered_per_host():
+    assert "pm_pill_pos:${window.location.hostname}" in CONTENT_JS
+    body = _function_bodies(CONTENT_JS, r"setupPillDrag")["setupPillDrag"]
+    assert "storageSet({ [pillStorageKey()]" in body
+
+
+def test_the_card_still_clears_the_composer():
+    body = _function_bodies(CONTENT_JS, r"positionCard")["positionCard"]
+    assert 'document.getElementById("pm-trigger")' in body, "the card no longer knows where the pill is"
+    assert "overlapsComposer" in body, "the card may cover the text it is a comment on"
+
+
+def test_render_pill_is_cheap_on_keystrokes():
+    """It runs from the document-wide input listener, so it must bail before
+    touching the DOM when nothing it shows has changed."""
+    body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
+    assert "pillSignature" in body and "if (sig === pillSignature) return;" in body
+
+
+# ── the floating console is black on every page ───────────────────────────
+# The pill, card, library button and toasts are one object family that floats
+# OVER the host page. They deliberately do not theme with it: --pm-bg-panel
+# inverted to white under [data-pm-theme="light"], which is exactly why the
+# old trigger could not be black.
+
+
+def _light_block() -> str:
+    m = re.search(r'\[data-pm-theme="light"\]\s*{([^}]*)}', STYLES_CSS, re.S)
+    assert m, "no light theme block"
+    return m.group(1)
+
+
+def test_the_console_palette_never_flips_with_the_theme():
+    """A token the light theme redefines is a token the pill cannot rely on."""
+    light = _light_block()
+    for token in ("--pm-con-bg", "--pm-con-text", "--pm-con-border", "--pm-con-bg-solid"):
+        assert f"{token}:" in STYLES_CSS, f"{token} is never defined"
+        assert f"{token}:" not in light, \
+            f"{token} is redefined in the light theme — the console would stop being black"
+
+
+def test_the_pill_wears_the_console_palette_not_the_page_one():
+    trigger = re.search(r"\.pm-trigger\s*{([^}]*)}", STYLES_CSS, re.S).group(1)
+    assert "var(--pm-con-bg)" in trigger, "the pill still takes its background from the theme"
+    assert "--pm-bg-panel" not in trigger, "the pill still reads the theming panel token"
+
+
+def test_the_card_pins_the_console_palette_instead_of_rewriting_its_rules():
+    """
+    Custom properties cascade, so redefining the theme tokens ON the card makes
+    every rule inside it — the stale variant included — resolve to the console
+    palette untouched. The stale rules still read var(--pm-bg); this is what
+    makes that dark on a light page.
+    """
+    card = re.search(r"\.pm-card\s*{([^}]*)}", STYLES_CSS, re.S).group(1)
+    assert "--pm-bg: var(--pm-con-bg-solid)" in card
+    assert "--pm-text: var(--pm-con-text)" in card
+    for token in ("--pm-warn", "--pm-warn-soft", "--pm-warn-border", "--pm-warn-wash"):
+        assert f"{token}:" in card, f"{token} is not pinned, so the stale card half-themes"
+
+
+def test_the_open_pill_drops_the_glyph_rather_than_only_shrinking():
+    """
+    Removing an element is what makes the open pill thin; the status light and
+    the preview already say everything the ⊕ did.
+    """
+    assert re.search(r"\.pm-trigger\.pm-pill-open \.pm-pill-glyph\s*{[^}]*width:\s*0", STYLES_CSS)
+    assert re.search(r"\.pm-trigger\.pm-pill-open \.pm-pill-dot\s*{[^}]*width:\s*6px", STYLES_CSS)
+
+
+def test_the_idle_pill_is_a_circle():
+    """32px tall, 32px min-width, fully rounded, no padding to push the ⊕ off
+    centre — the glyph is its own 30px square inside the 1px border. 32 rather than 36 so the pill
+    reads as lighter than the hosts' 32–36px send buttons, not as a peer."""
+    trigger = re.search(r"\.pm-trigger\s*{([^}]*)}", STYLES_CSS, re.S).group(1)
+    assert "height: 32px" in trigger and "min-width: 32px" in trigger
+    assert "border-radius: 16px" in trigger
+    glyph = re.search(r"\.pm-pill-glyph\s*{([^}]*)}", STYLES_CSS, re.S).group(1)
+    assert "width: 30px" in glyph and "height: 30px" in glyph
+
+
+def test_the_pill_glyphs_are_drawn_not_typed():
+    """U+2295 and U+00D7 render with whatever font the host falls back to."""
+    body = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    assert "${PILL_GLYPH_SVG}" in body and "${PILL_X_SVG}" in body
+    assert "<svg" in CONTENT_JS[CONTENT_JS.index("const PILL_GLYPH_SVG"):][:200]
+
+
+def test_every_pill_state_carries_one_verb():
+    """Ready → Insert, stale → Redo, error → Retry: the chip is always the way
+    out of the state it is shown in, so nobody has to open the card to get
+    unstuck."""
+    body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
+    assert 'verb = "Retry"' in body and 'verb = "Redo"' in body
+    assert '"Apply" : "Insert"' in body
+    dispatch = _function_bodies(CONTENT_JS, r"pillVerb")["pillVerb"]
+    assert "insertDraft()" in dispatch and "redoCard()" in dispatch and "handleEnhance()" in dispatch
+    for state in ("stale", "error"):
+        assert f'.pm-trigger[data-state="{state}"] .pm-pill-insert' in STYLES_CSS, \
+            f"the {state} verb is not coloured for its state"
+
+
+def test_the_key_hint_on_insert_is_tab_not_enter():
+    """Enter in a focused composer sends the message on every host. Tab is the
+    key that inserts — from the card, and from an empty composer."""
+    body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
+    assert "\\u21E5" in body, "the verb no longer shows the Tab hint"
+    assert "\u21B5 Insert" not in CONTENT_JS and "↵ Insert" not in CONTENT_JS
+    keymap = CONTENT_JS[CONTENT_JS.index("const chord = (e.metaKey || e.ctrlKey) && e.shiftKey"):][:900]
+    assert 'e.key === "Tab" && !e.shiftKey && pillOffersInsert() && composerHasFocus() && !norm(getCurrentInputText())' in keymap, \
+        "Tab from a NON-empty composer must not replace what is typed while the card is hidden"
+
+
+def test_cancel_actually_cancels_the_stream():
+    """
+    Cancel used to hide the card and let the stream run; when it ended the
+    rewrite popped back up as a finished draft.
+    """
+    close = _function_bodies(CONTENT_JS, r"closeCard")["closeCard"]
+    assert 'if (cardState === "streaming" && cancelActiveStream) cancelActiveStream();' in close
+    assert "cancelActiveStream = () => finish(() => {});" in _function_bodies(CONTENT_JS, r"runDirectEnhance")["runDirectEnhance"]
+    stream = _function_bodies(CONTENT_JS, r"enhancePromptStream")["enhancePromptStream"]
+    assert "cancelActiveStream = () => abort.abort();" in stream and "signal: abort.signal" in stream
+    assert 'if (cardState !== "streaming") return;' in _function_bodies(CONTENT_JS, r"finalizeStreamingModal")["finalizeStreamingModal"]
+
+
+def test_the_inserted_receipt_is_not_a_button():
+    body = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    assert "else if (pillApplied) clearApplied();" in body, \
+        "a click on the Inserted pill would spend a model call re-enhancing the rewrite"
+
+
+def test_a_pill_that_must_move_parks_on_the_composers_corner():
+    """Stepping straight up left it hanging in mid-air past the composer's
+    edge; stepping up AND in puts it on the corner of the box it writes into,
+    flush with the edge the card shares."""
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert "window.innerWidth - r.right" in place and "r.left" in place
+    assert "let inset = PILL_MARGIN;" in place
+
+
+def test_the_card_is_a_sheet_on_the_composer():
+    """As wide as the composer (capped), right-aligned to it, directly above
+    it. It hangs off the pill only when there is no composer to sit on."""
+    body = _function_bodies(CONTENT_JS, r"positionCard")["positionCard"]
+    assert 'left = pillDock === "left" ? box.left : box.right - width;' in body
+    assert "pillBox.right - width" in body, "no fallback when there is no composer"
+    assert "overlapsPill" not in body, "the card yields to the pill again"
+    assert 'card.dataset.anchor = onComposer ? "composer" : "pill"' in body
+
+
+def test_the_pill_steps_aside_for_the_card_not_the_reverse():
+    """
+    The card is transient and belongs to the composer; the pill's spot is a
+    resting preference. A card pushed up above a high pill detached from the
+    composer and was squeezed to its minimum height.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert place.index("positionCard();") < place.index("if (hits(c) || hits(cb)) {"), \
+        "the card must be laid out before the pill decides whether to step aside"
+    assert 'cardEl.dataset.anchor === "composer"' in place
+    assert "if (hits(cb)) stepAbove(cb, 8);" in place
+    hide = _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
+    assert "pm-card-leaving-up" in hide, "the fold should head toward the pill"
+
+
+def test_a_displaced_pill_goes_home_before_anywhere_new():
+    """
+    Home — the bottom corner on its side — is where the eye expects the pill.
+    Parking on the card's corner was a third position to learn, and one the
+    card could grow over while streaming.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    block = place[place.index("if (hits(c) || hits(cb)) {"):]
+    assert block.index("bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);") < block.index("if (hits(c)) stepAbove(c, 8);"), \
+        "the pill must try home before stepping onto the composer or the card"
+    assert "let pillBottom = PILL_HOME_BOTTOM;" in CONTENT_JS
+
+
+def test_a_dragged_pill_is_never_under_the_card():
+    """It is under the user's finger; a handle that vanishes mid-drag gets let
+    go of in the wrong place. Placement resolves the collision on release."""
+    assert re.search(r"\.pm-trigger\.pm-pill-dragging\s*{[^}]*z-index:\s*var\(--pm-z-drag\)", STYLES_CSS, re.S)
+    scale = _z_scale()
+    drag = int(re.search(r"--pm-z-drag:\s*(\d+);", STYLES_CSS).group(1))
+    assert scale["--pm-z-card"] < drag < scale["--pm-z-overlay"]
+
+
+def test_the_pill_re_places_when_the_card_grows():
+    body = _function_bodies(CONTENT_JS, r"getOrCreateCard")["getOrCreateCard"]
+    assert "card._pmResize = new ResizeObserver(() => placePill());" in body
+    assert "card._pmResize?.disconnect();" in _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
+
+
+def test_the_pill_reads_the_same_way_in_both_docks():
+    """
+    Reversing the row when docked left rendered × · Insert · preview · dot.
+    It existed to keep the ⊕ against the outer edge, but the ⊕ collapses as
+    soon as the pill is open, so it bought nothing and cost the reading order.
+    """
+    assert "flex-direction: row-reverse" not in STYLES_CSS
+    assert '.pm-trigger.pm-pill-open[data-dock="left"]' not in STYLES_CSS, \
+        "a mirrored padding rule survives the removal of the mirrored row"
+
+
+def test_a_cleared_offset_is_auto_not_empty_string():
+    """
+    style.right = "" only un-shadows the stylesheet, and .pm-trigger carries
+    right:16px there. Docked left that left BOTH offsets live and stretched the
+    auto-width fixed box across the viewport — a 420px bar instead of a pill.
+    """
+    for fn in ("placePill", "setupPillDrag"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert 'style.right = ""' not in body and 'style.left = ""' not in body, \
+            f"{fn} clears an offset with \"\", which the stylesheet then wins"
+    place = _function_bodies(CONTENT_JS, "placePill")["placePill"]
+    assert 'inset + "px" : "auto"' in place
+
+
+# ── an orphaned content script goes quiet, once ───────────────────────────
+# Chrome keeps a page's content script alive after the extension is reloaded
+# or auto-updated, with a dead chrome.* handle. Every storage call then throws
+# "Extension context invalidated" as an uncaught rejection, on every event.
+
+
+def test_storage_is_never_called_directly():
+    """One place that can throw, not twenty."""
+    body = CONTENT_JS
+    for fn in ("storageGet", "storageSet"):
+        assert f"function {fn}(" in body
+    direct = [l for l in body.split("\n") if "chrome.storage.local.get(" in l or "chrome.storage.local.set(" in l]
+    assert len(direct) == 2 and all("try {" in l for l in direct), \
+        f"chrome.storage.local is called outside the safe helpers: {direct}"
+
+
+def test_an_orphaned_script_says_so_and_stops_polling():
+    body = _function_bodies(CONTENT_JS, r"onOrphaned")["onOrphaned"]
+    assert "if (orphaned) return;" in body, "the reload toast would fire on every event"
+    assert "clearInterval(navigationPoll)" in body
+    assert "reload this page" in body
+    nav = _function_bodies(CONTENT_JS, r"watchNavigation")["watchNavigation"]
+    assert "navigationPoll = setInterval(check" in nav
+    handle = _function_bodies(CONTENT_JS, r"handleEnhance")["handleEnhance"]
+    assert "!extensionAlive()" in handle, "the trigger should explain itself, not fail silently"
