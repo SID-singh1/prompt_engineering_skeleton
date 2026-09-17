@@ -540,7 +540,7 @@ class MemoryService:
             ]))
             for collection in (settings.COLLECTION_NAME, QdrantDB.SAVED_COLLECTION):
                 try:
-                    q_client.delete(collection_name=collection, points_selector=selector)
+                    q_client.delete(collection_name=collection, points_selector=selector, wait=True)
                     removed[collection] = "deleted"
                 except Exception as e:
                     removed[collection] = f"failed: {e}"

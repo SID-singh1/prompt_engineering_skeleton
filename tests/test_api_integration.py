@@ -23,7 +23,7 @@ from backend.core.database import (
     in_memory_analytics_events, in_memory_prompt_logs, in_memory_saved_prompts,
     in_memory_users,
 )
-from backend.routers import prompts
+from backend.routers import prompts, users
 
 
 @pytest.fixture
@@ -234,6 +234,9 @@ def test_usage_endpoint_agrees_with_what_enhance_enforces(client, auth, monkeypa
 def test_account_deletion_removes_the_users_prompt_history(client, auth, monkeypatch):
     _stub_llm(monkeypatch)
     monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
 
     client.post("/enhance", json={"prompt": "something personal"}, headers=auth)
     assert client.get("/enhance/history", headers=auth).json()["history"]
@@ -247,6 +250,9 @@ def test_account_deletion_removes_the_users_prompt_history(client, auth, monkeyp
 def test_deletion_does_not_touch_another_user(client, monkeypatch):
     _stub_llm(monkeypatch)
     monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
 
     a = {"Authorization": f"Bearer {create_jwt_token('keep-me', 'k@x.com')}"}
     b = {"Authorization": f"Bearer {create_jwt_token('delete-me', 'd@x.com')}"}
@@ -257,6 +263,51 @@ def test_deletion_does_not_touch_another_user(client, monkeypatch):
 
     assert client.get("/enhance/history", headers=a).json()["history"], "wrong user's data was deleted"
     assert client.get("/enhance/history", headers=b).json()["history"] == []
+
+
+def test_deletion_with_synthetic_email_clears_account_and_analytics(client, monkeypatch):
+    """Exercise the real HTTP route without sending mail or touching a real user."""
+    from backend.core.database import in_memory_analytics_events
+
+    user_id = "synthetic-delete-user"
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    email = "privacy-test@example.test"
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, email)}"}
+    in_memory_users[user_id] = {"user_id": user_id, "email": email}
+    in_memory_analytics_events.append({"user_id": user_id, "event": "test"})
+    in_memory_analytics_events.append({"user_id": "another-user", "event": "keep"})
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 200
+    assert user_id not in in_memory_users
+    assert [item["user_id"] for item in in_memory_analytics_events] == ["another-user"]
+
+
+def test_deletion_reports_vector_failure_and_keeps_account_for_retry(client, monkeypatch):
+    user_id = "synthetic-retry-user"
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    in_memory_users[user_id] = {"user_id": user_id, "email": "retry@example.test"}
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, 'retry@example.test')}"}
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {"qdrant": "unavailable"})
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 503
+    assert user_id in in_memory_users
+    assert "vectors" in response.json()["detail"]["failed_stores"]
+
+
+def test_deletion_refuses_success_when_configured_mongo_is_offline(client, monkeypatch):
+    user_id = "offline-mongo-user"
+    in_memory_users[user_id] = {"user_id": user_id, "email": "offline@example.test"}
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, 'offline@example.test')}"}
+    monkeypatch.setattr(settings, "MONGO_URI", "mongodb://synthetic-offline")
+    monkeypatch.setattr(users.MongoDB, "db", None)
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 503
+    assert user_id in in_memory_users
 
 
 # ── body size caps ────────────────────────────────────────────────────────
