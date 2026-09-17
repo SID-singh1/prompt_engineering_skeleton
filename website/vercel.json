@@ -1,0 +1,9 @@
+{
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/login", "destination": "/login.html" },
+    { "source": "/dashboard", "destination": "/dashboard.html" },
+    { "source": "/builder", "destination": "/builder.html" },
+    { "source": "/privacy", "destination": "/privacy.html" }
+  ]
+}

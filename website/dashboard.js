@@ -2,10 +2,12 @@
  * Prompt Memory — Analytics Dashboard & Prompt Improvement Engine Controller
  */
 
-// API Base configuration
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:8000'
-    : (localStorage.getItem('pm_api_url') || 'https://prompt-engineering-skeleton.onrender.com');
+// API Base configuration (supports Vercel env variable VITE_API_URL)
+const API_BASE = import.meta.env?.VITE_API_URL || (
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:8000'
+        : (localStorage.getItem('pm_api_url') || 'https://prompt-engineering-skeleton.onrender.com')
+);
 
 // State
 let currentAnalyticsData = null;

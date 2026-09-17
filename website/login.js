@@ -2,10 +2,12 @@
  * Prompt Memory — Google OAuth & Guest Authentication Controller
  */
 
-// Determine API base URL dynamically
-const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-    ? 'http://localhost:8000'
-    : (localStorage.getItem('pm_api_url') || 'https://prompt-engineering-skeleton.onrender.com');
+// Determine API base URL dynamically (supports Vercel env variable VITE_API_URL)
+const API_BASE = import.meta.env?.VITE_API_URL || (
+    window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+        ? 'http://localhost:8000'
+        : (localStorage.getItem('pm_api_url') || 'https://prompt-engineering-skeleton.onrender.com')
+);
 
 const AUTH_POLL_INTERVAL_MS = 1000;
 const AUTH_TIMEOUT_MS = 180000; // 3 minutes
