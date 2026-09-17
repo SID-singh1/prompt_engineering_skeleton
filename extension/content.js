@@ -2,10 +2,10 @@
 // One-click prompt engineering. Conversation-aware. Mode-aware. Platform-aware.
 // Streaming enhancement. History. Token auto-refresh. Multi-language voice.
 
-// Default API URL — overridden by chrome.storage.local['api_url'] (set via popup)
+// The release extension sends signed-in requests only to our published API.
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
-let API_URL = DEFAULT_API_URL;
+const API_URL = DEFAULT_API_URL;
 
 // ── Orphaned-script handling ──────────────────────────────────
 // Chrome keeps a page's content script running after the extension is
@@ -23,34 +23,54 @@ function extensionAlive() {
 
 function onOrphaned(err) {
   if (orphaned) return;
-  if (err && !/context invalidated/i.test(String(err.message || err))) return;
+  if (extensionAlive() && err && !/context invalidated/i.test(String(err.message || err))) return;
   orphaned = true;
   if (navigationPoll) clearInterval(navigationPoll);
-  console.warn("Prompt Memory: this tab is running an old copy of the extension — reload the page.");
-  showToast("Prompt Memory was updated \u2014 reload this page to keep using it.", "error");
+  // Chrome cannot revive this isolated world after an extension reload.
+  // A single page refresh replaces it with the current content script. Use a
+  // persistent notice; a three-second toast disappears before many people
+  // return to the tab, and console.warn shows up as an extension error.
+  const showReloadNotice = () => {
+    if (document.getElementById("pm-reload-notice")) return;
+    const notice = document.createElement("div");
+    notice.id = "pm-reload-notice";
+    notice.className = "pm-reload-notice";
+    notice.setAttribute("role", "status");
+    const message = document.createElement("span");
+    message.textContent = "Prompt Memory updated. Reload this tab to keep using it.";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Reload tab";
+    button.addEventListener("click", () => window.location.reload());
+    notice.append(message, button);
+    document.body.appendChild(notice);
+  };
+  if (document.body) showReloadNotice();
+  else document.addEventListener("DOMContentLoaded", showReloadNotice, { once: true });
 }
 
 /** chrome.storage.local.get that cannot throw; an orphaned script gets {}. */
 function storageGet(keys, cb) {
-  try { chrome.storage.local.get(keys, cb); }
+  if (orphaned || !extensionAlive()) { onOrphaned(); cb({}); return; }
+  try {
+    chrome.storage.local.get(keys, (result) => {
+      if (!extensionAlive()) { onOrphaned(); cb({}); return; }
+      cb(result || {});
+    });
+  }
   catch (e) { onOrphaned(e); cb({}); }
 }
 
 /** chrome.storage.local.set that cannot throw. */
 function storageSet(items, cb) {
-  try { chrome.storage.local.set(items, cb); }
-  catch (e) { onOrphaned(e); }
+  if (orphaned || !extensionAlive()) { onOrphaned(); cb?.(false); return; }
+  try {
+    chrome.storage.local.set(items, () => {
+      if (!extensionAlive()) { onOrphaned(); cb?.(false); return; }
+      cb?.(!chrome.runtime.lastError);
+    });
+  } catch (e) { onOrphaned(e); cb?.(false); }
 }
-
-// Load configured API URL from storage on startup
-storageGet("api_url", (result) => {
-  if (result.api_url) API_URL = result.api_url;
-});
-
-// Listen for URL changes from popup
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.api_url) API_URL = changes.api_url.newValue || DEFAULT_API_URL;
-});
 
 console.log("Prompt Memory v4: loaded on", window.location.hostname);
 
@@ -87,12 +107,22 @@ let promptTrackingEnabled = false;
 // that one request, and is not retained as a profile. It stays on by default
 // and is disclosed and toggleable in the panel.
 let contextEnabled = true;
+let dataConsent = false;
 
 // Load privacy preferences
-storageGet(["pm_tracking", "pm_context"], (result) => {
+storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1"], (result) => {
   promptTrackingEnabled = result.pm_tracking === true;   // default: OFF
   contextEnabled = result.pm_context !== false;          // default: on
+  dataConsent = result.pm_data_consent_v1 === true;
 });
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.pm_data_consent_v1) dataConsent = changes.pm_data_consent_v1.newValue === true;
+    if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue === true;
+    if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
+  });
+} catch (error) { onOrphaned(error); }
 
 // ══════════════════════════════════════════════════════════════
 // AUTH HELPERS (with auto-refresh)
@@ -374,6 +404,7 @@ async function approveEnhancement(logId) {
 }
 
 async function trackPrompt(prompt) {
+  if (!dataConsent) return;
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return;
   authedFetch(`${API_URL}/track`, {
@@ -593,7 +624,7 @@ function createTrigger() {
       `<button class="pm-pill-down" type="button" title="Bad rewrite" aria-label="Bad rewrite">${PILL_THUMB_SVG(true)}</button>` +
     `</span>` +
     `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>`;
-  btn.title = "Enhance this prompt (Ctrl+Shift+E)\nShift-click for your library";
+  btn.title = "Enhance this prompt\nShift-click for your library";
   // Click runs the thing people came for. This used to open the panel, which
   // meant the primary action sat two clicks deep behind a tab bar; the library
   // is the secondary path now, not the front door.
@@ -680,9 +711,10 @@ function pillOffersInsert() {
   return cardState === "ready" && Boolean(cardResult) && !cardStale;
 }
 
-/** The pill's Insert: the same write as the card's Tab, without opening it. */
+/** Insert the draft without opening its review card. */
 async function insertDraft() {
   if (!pillOffersInsert()) return;
+  cardShowingOriginal = false; // The pill previews the rewrite, never the original.
   await acceptCard();
 }
 
@@ -790,13 +822,9 @@ function renderPill() {
   const verbEl = pill.querySelector(".pm-pill-insert");
   verbEl.hidden = !verb;
   if (verb) {
-    // ⇥, because Tab is the key that inserts — from the card, and from an
-    // empty composer. The first cut showed ↵, and Enter in a focused composer
-    // sends the message on every host.
-    // The key hint only where the key works from the box: an empty composer.
-    verbEl.innerHTML = verb === "Insert" ? `${verb} <kbd aria-hidden="true">\u21E5</kbd>` : verb;
+    verbEl.textContent = verb;
     verbEl.title = {
-      Insert: "Insert into the chat box (Tab)",
+      Insert: "Insert into the chat box",
       Apply: "Replace the chat box text with the rewrite",
       Redo: "Rewrite what is in the chat box now",
       Retry: "Try the rewrite again",
@@ -811,13 +839,13 @@ function renderPill() {
   pill.setAttribute("aria-label", {
     idle: "Enhance this prompt",
     streaming: "Rewriting your prompt",
-    ready: "Enhanced prompt ready. Tab inserts it from the chat box; click to review.",
+    ready: "Enhanced prompt ready. Click to review or use Insert.",
     stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
     error: "Enhancement failed. Retry runs it again.",
     applied: "Rewrite inserted.",
   }[state]);
   pill.title = state === "idle"
-    ? "Enhance this prompt (Ctrl+Shift+E)\nShift-click for your library"
+    ? "Enhance this prompt\nShift-click for your library"
     : state === "applied" ? "" : "Click to review the draft \u00b7 drag to move";
 
   // The pill's width just changed, so everything that hangs off it moves.
@@ -902,7 +930,7 @@ function placePill() {
     };
     const c = composer && pill.classList.contains("pm-pill-open") ? composer.getBoundingClientRect() : null;
     const cardEl = document.getElementById("pm-card");
-    const cb = cardEl && cardEl.dataset.anchor === "composer" ? cardEl.getBoundingClientRect() : null;
+    const cb = cardEl ? cardEl.getBoundingClientRect() : null;
     if (hits(c) || hits(cb)) {
       bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);
       inset = PILL_MARGIN;
@@ -1024,6 +1052,7 @@ function setupPillDrag(pill) {
 function watchNavigation() {
   let lastUrl = window.location.href;
   const check = () => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (window.location.href === lastUrl) return;
     lastUrl = window.location.href;
     onNavigated();
@@ -1074,16 +1103,20 @@ function setupKeyboardShortcut() {
   // Primary path: Chrome intercepts the chords declared in manifest.json's
   // "commands" block at the browser level, so they never reach this page. The
   // service worker catches them and forwards them here.
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type !== "PM_COMMAND") return;
-    if (msg.command === "enhance-prompt") handleEnhance();
-    if (msg.command === "voice-prompt") toggleVoice();
-  });
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (orphaned || msg?.type !== "PM_COMMAND") return;
+      if (msg.command === "enhance-prompt") handleEnhance();
+      if (msg.command === "voice-prompt") toggleVoice();
+    });
+  } catch (e) { onOrphaned(e); return; }
 
   // Fallback path: the user may have cleared or rebound the command in
   // chrome://extensions/shortcuts, in which case Chrome does not intercept and
   // the keystroke does arrive here.
   document.addEventListener("keydown", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     // Accept Cmd on macOS as well as Ctrl. The manifest advertises
     // Command+Shift+E on Mac, but this listener only ever checked ctrlKey — so
     // the advertised Mac shortcut did nothing here.
@@ -1168,9 +1201,9 @@ function createPanel() {
       </div>
       <div class="pm-enhance-row">
         <button class="pm-enhance-btn" id="pm-enhance-btn">Enhance Current Prompt</button>
-        <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt (Ctrl+Shift+V)">🎤</button>
+        <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt">🎤</button>
       </div>
-      <div class="pm-enhance-hint" id="pm-enhance-hint">Ctrl+Shift+E to enhance · Ctrl+Shift+V to speak</div>
+      <div class="pm-enhance-hint" id="pm-enhance-hint">Enhance to review a rewrite · Voice to dictate</div>
     </div>
   `;
 
@@ -1200,7 +1233,11 @@ function createPanel() {
     trackToggle.checked = result.pm_tracking === true;   // default: OFF
     ctxToggle.checked = result.pm_context !== false;
   });
-  trackToggle.addEventListener("change", () => {
+  trackToggle.addEventListener("change", async () => {
+    if (trackToggle.checked && !(await ensureDataConsent())) {
+      trackToggle.checked = false;
+      return;
+    }
     promptTrackingEnabled = trackToggle.checked;
     storageSet({ pm_tracking: promptTrackingEnabled });
   });
@@ -1290,7 +1327,7 @@ function togglePanel(force) {
   if (panelOpen) {
     // If already logged in, skip onboarding and mark as onboarded
     storageGet(["pm_onboarded", "token"], (result) => {
-      if (result.token || result.pm_onboarded) {
+      if ((result.token || result.pm_onboarded) && dataConsent) {
         // Auto-mark as onboarded if logged in
         if (!result.pm_onboarded) {
           storageSet({ pm_onboarded: true });
@@ -1344,7 +1381,7 @@ function showOnboarding(panel) {
         <div class="pm-onboarding-icon">🎯</div>
         <div class="pm-onboarding-step-text">
           <div class="pm-onboarding-step-title">Hit Enhance</div>
-          <div class="pm-onboarding-step-desc">Press Ctrl+Shift+E or click Enhance — we'll rewrite it to get better AI responses</div>
+          <div class="pm-onboarding-step-desc">Click Enhance — we'll rewrite it to get better AI responses</div>
         </div>
       </div>
       <div class="pm-onboarding-step">
@@ -1355,11 +1392,13 @@ function showOnboarding(panel) {
         </div>
       </div>
     </div>
-    <button class="pm-onboarding-cta" id="pm-onboarding-start">Get Started</button>
+    <p class="pm-onboarding-privacy">When you ask to enhance, your draft goes to an AI provider. Signed-in requests also go through our server and are saved in History; up to six recent chat messages are included by default. Prompt Tracking stays off until you enable it in settings.</p>
+    <button class="pm-onboarding-cta" id="pm-onboarding-start">See privacy choices &amp; continue</button>
   `;
   panel.appendChild(overlay);
 
-  document.getElementById("pm-onboarding-start").addEventListener("click", () => {
+  document.getElementById("pm-onboarding-start").addEventListener("click", async () => {
+    if (!(await ensureDataConsent())) return;
     storageSet({ pm_onboarded: true });
     overlay.style.animation = "pm-fadeIn 0.3s ease reverse";
     setTimeout(() => {
@@ -1619,9 +1658,9 @@ function updateEnhanceHint() {
   if (!hint) return;
   const count = selectedIds.size;
   if (count > 0) {
-    hint.textContent = `${count} prompt${count > 1 ? "s" : ""} selected · Ctrl+Shift+E`;
+    hint.textContent = `${count} prompt${count > 1 ? "s" : ""} selected · ready to enhance`;
   } else {
-    hint.textContent = "Ctrl+Shift+E for instant enhance";
+    hint.textContent = "Click Enhance to rewrite your draft";
   }
 }
 
@@ -1890,11 +1929,15 @@ function loadRecentFeedback() {
 
 /** Open the extension's own settings UI. */
 function openSettings() {
-  chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS" }, () => {
-    if (chrome.runtime.lastError) {
-      showToast("Click the Prompt Memory icon in your toolbar to open settings.", "info");
-    }
-  });
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+  try {
+    chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS" }, () => {
+      if (!extensionAlive()) { onOrphaned(); return; }
+      if (chrome.runtime.lastError) {
+        showToast("Click the Prompt Memory icon in your toolbar to open settings.", "info");
+      }
+    });
+  } catch (e) { onOrphaned(e); }
 }
 
 // Guards against a second enhancement starting while one is in flight. Two
@@ -1924,8 +1967,7 @@ function reopenDraftIfRelevant() {
 
 async function handleEnhance() {
   if (orphaned || !extensionAlive()) {
-    onOrphaned(new Error("Extension context invalidated"));
-    showToast("Prompt Memory was updated \u2014 reload this page to keep using it.", "error");
+    onOrphaned();
     return;
   }
   if (enhanceInFlight) {
@@ -1939,10 +1981,12 @@ async function handleEnhance() {
     showToast("Type a prompt in the chat input first.", "error");
     return;
   }
+  if (!(await ensureDataConsent())) return;
 
   // Ask the service worker how this request should be routed. It owns the API
   // key, so the decision cannot be made here.
   const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (orphaned) return;
   if (!route) {
     // The worker is unreachable. Almost always this tab's content script was
     // orphaned by an extension update or reload — the page needs refreshing,
@@ -1997,7 +2041,16 @@ async function handleEnhance() {
 /** No account, no server: the service worker calls the user's own provider. */
 async function runDirectEnhance(inputText, route) {
   return new Promise((resolve) => {
-    const port = chrome.runtime.connect({ name: "pm-stream" });
+    let port;
+    try {
+      if (!extensionAlive()) throw new Error("Extension context invalidated");
+      port = chrome.runtime.connect({ name: "pm-stream" });
+      if (!port?.onMessage || !port?.onDisconnect) throw new Error("Extension context invalidated");
+    } catch (e) {
+      onOrphaned(e);
+      resolve();
+      return;
+    }
     let parts = [];
     let settled = false;
 
@@ -2098,8 +2151,10 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
 /** Ask the service worker something; resolves to null if it is unreachable. */
 function askWorker(message) {
   return new Promise((resolve) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); resolve(null); return; }
     try {
       chrome.runtime.sendMessage(message, (response) => {
+        if (!extensionAlive()) { onOrphaned(); resolve(null); return; }
         if (chrome.runtime.lastError) {
           console.warn("Prompt Memory: worker unreachable", chrome.runtime.lastError.message);
           resolve(null);
@@ -2108,7 +2163,7 @@ function askWorker(message) {
         resolve(response);
       });
     } catch (e) {
-      console.warn("Prompt Memory: worker call failed", e);
+      onOrphaned(e);
       resolve(null);
     }
   });
@@ -2130,7 +2185,7 @@ function askWorker(message) {
 //
 // The card anchors to the composer instead, so the conversation stays readable
 // while you judge a rewrite that is supposed to fit it, and the decision is two
-// keys: Tab accepts, Esc dismisses.
+// Explicit buttons insert; Tab navigates; Escape minimizes.
 //
 // The four entry points below keep the names the streaming flow already calls,
 // so runBackendEnhance/runDirectEnhance are untouched.
@@ -2141,6 +2196,7 @@ let cardShowingOriginal = false;
 let cardOriginal = "";
 let cardReposition = null;
 let cardHasBaseline = false;
+let cardLayout = null;          // { detached, x, y, width, height }
 
 // The composer text this rewrite was actually built from, normalised.
 //
@@ -2163,6 +2219,38 @@ let pillStreamingPreview = "";
 // streaming. Without it "cancel" only hid the card, and the rewrite popped
 // back up as a finished draft when the stream it was still running ended.
 let cancelActiveStream = null;
+
+function cardLayoutStorageKey() {
+  return `pm_card_layout:${window.location.hostname}`;
+}
+
+function restoreCardLayout() {
+  return new Promise((resolve) => {
+    storageGet(cardLayoutStorageKey(), (result) => {
+      const saved = result[cardLayoutStorageKey()];
+      cardLayout = saved?.detached && [saved.x, saved.y, saved.width, saved.height].every(Number.isFinite) ? saved : null;
+      resolve();
+    });
+  });
+}
+
+function saveCardLayout() {
+  if (cardLayout?.detached) {
+    storageSet({ [cardLayoutStorageKey()]: cardLayout });
+  }
+}
+
+function resetCardLayout() {
+  cardLayout = null;
+  storageSet({ [cardLayoutStorageKey()]: null });
+  const card = document.getElementById("pm-card");
+  if (!card) return;
+  card.classList.remove("pm-card-free");
+  card.style.height = "";
+  if (document.activeElement?.id === "pm-card-reset") card.querySelector("#pm-card-layout-toggle")?.focus({ preventScroll: true });
+  positionCard();
+  placePill();
+}
 
 /**
  * Stale means: the composer holds text that is NOT what this rewrite was built
@@ -2198,6 +2286,126 @@ function getOrCreateCard() {
 }
 
 /**
+ * The card starts attached to the composer. Dragging its title bar or resize
+ * grip turns it into a floating workspace, remembered for this site.
+ */
+function setupCardInteractions(card) {
+  const head = card.querySelector(".pm-card-head");
+  const grip = card.querySelector(".pm-card-resize");
+  const toggle = card.querySelector("#pm-card-layout-toggle");
+  if (!head || !grip || !toggle) return;
+  const controls = document.createElement("div");
+  controls.id = "pm-card-layout";
+  controls.className = "pm-card-layout";
+  controls.hidden = true;
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Card position and size");
+  const adjustments = {
+    Left: [-24, 0, 0, 0], Right: [24, 0, 0, 0],
+    Up: [0, -24, 0, 0], Down: [0, 24, 0, 0],
+    Narrower: [0, 0, -40, 0], Wider: [0, 0, 40, 0],
+    Shorter: [0, 0, 0, -40], Taller: [0, 0, 0, 40],
+  };
+  const adjust = ([dx, dy, dw, dh]) => {
+    const r = card.getBoundingClientRect();
+    cardLayout = { detached: true, x: r.left + dx, y: r.top + dy, width: r.width + dw, height: r.height + dh };
+    positionCard();
+    saveCardLayout();
+  };
+  for (const [label, delta] of Object.entries(adjustments)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => adjust(delta));
+    controls.appendChild(button);
+  }
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = "Reset layout";
+  reset.addEventListener("click", resetCardLayout);
+  controls.appendChild(reset);
+  head.after(controls);
+  const toggleLayout = () => {
+    controls.hidden = !controls.hidden;
+    toggle.setAttribute("aria-expanded", String(!controls.hidden));
+    positionCard();
+  };
+  toggle.addEventListener("click", toggleLayout);
+  card.querySelector("#pm-card-reset")?.addEventListener("click", resetCardLayout);
+  let suppressGripClick = false;
+  grip.addEventListener("click", (e) => {
+    if (suppressGripClick && e.detail !== 0) { suppressGripClick = false; return; }
+    suppressGripClick = false;
+    toggleLayout();
+  });
+  grip.addEventListener("keydown", (e) => {
+    const delta = { ArrowLeft: [0,0,-12,0], ArrowRight: [0,0,12,0], ArrowUp: [0,0,0,-12], ArrowDown: [0,0,0,12] }[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    adjust(delta.map(value => value * (e.shiftKey ? 3 : 1)));
+  });
+  const begin = (event, kind) => {
+    if (event.button !== 0 || (kind === "move" && event.target.closest("button"))) return;
+    card._pmEndGesture?.();
+    suppressGripClick = false;
+    const r = card.getBoundingClientRect();
+    const start = { x: event.clientX, y: event.clientY };
+    let moved = false;
+    // Capture on the stable card, not header/grip nodes replaced by rerenders.
+    const move = (next) => {
+      if (next.pointerId !== event.pointerId) return;
+      const dx = next.clientX - start.x, dy = next.clientY - start.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      if (!moved) card.setPointerCapture(event.pointerId);
+      moved = true;
+      card.classList.add(kind === "move" ? "pm-card-moving" : "pm-card-resizing");
+      cardLayout = { detached: true, x: r.left + (kind === "move" ? dx : 0), y: r.top + (kind === "move" ? dy : 0), width: r.width + (kind === "resize" ? dx : 0), height: r.height + (kind === "resize" ? dy : 0) };
+      positionCard();
+      positionToasts();
+    };
+    const end = (next) => {
+      if (next && next.pointerId !== event.pointerId) return;
+      card._pmEndGesture = null;
+      card.removeEventListener("pointermove", move);
+      card.removeEventListener("pointerup", end);
+      card.removeEventListener("pointercancel", end);
+      card.removeEventListener("lostpointercapture", end);
+      try { card.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+      card.classList.remove("pm-card-moving", "pm-card-resizing");
+      if (moved) {
+        suppressGripClick = kind === "resize";
+        const box = card.getBoundingClientRect();
+        cardLayout = { detached: true, x: box.left, y: box.top, width: box.width, height: box.height };
+        saveCardLayout();
+        placePill();
+      }
+    };
+    card._pmEndGesture = end;
+    card.addEventListener("pointermove", move);
+    card.addEventListener("pointerup", end);
+    card.addEventListener("pointercancel", end);
+    card.addEventListener("lostpointercapture", end);
+  };
+  head.addEventListener("pointerdown", e => begin(e, "move"));
+  grip.addEventListener("pointerdown", e => begin(e, "resize"));
+}
+
+function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
+  const margin = Math.min(12, viewportWidth / 4, viewportHeight / 4);
+  const right = Math.max(margin + 1, Math.min(viewportWidth - margin, boundary));
+  const availableWidth = Math.max(1, right - margin);
+  const availableHeight = Math.max(1, viewportHeight - 2 * margin);
+  const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  const width = Math.min(availableWidth, Math.max(260, finite(layout.width, 520)));
+  const height = Math.min(availableHeight, Math.max(180, finite(layout.height, 260)));
+  return {
+    width, height,
+    x: Math.max(margin, Math.min(finite(layout.x, margin), right - width)),
+    y: Math.max(margin, Math.min(finite(layout.y, margin), viewportHeight - margin - height)),
+  };
+}
+
+/**
  * Hang the card off the pill.
  *
  * The pill is the fixed point the user learns, so the card opens from it: same
@@ -2225,6 +2433,26 @@ function positionCard() {
     ? Math.min(window.innerWidth - margin, panel.getBoundingClientRect().left - gap)
     : window.innerWidth - margin;
 
+  if (panel && rightBound < 280) { hideCard(); return; }
+
+  // Once the user moves or resizes the card, their layout wins. Keep every
+  // edge reachable after a window resize or after the library panel opens.
+  if (cardLayout?.detached) {
+    const { width, height, x: left, y: top } = clampCardLayout(cardLayout, window.innerWidth, window.innerHeight, rightBound);
+    card.classList.add("pm-card-free");
+    card.classList.remove("pm-card-below");
+    card.dataset.anchor = "free";
+    card.style.width = width + "px";
+    card.style.height = height + "px";
+    card.style.left = left + "px";
+    card.style.top = top + "px";
+    markScrollable(card.querySelector(".pm-card-text"));
+    return;
+  }
+
+  card.classList.remove("pm-card-free");
+  card.style.height = "";
+
   // A sheet on the composer: as wide as the box (capped), right-aligned to
   // it, so it reads as a suggestion growing out of the box it will land in.
   // The first cut hung the card off the pill and then pushed it up to clear
@@ -2242,6 +2470,7 @@ function positionCard() {
     width = Math.min(520, Math.max(300, rightBound - 2 * margin));
     left = pillDock === "left" ? pillBox.left : pillBox.right - width;
   }
+  width = Math.min(width, Math.max(1, rightBound - margin));
   left = Math.max(margin, Math.min(left, rightBound - width));
 
   card.style.width = width + "px";
@@ -2304,8 +2533,13 @@ function positionCard() {
 
 function openCard(innerHTML) {
   const card = getOrCreateCard();
-  card.innerHTML = innerHTML;
+  const focusedId = card.contains(document.activeElement) ? document.activeElement.id : null;
+  card._pmEndGesture?.();
+  card.innerHTML = innerHTML +
+    `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" title="Drag to resize, or click for layout controls"></button>`;
   cardExpanded = true;
+  setupCardInteractions(card);
+  if (focusedId) card.querySelector(`[id="${focusedId}"]`)?.focus({ preventScroll: true });
   positionCard();
   requestAnimationFrame(() => card.classList.add("pm-card-visible"));
 
@@ -2324,6 +2558,8 @@ function hideCard() {
     // Minimize toward the pill rather than blink out: the pill is where the
     // draft went, and the motion says so. The id is dropped at once so a
     // re-open during the 160ms builds a fresh card instead of reviving this one.
+    card._pmEndGesture?.();
+    if (card.contains(document.activeElement)) document.getElementById("pm-trigger")?.focus({ preventScroll: true });
     card.id = "";
     card._pmResize?.disconnect();
     const pill = document.getElementById("pm-trigger");
@@ -2391,9 +2627,11 @@ const cardKey = (k) => `<span class="pm-card-key">${k}</span>`;
  * the card has the same anatomy in every state: head, text, foot.
  */
 function cardHead(title, kind = "") {
-  return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}">` +
+  return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}" title="Drag to move">` +
     `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
     `<span class="pm-card-title">${title}</span>` +
+    `<button class="pm-card-layout-toggle" type="button" id="pm-card-layout-toggle" aria-expanded="false" aria-controls="pm-card-layout">Layout</button>` +
+    `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
     `<button class="pm-card-min" type="button" id="pm-card-min" title="Minimize to the pill (esc)" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
   `</div>`;
 }
@@ -2551,9 +2789,10 @@ function showDiffModal(result) {
   // ⌘S save while their key handlers below stayed live. A footer that stops
   // listing keys that still work is worse than one that never listed them, and
   // the reflow made the card visibly rebuild itself the moment you typed.
+  const acceptLabel = cardShowingOriginal ? "Use original" : norm(getCurrentInputText()) ? "Replace draft" : "Insert";
   const accept = cardStale
-    ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${cardKey("Tab")} accept</span>`
-    : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${cardKey("Tab")} accept</button>`;
+    ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${acceptLabel}</span>`
+    : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
   const actions = [
     // Accept is shown, not hidden: the key still means accept, it simply has
@@ -2566,7 +2805,7 @@ function showDiffModal(result) {
     // Hide, not dismiss: the draft goes back into the pill and can be brought
     // up again — from this chat or the next one. Discard is its own action.
     `<button class="pm-card-act" id="pm-card-close">${cardKey("esc")} minimize</button>`,
-    `<button class="pm-card-act" id="pm-card-toggle">${cardKey("\\")} ${cardShowingOriginal ? "rewrite" : "original"}</button>`,
+    `<button class="pm-card-act" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
     `<button class="pm-card-act" id="pm-card-save">${cardKey("⌘S")} save</button>`,
     `<button class="pm-card-act pm-card-discard" id="pm-card-discard">discard</button>`,
     `<span class="pm-card-spacer"></span>`,
@@ -2648,12 +2887,12 @@ document.addEventListener("input", refreshCardStaleness, true);
 /** Write the rewrite into the composer. */
 async function acceptCard() {
   if (cardState !== "ready" || !cardResult) return;
-  if (cardStale) {
+  if (cardStale || isStaleAgainstComposer()) {
     // The dangerous action. Accepting here would replace what the user just
     // typed with a rewrite of text that no longer exists — and it would report
     // success, correctly, because the write really did land. Their work is what
     // would be destroyed.
-    showToast("The prompt changed — press ⌘↵ to redo it first.", "error");
+    showToast("The prompt changed — choose Redo before replacing it.", "error");
     return;
   }
   const applyingEnhanced = !cardShowingOriginal;
@@ -2689,8 +2928,7 @@ async function saveCard() {
 }
 
 // ── Keymap ──
-// Only active while the card is open, so Tab keeps its normal meaning
-// everywhere else on the page.
+// Card shortcuts respect focus; Tab always keeps its navigation behavior.
 /**
  * A modal or the voice overlay is up.
  *
@@ -2706,63 +2944,42 @@ function overlayHasInput() {
   );
 }
 
-document.addEventListener("keydown", (e) => {
+// Tab is always navigation. Other shortcuts only apply while focus belongs
+// to the composer, pill, or card; ordinary typing never invokes card actions.
+function handleCardKeydown(e) {
+  if (e.key === "Tab" || e.isComposing || e.defaultPrevented) return;
   if (e.key === "Escape" && document.querySelector(".pm-voice-overlay.pm-visible")) {
-    e.preventDefault();
-    e.stopPropagation();
-    cancelVoice();
-    return;
+    e.preventDefault(); e.stopPropagation(); cancelVoice(); return;
   }
-  if (cardState === "idle") return;
-  if (overlayHasInput()) return;
-  const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyP";
+  if (cardState === "idle" || overlayHasInput()) return;
   const card = document.getElementById("pm-card");
-  if (!card) {
-    // Minimized. Two keys still reach the draft without opening it: ⌘⇧P
-    // brings the card back, and Tab inserts from the composer when doing so
-    // cannot destroy anything — the box is empty, or holds exactly the text
-    // the draft was built from. Tab, because Enter in a composer sends.
-    if (chord) { e.preventDefault(); e.stopPropagation(); expandCard(); return; }
-    if (e.key === "Tab" && !e.shiftKey && pillOffersInsert() && composerHasFocus() && !norm(getCurrentInputText())) {
-      e.preventDefault(); e.stopPropagation(); insertDraft();
-    }
+  const active = document.activeElement;
+  const inCard = Boolean(card && active && card.contains(active));
+  const pill = document.getElementById("pm-trigger");
+  const inPill = Boolean(pill && active && pill.contains(active));
+  if (!inCard && !inPill && !composerHasFocus()) return;
+  const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyP";
+  if (chord) {
+    e.preventDefault(); e.stopPropagation();
+    if (card) hideCard(); else expandCard();
     return;
   }
-  if (chord) { e.preventDefault(); e.stopPropagation(); hideCard(); return; }
-
+  if (!card) return;
   if (e.key === "Escape") {
     e.preventDefault(); e.stopPropagation();
-    // A finished draft is tucked into the pill, not thrown away. A stream in
-    // flight or an error has nothing worth keeping.
     if (cardState === "ready") hideCard(); else closeCard();
     return;
   }
-  if (cardState !== "ready") return;
-
-  // Redo, while the card is open. Scoped to the card's lifetime so the chord
-  // keeps its normal meaning on the host page the rest of the time.
+  // Save/redo belong to the review controls, not the host's editor.
+  if (!inCard || cardState !== "ready") return;
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
   }
-
-  if (e.key === "Tab") {
-    e.preventDefault(); e.stopPropagation();
-    // Tab means accept, always. When there is nothing safe to accept it does
-    // nothing and says why — a key that sometimes accepts and sometimes spends
-    // quota is a key you stop trusting.
-    acceptCard();
-    return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault(); e.stopPropagation(); saveCard();
   }
-  if (e.key === "\\") {
-    e.preventDefault(); e.stopPropagation();
-    cardShowingOriginal = !cardShowingOriginal;
-    showDiffModal(cardResult);
-    return;
-  }
-  if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
-    e.preventDefault(); e.stopPropagation(); saveCard(); return;
-  }
-}, true);
+}
+document.addEventListener("keydown", handleCardKeydown, true);
 
 function showSetupRequiredModal() {
   const overlay = getOrCreateModalOverlay();
@@ -2777,13 +2994,12 @@ function showSetupRequiredModal() {
       <p class="pm-setup-intro">Prompt Memory needs an AI model to rewrite your prompts. Pick either option — both are free.</p>
 
       <div class="pm-setup-option pm-setup-option-primary">
-        <div class="pm-setup-badge">Recommended · no account needed</div>
+        <div class="pm-setup-badge">Recommended · no Prompt Memory sign-in</div>
         <div class="pm-setup-title">Use your own free Groq key</div>
         <div class="pm-setup-desc">
-          Takes about a minute. Free, no credit card, and it gives you
-          <strong>1,000 enhancements a day</strong> instead of the 15 we can
-          share. Your prompts go straight from your browser to Groq — they never
-          touch our server.
+          Takes about a minute. Your prompts go straight from your browser to
+          your chosen provider and never touch our server. Your usage allowance
+          depends on that provider, model, and account.
         </div>
         <button class="pm-btn pm-btn-primary" id="pm-setup-byok">Add my key</button>
       </div>
@@ -3067,6 +3283,55 @@ function showModal(title, body, buttons = []) {
   });
 
   overlay.classList.add("pm-visible");
+}
+
+let consentRequest = null;
+async function ensureDataConsent() {
+  if (dataConsent) return true;
+  const stored = await new Promise((resolve) =>
+    storageGet("pm_data_consent_v1", (result) => resolve(result.pm_data_consent_v1 === true))
+  );
+  if (stored) { dataConsent = true; return true; }
+  if (consentRequest) return consentRequest;
+
+  consentRequest = new Promise((resolve) => {
+    const overlay = getOrCreateModalOverlay();
+    const modal = overlay.querySelector(".pm-modal");
+    modal.innerHTML = `
+      <div class="pm-modal-header"><span class="pm-modal-title">How Prompt Memory handles your data</span></div>
+      <div class="pm-modal-body pm-consent-body">
+        <p><strong>Only when you ask:</strong> Enhance sends your draft to an AI provider. When signed in, our server also receives it, saves the draft and rewrite in History, and includes up to six recent chat messages for context by default. You can switch that context off in Settings.</p>
+        <p><strong>Your own key:</strong> Without sign-in, the draft goes directly from your browser to the provider. If you also sign in, the key is forwarded through our server for each enhancement request so memory features can work.</p>
+        <p><strong>Other choices:</strong> Sign-in shares your Google email with us. Voice sends audio to our server and Groq when you record. Prompt Tracking logs submitted prompts only if you turn it on.</p>
+        <a href="https://github.com/siddhm11/prompt_engineering_skeleton/blob/main/website/privacy.html" target="_blank" rel="noreferrer">Read the full privacy policy</a>
+      </div>
+      <div class="pm-modal-footer">
+        <button class="pm-btn pm-btn-secondary" id="pm-consent-cancel">Not now</button>
+        <button class="pm-btn pm-btn-primary" id="pm-consent-accept">Agree &amp; continue</button>
+      </div>`;
+
+    const finish = (accepted) => {
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onEscape, true);
+      closeModal();
+      resolve(accepted);
+    };
+    const onBackdrop = (event) => { if (event.target === overlay) finish(false); };
+    const onEscape = (event) => { if (event.key === "Escape") finish(false); };
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onEscape, true);
+    modal.querySelector("#pm-consent-cancel").addEventListener("click", () => finish(false));
+    modal.querySelector("#pm-consent-accept").addEventListener("click", () => {
+      storageSet({ pm_data_consent_v1: true }, (saved) => {
+        if (!saved) { finish(false); return; }
+        dataConsent = true;
+        finish(true);
+      });
+    });
+    overlay.classList.add("pm-visible");
+    modal.querySelector("#pm-consent-accept").focus();
+  }).finally(() => { consentRequest = null; });
+  return consentRequest;
 }
 
 function getOrCreateModalOverlay() {
@@ -3371,6 +3636,7 @@ function setupPassiveTracking() {
   let lastText = "";
 
   document.addEventListener("input", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const el = e.target;
     if (
@@ -3382,6 +3648,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("keydown", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     if (e.key === "Enter" && !e.shiftKey && lastText.trim().length > 5) {
       trackPrompt(lastText);
@@ -3390,6 +3657,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("click", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const btn = e.target.closest("button");
     if (
@@ -3470,12 +3738,14 @@ async function getVoiceAuthToken() {
 }
 
 function toggleVoice() {
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   if (voiceState === "recording") return stopVoice();
   if (voiceState === "idle") return startVoice();
   if (voiceState === "reviewing") return cancelVoice();
 }
 
 async function startVoice() {
+  if (!(await ensureDataConsent())) return;
   if (voiceState !== "idle") return;
   const token = await getVoiceAuthToken();
   if (!token) return;
@@ -3797,7 +4067,7 @@ function updateVoiceUI(recording) {
   if (btn) {
     btn.classList.toggle("pm-recording", recording);
     btn.innerHTML = recording ? "⏹" : "🎤";
-    btn.title = recording ? "Stop recording" : "Voice to Prompt (Ctrl+Shift+V)";
+    btn.title = recording ? "Stop recording" : "Voice to Prompt";
   }
 }
 
@@ -3850,12 +4120,17 @@ function applyTheme(theme) {
 
 async function init() {
   const auth = await getAuth();
+  // The extension may have been reloaded while getAuth awaited storage. Do
+  // not build a second UI or register listeners from this dead script.
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   if (!auth) {
     console.log("Prompt Memory: not logged in, panel will prompt login.");
-  } else if (tokenExpiresWithinDays(auth.token, 2) && !isTokenExpired(auth.token)) {
+  } else if (dataConsent && tokenExpiresWithinDays(auth.token, 2) && !isTokenExpired(auth.token)) {
     tryRefreshToken(auth);
   }
 
+  await restoreCardLayout();
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   createTrigger();
   createPanel();
   setupKeyboardShortcut();
