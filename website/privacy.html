@@ -76,7 +76,7 @@
 <body>
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p class="last-updated">Last updated: September 3, 2026</p>
+        <p class="last-updated">Last updated: September 14, 2026</p>
 
         <p>Prompt Memory ("we", "our", "the extension") is a browser extension that enhances your AI prompts. This policy explains what data we collect, how we use it, and how you can control it.</p>
 
@@ -95,9 +95,7 @@
         </ul>
 
         <div class="highlight-box">
-            <p>💡 <strong>Prompt Learning is OFF unless you turn it on.</strong> We do not record the prompts you type
-            until you switch "Prompt Learning" on yourself in the ⚙ sidebar settings. With it off — the default —
-            your text is only ever sent when you explicitly click "Enhance", and only that one prompt is sent.</p>
+            <p>💡 <strong>Prompt Tracking is OFF unless you turn it on.</strong> With it off, prompts you submit normally to an AI chat are not logged by Prompt Memory. A prompt you explicitly enhance is different: signed-in enhancements send your draft and optional recent conversation context to our server and AI provider. We save the draft and rewrite in your enhancement history even if you dismiss the preview. With your own key and no sign-in, the draft goes directly to your chosen provider and we do not store it.</p>
             <p>Conversation context reading is separate and is on by default: while fulfilling an enhancement you
             asked for, the extension reads the last few visible messages so the rewrite makes sense in context.
             It is sent with that single request and is not kept as a profile. Its own toggle sits alongside the first.</p>
@@ -159,21 +157,21 @@
             <li><strong>Google Gemini API</strong> — only if you choose it as your own provider (<a href="https://ai.google.dev/gemini-api/terms" target="_blank">API Terms</a>)</li>
             <li><strong>OpenRouter</strong> — only if you choose it as your own provider</li>
             <li><strong>MongoDB Atlas</strong> — for data storage</li>
+            <li><strong>Qdrant Cloud</strong> — for vectors derived from saved prompts and accepted enhancements, when cloud vector storage is configured</li>
         </ul>
 
         <h2>7. Your Rights &amp; Controls</h2>
         <ul>
             <li><strong>Prompt Learning is opt-in</strong> — it starts switched off. Turn it on or back off at any
                 time in the ⚙ settings in the sidebar.</li>
-            <li><strong>Delete your data</strong> — signed-in users can erase their account, prompt history, saved
-                prompts, feedback and stored embeddings permanently. This is immediate and cannot be undone.</li>
+            <li><strong>Delete your data</strong> — signed-in users can use “Delete account &amp; data” in the extension popup to erase their account, prompt history, saved prompts, feedback, and stored embeddings. If a data store is unavailable, we report the deletion as incomplete and keep the account available so you can retry or contact us.</li>
             <!-- Only claim automatic retention limits when PROMPT_LOG_TTL_DAYS is
                  actually set on the server. It ships disabled, so promising a
                  90-day purge here would have been false. Restore a sentence
                  like "prompt logs are deleted automatically after N days" if
                  and when that variable is set. -->
             <li><strong>Retention</strong> — we keep your prompt history and saved prompts until you delete
-                them. Deleting your account removes all of it immediately.</li>
+                them. A successful account-deletion request removes your server-side account data.</li>
             <li><strong>Log out</strong> — sign out from the extension popup at any time</li>
         </ul>
 
@@ -193,12 +191,8 @@
         <p>We may update this privacy policy from time to time. Changes will be reflected with an updated "Last updated" date at the top of this page.</p>
 
         <h2>9. Contact</h2>
-        <!-- TODO before the Chrome Web Store listing: replace this with a real,
-             monitored address. The store requires a reachable developer contact,
-             and a privacy policy that says "email us" without saying where does
-             not satisfy it. -->
         <p>Questions about this policy, or a data request: use the 💬 feedback tab in the extension, or email
-        <a href="mailto:CONTACT_EMAIL_PLACEHOLDER">CONTACT_EMAIL_PLACEHOLDER</a>.</p>
+        <a href="mailto:hello.promptmemory@gmail.com">hello.promptmemory@gmail.com</a>.</p>
 
         <a href="index.html" class="back-link">← Back to Prompt Memory</a>
     </div>

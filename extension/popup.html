@@ -14,10 +14,12 @@
 
         body {
             width: 340px;
+            max-height: 600px;
             font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
             background: #0d0e12;
             color: #e8e8ed;
-            overflow: hidden;
+            overflow-x: hidden;
+            overflow-y: auto;
         }
 
         /* ── Header ── */
@@ -124,10 +126,23 @@
             text-align: center;
             min-height: 16px;
         }
+        #status:empty { display: none; }
 
         .hidden {
             display: none !important;
         }
+        [hidden] { display: none !important; }
+
+        body.pm-consent-pending > :not(#pm-consent) { display: none !important; }
+        #pm-consent { padding: 22px; width: 340px; max-width: 100%; }
+        .pm-consent-mark { font-size: 30px; margin-bottom: 9px; }
+        .pm-consent-title { font-size: 19px; font-weight: 700; margin: 0 0 9px; color: #e8e8ed; }
+        .pm-consent-copy { color: #b8b8c3; font-size: 12px; line-height: 1.55; margin: 0 0 12px; }
+        .pm-consent-list { padding-left: 18px; margin: 0 0 18px; color: #b8b8c3; font-size: 12px; line-height: 1.5; }
+        .pm-consent-list li { margin-bottom: 8px; }
+        .pm-consent-actions { display: flex; gap: 10px; align-items: center; }
+        .pm-consent-actions button { border: 0; border-radius: 8px; background: #50c8a8; color: #07130f; font-weight: 700; padding: 11px 14px; cursor: pointer; }
+        .pm-consent-actions a { color: #8fdcc6; font-size: 12px; }
 
         /* ── Profile Screen ── */
         .profile-section {
@@ -300,15 +315,67 @@
             transform: scale(0.97);
         }
         /* ── BYOK key card ── */
-        .key-section {
-            padding: 16px 20px 4px;
+        .key-divider {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 2px 24px 0;
+            color: #777b88;
+            font-size: 11px;
         }
+        .key-divider::before, .key-divider::after {
+            content: "";
+            height: 1px;
+            flex: 1;
+            background: rgba(255, 255, 255, 0.12);
+        }
+        .key-section {
+            margin: 12px 20px 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            background: #17191f;
+            overflow: hidden;
+        }
+        .key-entry {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 14px;
+            color: #e8e8ed;
+            cursor: pointer;
+            list-style: none;
+        }
+        .key-entry:hover { background: rgba(255, 255, 255, 0.035); }
+        .key-entry::-webkit-details-marker { display: none; }
+        .key-entry:focus-visible { outline: 2px solid #50c8a8; outline-offset: -3px; }
+        .key-entry-icon {
+            width: 34px;
+            height: 34px;
+            flex: 0 0 34px;
+            display: grid;
+            place-items: center;
+            border-radius: 9px;
+            background: rgba(80, 200, 168, 0.12);
+            color: #77d8bc;
+            font-size: 19px;
+        }
+        .key-entry-copy { min-width: 0; flex: 1; }
+        .key-entry-title { display: block; font-size: 13px; font-weight: 600; }
+        .key-entry-subtitle { display: block; margin-top: 3px; font-size: 11px; color: #9699a5; line-height: 1.35; }
+        .key-entry-chevron {
+            width: 8px;
+            height: 8px;
+            flex: 0 0 8px;
+            border-right: 1.5px solid #9699a5;
+            border-bottom: 1.5px solid #9699a5;
+            transform: rotate(45deg);
+            transition: transform 160ms ease;
+        }
+        .key-section[open] .key-entry-chevron { transform: rotate(225deg); }
 
         .key-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            border-radius: 12px;
-            padding: 14px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
+            padding: 16px 14px;
         }
 
         .key-head {
@@ -323,6 +390,16 @@
             font-weight: 600;
             flex: 1;
         }
+        .key-field-label {
+            display: block;
+            margin: 13px 0 6px;
+            color: #c9cbd2;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        .key-field-label:first-of-type { margin-top: 0; }
+        .key-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+        .key-field-head .key-field-label { margin-bottom: 6px; }
 
         .key-pill {
             font-size: 10px;
@@ -345,8 +422,8 @@
         .key-blurb {
             font-size: 11px;
             line-height: 1.5;
-            color: #8b8b96;
-            margin-bottom: 10px;
+            color: #a0a3ad;
+            margin-bottom: 4px;
         }
 
         .key-blurb strong {
@@ -363,10 +440,10 @@
         .key-input,
         .key-select {
             width: 100%;
-            background: rgba(0, 0, 0, 0.32);
-            border: 1px solid rgba(255, 255, 255, 0.09);
+            background: #0e1015;
+            border: 1px solid rgba(255, 255, 255, 0.17);
             border-radius: 8px;
-            padding: 8px 10px;
+            padding: 10px 11px;
             color: #e8e8ed;
             font-size: 12px;
             font-family: inherit;
@@ -384,8 +461,9 @@
 
         .key-actions {
             display: flex;
-            gap: 6px;
+            gap: 8px;
             align-items: center;
+            margin-top: 15px;
         }
 
         .btn-key {
@@ -394,7 +472,7 @@
             color: #07130f;
             border: none;
             border-radius: 8px;
-            padding: 9px;
+            padding: 11px;
             font-size: 12px;
             font-weight: 600;
             font-family: inherit;
@@ -418,9 +496,8 @@
         .key-link {
             display: inline-block;
             font-size: 11px;
-            color: #7b9cf0;
+            color: #87d9c2;
             text-decoration: none;
-            margin-bottom: 10px;
         }
 
         .key-link:hover {
@@ -448,7 +525,7 @@
 
         .key-privacy {
             font-size: 10px;
-            color: #6d6d78;
+            color: #9194a0;
             line-height: 1.45;
             margin-top: 8px;
             padding-top: 8px;
@@ -480,6 +557,7 @@
         body.pm-standalone {
             width: auto;
             max-width: 560px;
+            max-height: none;
             margin: 0 auto;
             overflow: auto;
             min-height: 100vh;
@@ -522,81 +600,34 @@
 </style>
 </head>
 
-<body>
+<body class="pm-consent-pending">
+    <section id="pm-consent" aria-labelledby="pm-consent-title">
+        <div class="pm-consent-mark">⊕</div>
+        <h1 class="pm-consent-title" id="pm-consent-title">Your prompts stay your choice</h1>
+        <p class="pm-consent-copy">Prompt Memory improves a draft only when you ask. Here is what happens when you use it:</p>
+        <ul class="pm-consent-list">
+            <li><strong>Enhance:</strong> Your draft goes to your chosen AI provider. If signed in, it goes through our server, is saved in your history, and up to six recent chat messages are sent for context by default. You can turn conversation context off in the sidebar.</li>
+            <li><strong>Your own key:</strong> Without sign-in, your draft goes directly from this browser to the provider. If you also sign in, your key is forwarded through our server for each enhancement request so memory features can work.</li>
+            <li><strong>Optional features:</strong> Google sign-in shares your email with us. Voice sends audio to our server and Groq for transcription when you record. Prompt Tracking, which logs submitted prompts, starts off and requires you to switch it on.</li>
+        </ul>
+        <div class="pm-consent-actions">
+            <button id="pm-consent-agree" type="button">Agree &amp; continue</button>
+            <a href="https://github.com/siddhm11/prompt_engineering_skeleton/blob/main/website/privacy.html" target="_blank" rel="noreferrer">Read privacy policy</a>
+        </div>
+    </section>
     <!-- ═══ HEADER ═══ -->
     <div class="popup-header">
         <div class="popup-logo">⊕</div>
         <span class="popup-title">Prompt Memory</span>
-        <span class="popup-version">v4.1</span>
+        <span class="popup-version">v4.4</span>
     </div>
-
-    <!-- ═══ API KEY (BYOK) ═══ -->
-    <!-- Placed above sign-in on purpose: it is the faster route to a working
-         enhancement and gives the user a far larger free allowance than the
-         shared server key can. -->
-    <div class="key-section">
-        <div class="key-card">
-            <div class="key-head">
-                <span class="key-title">Your AI model</span>
-                <span class="key-pill off" id="key-pill">Not set</span>
-            </div>
-            <div class="key-blurb" id="key-blurb">
-                Add your own free API key for <strong>1,000 enhancements a day</strong>.
-                No credit card, and it works without an account.
-            </div>
-
-            <select class="key-select" id="key-provider" style="margin-bottom:6px;">
-                <option value="groq">Groq — free, no card (recommended)</option>
-                <option value="gemini">Google Gemini — free</option>
-                <option value="openrouter">OpenRouter</option>
-            </select>
-
-            <a class="key-link" id="key-get-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">
-                Get a free key →
-            </a>
-
-            <div class="key-row">
-                <input class="key-input" id="key-input" type="password" autocomplete="off"
-                    spellcheck="false" placeholder="Paste your key here">
-            </div>
-
-            <select class="key-select" id="key-model" style="margin-bottom:8px;"></select>
-
-            <div class="key-actions">
-                <button class="btn-key" id="key-save">Save &amp; test</button>
-                <button class="btn-key btn-key-ghost" id="key-clear" style="flex:0 0 auto;padding:9px 12px;">Clear</button>
-            </div>
-
-            <div class="key-status" id="key-status"></div>
-            <div class="key-privacy" id="key-privacy"></div>
-        </div>
-    </div>
-
-    <div class="section-divider">OPTIONAL</div>
 
     <!-- ═══ LOGIN ═══ -->
-    <!-- Which backend this extension talks to. Previously the only way to
-         point at a local server was to hand-edit DEFAULT_API_URL in three
-         separate files and reload the extension. -->
-    <div class="backend-box">
-        <div class="backend-head">
-            <span>Backend</span>
-            <span class="backend-pill" id="backend-pill">Production</span>
-        </div>
-        <div class="backend-row">
-            <button id="backend-prod" class="active">Production</button>
-            <button id="backend-local">Local</button>
-        </div>
-        <input class="backend-url" id="backend-url" spellcheck="false"
-               placeholder="https://siddhm11-prompt-engine.hf.space">
-        <div class="backend-note" id="backend-note">Signed-in features use this server.</div>
-    </div>
-
     <div id="login-section">
         <div class="login-section">
             <div class="login-icon">✨</div>
-            <div class="login-title">Sign in for memory</div>
-            <div class="login-subtitle">Optional. Adds saved prompts, history, and context from your past prompts. Without a key of your own, signing in gives you 15 enhancements a day on our shared key.</div>
+            <div class="login-title">Make better prompts in one click</div>
+            <div class="login-subtitle">Sign in with Google to start with 15 enhancements a day. Save useful prompts and revisit your rewrites in History.</div>
             <button class="btn-google" id="google-login-btn">
                 <svg width="18" height="18" viewBox="0 0 24 24">
                     <path fill="#4285F4"
@@ -637,27 +668,92 @@
                         <span class="shortcut-label-icon">🎯</span>
                         Enhance prompt
                     </span>
-                    <kbd>Ctrl+Shift+E</kbd>
+                    <kbd data-command="enhance-prompt">See Chrome shortcuts</kbd>
                 </div>
                 <div class="shortcut-row">
                     <span class="shortcut-label">
                         <span class="shortcut-label-icon">🎤</span>
                         Voice to prompt
                     </span>
-                    <kbd>Ctrl+Shift+V</kbd>
+                    <kbd data-command="voice-prompt">See Chrome shortcuts</kbd>
                 </div>
             </div>
 
             <div class="tip-card">
                 <span class="tip-icon">💡</span>
                 <div class="tip-text">
-                    Open any AI chat and look for the <strong>⊕ button</strong> in the bottom-right corner to open the sidebar.
+                    Open a supported AI chat, write a draft, then click <strong>⊕</strong> to enhance it. Use <strong>Library</strong> beside it for saved prompts. Review the rewrite before inserting; insertion does not send your message.
                 </div>
             </div>
 
             <button class="btn-logout" id="logout-btn">Sign Out</button>
+            <button class="btn-logout" id="delete-account-btn" style="margin-top:10px;color:#f2a2a2;">Delete account &amp; data</button>
+            <div id="delete-account-panel" hidden style="padding:14px;margin-top:10px;border:1px solid #884747;border-radius:10px;background:#241719;">
+                <p style="font-size:12px;line-height:1.5;margin:0 0 10px;color:#e1c3c3;">This deletes your account, enhancement history, saved prompts, feedback, and memory vectors from our servers. Your own API key stays on this device. Type <strong>DELETE</strong> to confirm.</p>
+                <input id="delete-account-input" aria-label="Type DELETE to confirm" autocomplete="off" style="width:100%;padding:9px;border-radius:7px;border:1px solid #885b5b;background:#120e10;color:#fff;">
+                <p id="delete-account-status" role="status" style="font-size:11px;color:#f2a2a2;margin:8px 0;"></p>
+                <div style="display:flex;gap:8px;">
+                    <button class="btn-logout" id="delete-account-cancel" style="flex:1;">Cancel</button>
+                    <button class="btn-logout" id="delete-account-confirm" style="flex:1;background:#8d3333;color:#fff;">Delete data</button>
+                </div>
+            </div>
         </div>
     </div>
+
+    <div class="key-divider" id="key-divider">or</div>
+
+    <!-- ═══ OPTIONAL API KEY ═══ -->
+    <details class="key-section" id="key-details">
+        <summary class="key-entry">
+            <span class="key-entry-icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="8" cy="15" r="4"></circle>
+                    <path d="M11 12 20 3l1 1-2 2 2 2-3 3-2-2-2 2"></path>
+                </svg>
+            </span>
+            <span class="key-entry-copy">
+                <span class="key-entry-title" id="key-entry-title">Use your own API key</span>
+                <span class="key-entry-subtitle" id="key-entry-subtitle">No sign-in · Your provider's limits</span>
+            </span>
+            <span class="key-entry-chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="key-card">
+            <div class="key-head">
+                <span class="key-title">Connect a provider</span>
+                <span class="key-pill off" id="key-pill">Not set</span>
+            </div>
+            <div class="key-blurb" id="key-blurb">
+                Get a key from your AI provider, then paste it here. You can enhance prompts without signing in.
+            </div>
+
+            <label class="key-field-label" for="key-provider">Provider</label>
+            <select class="key-select" id="key-provider">
+                <option value="groq">Groq</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="openrouter">OpenRouter</option>
+            </select>
+
+            <div class="key-field-head">
+                <label class="key-field-label" for="key-input">API key</label>
+                <a class="key-link" id="key-get-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Get a key ↗</a>
+            </div>
+            <div class="key-row">
+                <input class="key-input" id="key-input" type="password" autocomplete="off"
+                    spellcheck="false" placeholder="Paste your key here">
+            </div>
+
+            <label class="key-field-label" for="key-model">Model</label>
+            <select class="key-select" id="key-model"></select>
+
+            <div class="key-actions">
+                <button class="btn-key" id="key-save">Save &amp; test</button>
+                <button class="btn-key btn-key-ghost" id="key-clear" style="flex:0 0 auto;padding:9px 12px;">Clear</button>
+            </div>
+
+            <div class="key-status" id="key-status"></div>
+            <div class="key-privacy" id="key-privacy"></div>
+        </div>
+    </details>
 
     <script src="popup.js"></script>
 </body>

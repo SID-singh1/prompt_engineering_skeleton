@@ -58,6 +58,7 @@
   window.chrome = {
     storage: { local: mk(localStorage), session: mk(sessionStorage), onChanged: { addListener() {} } },
     runtime: {
+      id: "pill-harness",
       lastError: null,
       sendMessage(msg, cb) { if (cb) cb(undefined); return Promise.resolve(undefined); },
       onMessage: { addListener() {} },

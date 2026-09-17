@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/version-2.0-2a8a7a?style=for-the-badge" alt="Version 2.0" />
+  <img src="https://img.shields.io/badge/version-4.4-2a8a7a?style=for-the-badge" alt="Version 4.4" />
   <img src="https://img.shields.io/badge/Manifest-V3-blue?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Manifest V3" />
   <img src="https://img.shields.io/badge/FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/MongoDB-47A248?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
@@ -199,15 +199,21 @@ python evals/run_context_retrieval_eval.py --validate
 
 ### 3 · Start Using
 
-1. Click the **⊕ Prompt Memory** icon in your toolbar
-2. **Add your own free API key** (recommended) — grab one at
-   [console.groq.com/keys](https://console.groq.com/keys), paste it in, hit
-   *Save & test*. No credit card, no account here, and you get **1,000
-   enhancements a day** instead of the 15 available on the shared key.
-   *Or* sign in with Google to use the shared key plus saved prompts and history.
+1. Click the **⊕ Prompt Memory** icon in your toolbar and accept the first-run
+   data disclosure.
+2. **Continue with Google** for the shared-key allowance of 15 enhancements a
+   day, saved prompts, and History. To use the extension without a Prompt Memory
+   account, expand **Use your own API key instead**, get a key from
+   [console.groq.com/keys](https://console.groq.com/keys) or another supported
+   provider, and select *Save & test*. Your allowance then follows your
+   provider's current limits.
 3. Navigate to any supported AI platform — a floating **⊕** button appears
 4. Type a prompt, then click **Enhance** or press `Ctrl+Shift+E`
 5. Review the before/after diff → accept, edit, or dismiss
+
+When reloading an unpacked extension from `chrome://extensions`, refresh
+chat tabs that were already open. Chrome leaves their old content scripts in
+place until those pages load again.
 
 For signed-in users, generating a rewrite adds it to History but does **not**
 teach passive memory. Passive memory is written only after the rewritten prompt
@@ -222,12 +228,10 @@ durably stored, so a database outage cannot immediately leave an untracked
 memory behind. Prompt-log retention may later expire that record; a separate
 long-lived consent ledger is still needed before claiming permanent auditability.
 
-> **Why bring your own key?** Groq's free tier is 1,000 requests/day and 8,000
-> tokens/minute *per account*. Because every user shares this project's single
-> server key, that ceiling is spent by everyone at once — roughly 4 enhancements
-> per minute for the entire user base. With your own key the same free allowance
-> is yours alone, and with no sign-in your prompts go straight from your browser
-> to the provider without touching this server at all.
+> **Why bring your own key?** You use your provider account's allowance instead
+> of the shared server key. Current rate limits vary by provider, model, and
+> account. With no sign-in your prompts go straight from your browser to the
+> chosen provider without touching this server.
 
 ---
 
@@ -322,7 +326,7 @@ Audio is used only for the transcription request and is not stored by Prompt Mem
 
 ## 🤝 Contributing
 
-Contributions, issues, and feature requests are welcome! Feel free to open an issue or submit a pull request.
+Contributions, issues, and feature requests are welcome! Open an issue, submit a pull request, or email [hello.promptmemory@gmail.com](mailto:hello.promptmemory@gmail.com).
 
 ---
 

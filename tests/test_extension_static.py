@@ -154,16 +154,11 @@ def test_card_visibility_class_is_load_bearing():
     assert re.search(r"\.pm-card\.pm-card-visible\s*{[^}]*opacity:\s*1", STYLES_CSS, re.S)
 
 
-def test_card_keymap_does_not_hijack_tab_when_closed():
-    """
-    Tab is the page's key, not ours. The handler must bail on idle state before
-    it ever calls preventDefault, or the extension breaks tab navigation
-    everywhere on six major sites.
-    """
-    handler = CONTENT_JS[CONTENT_JS.index('if (cardState === "idle") return;'):]
-    guard = CONTENT_JS.index('if (cardState === "idle") return;')
-    tab = CONTENT_JS.index('if (e.key === "Tab")', guard)
-    assert guard < tab, "the idle guard must precede the Tab handler"
+def test_card_keymap_preserves_tab_navigation():
+    body = _function_bodies(CONTENT_JS, r"handleCardKeydown")["handleCardKeydown"]
+    assert 'e.key === "Tab"' in body
+    assert body.index('e.key === "Tab"') < body.index('preventDefault')
+    assert 'acceptCard()' not in body
 
 
 # ── stale rewrites ────────────────────────────────────────────────────────
@@ -662,7 +657,7 @@ def test_nothing_covers_the_card_that_does_not_also_take_its_keys():
 
 
 def test_the_card_keymap_defers_to_an_overlay():
-    assert re.search(r"if \(overlayHasInput\(\)\) return;", CONTENT_JS), \
+    assert re.search(r"if \([^\n]*overlayHasInput\(\)\) return;", CONTENT_JS), \
         "the card still answers Tab while a modal owns input"
 
 
@@ -1030,15 +1025,10 @@ def test_every_pill_state_carries_one_verb():
             f"the {state} verb is not coloured for its state"
 
 
-def test_the_key_hint_on_insert_is_tab_not_enter():
-    """Enter in a focused composer sends the message on every host. Tab is the
-    key that inserts — from the card, and from an empty composer."""
+def test_insert_does_not_advertise_a_navigation_key():
     body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
-    assert "\\u21E5" in body, "the verb no longer shows the Tab hint"
-    assert "\u21B5 Insert" not in CONTENT_JS and "↵ Insert" not in CONTENT_JS
-    keymap = CONTENT_JS[CONTENT_JS.index("const chord = (e.metaKey || e.ctrlKey) && e.shiftKey"):][:900]
-    assert 'e.key === "Tab" && !e.shiftKey && pillOffersInsert() && composerHasFocus() && !norm(getCurrentInputText())' in keymap, \
-        "Tab from a NON-empty composer must not replace what is typed while the card is hidden"
+    assert 'verbEl.textContent = verb;' in body
+    assert 'cardKey("Tab")' not in CONTENT_JS
 
 
 def test_cancel_actually_cancels_the_stream():
@@ -1088,7 +1078,7 @@ def test_the_pill_steps_aside_for_the_card_not_the_reverse():
     place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
     assert place.index("positionCard();") < place.index("if (hits(c) || hits(cb)) {"), \
         "the card must be laid out before the pill decides whether to step aside"
-    assert 'cardEl.dataset.anchor === "composer"' in place
+    assert "cardEl ? cardEl.getBoundingClientRect() : null" in place
     assert "if (hits(cb)) stepAbove(cb, 8);" in place
     hide = _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
     assert "pm-card-leaving-up" in hide, "the fold should head toward the pill"
@@ -1120,6 +1110,25 @@ def test_the_pill_re_places_when_the_card_grows():
     body = _function_bodies(CONTENT_JS, r"getOrCreateCard")["getOrCreateCard"]
     assert "card._pmResize = new ResizeObserver(() => placePill());" in body
     assert "card._pmResize?.disconnect();" in _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
+
+
+def test_the_card_can_be_moved_resized_and_reset():
+    setup = _function_bodies(CONTENT_JS, r"setupCardInteractions")["setupCardInteractions"]
+    for behavior in ('begin(e, "move")', 'begin(e, "resize")', "setPointerCapture", "saveCardLayout"):
+        assert behavior in setup
+    assert "pm-card-resize" in CONTENT_JS and ".pm-card-resize" in STYLES_CSS
+    assert "pm-card-reset" in CONTENT_JS and ".pm-card-free .pm-card-reset" in STYLES_CSS
+    assert "resetCardLayout" in setup
+    assert '<button type="button" class="pm-card-resize"' in CONTENT_JS and "ArrowRight" in setup
+
+
+def test_the_floating_card_is_clamped_and_remembered_per_site():
+    position = _function_bodies(CONTENT_JS, r"positionCard")["positionCard"]
+    assert "cardLayout?.detached" in position
+    assert "clampCardLayout(cardLayout" in position
+    assert "rightBound - width" in position
+    key = _function_bodies(CONTENT_JS, r"cardLayoutStorageKey")["cardLayoutStorageKey"]
+    assert "window.location.hostname" in key
 
 
 def test_the_pill_reads_the_same_way_in_both_docks():
@@ -1158,17 +1167,27 @@ def test_storage_is_never_called_directly():
     body = CONTENT_JS
     for fn in ("storageGet", "storageSet"):
         assert f"function {fn}(" in body
-    direct = [l for l in body.split("\n") if "chrome.storage.local.get(" in l or "chrome.storage.local.set(" in l]
-    assert len(direct) == 2 and all("try {" in l for l in direct), \
-        f"chrome.storage.local is called outside the safe helpers: {direct}"
+    assert body.count("chrome.storage.local.get(") == 1
+    assert body.count("chrome.storage.local.set(") == 1
+    for fn in ("storageGet", "storageSet"):
+        assert "extensionAlive()" in _function_bodies(body, fn)[fn]
 
 
 def test_an_orphaned_script_says_so_and_stops_polling():
     body = _function_bodies(CONTENT_JS, r"onOrphaned")["onOrphaned"]
     assert "if (orphaned) return;" in body, "the reload toast would fire on every event"
     assert "clearInterval(navigationPoll)" in body
-    assert "reload this page" in body
+    assert "pm-reload-notice" in body
+    assert "Reload this tab" in body
+    assert "console.warn(" not in body
     nav = _function_bodies(CONTENT_JS, r"watchNavigation")["watchNavigation"]
     assert "navigationPoll = setInterval(check" in nav
     handle = _function_bodies(CONTENT_JS, r"handleEnhance")["handleEnhance"]
     assert "!extensionAlive()" in handle, "the trigger should explain itself, not fail silently"
+    init = _function_bodies(CONTENT_JS, r"init")["init"]
+    assert "if (orphaned || !extensionAlive())" in init
+
+
+def test_update_does_not_reinject_into_tabs_with_old_scripts():
+    update = BACKGROUND_JS.split('if (reason === "update") {', 1)[1].split('if (reason !== "install")', 1)[0]
+    assert "activateExistingTabs()" not in update

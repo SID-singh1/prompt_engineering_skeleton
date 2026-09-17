@@ -4,7 +4,23 @@
 
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
-let API_URL = DEFAULT_API_URL;
+const API_URL = DEFAULT_API_URL;
+
+const DATA_CONSENT_KEY = "pm_data_consent_v1";
+chrome.storage.local.get(DATA_CONSENT_KEY, (result) => {
+    if (result[DATA_CONSENT_KEY] === true) {
+        document.body.classList.remove("pm-consent-pending");
+        document.getElementById("pm-consent").hidden = true;
+        initializePopupSession();
+    }
+});
+document.getElementById("pm-consent-agree").addEventListener("click", () => {
+    chrome.storage.local.set({ [DATA_CONSENT_KEY]: true }, () => {
+        document.body.classList.remove("pm-consent-pending");
+        document.getElementById("pm-consent").hidden = true;
+        initializePopupSession();
+    });
+});
 
 const loginSection = document.getElementById("login-section");
 const profileSection = document.getElementById("profile-section");
@@ -13,11 +29,16 @@ const userDisplay = document.getElementById("user-display");
 const profileAvatar = document.getElementById("profile-avatar");
 const googleBtn = document.getElementById("google-login-btn");
 const logoutBtn = document.getElementById("logout-btn");
+const deleteBtn = document.getElementById("delete-account-btn");
+const deletePanel = document.getElementById("delete-account-panel");
+const deleteStatus = document.getElementById("delete-account-status");
+const keyDivider = document.getElementById("key-divider");
+const keyEntryTitle = document.getElementById("key-entry-title");
+const keyEntrySubtitle = document.getElementById("key-entry-subtitle");
 
-// ── Init: Load API URL + check login state ──
-chrome.storage.local.get(["user_id", "email", "token", "api_url"], async (result) => {
-    if (result.api_url) API_URL = result.api_url;
-
+// Refresh only after the user has accepted the new data disclosure.
+async function initializePopupSession() {
+    const result = await chrome.storage.local.get(["user_id", "email", "token"]);
     if (result.user_id && result.email && result.token) {
         // Auto-refresh token if expiring within 2 days
         if (isTokenExpiringSoon(result.token, 2)) {
@@ -25,47 +46,7 @@ chrome.storage.local.get(["user_id", "email", "token", "api_url"], async (result
         }
         showProfile(result.email);
     }
-});
-
-// ── Backend switcher ──────────────────────────────────────────────
-//
-// api_url has always been read from chrome.storage.local by the popup, the
-// content script and the service worker — but nothing ever wrote it, so the
-// only way to point at a local server was to hand-edit DEFAULT_API_URL in
-// three files and reload the extension. content.js already listens for changes
-// to this key, so switching here takes effect in open tabs immediately.
-
-const LOCAL_API_URL = "http://localhost:8000";
-
-const backendPill  = document.getElementById("backend-pill");
-const backendProd  = document.getElementById("backend-prod");
-const backendLocal = document.getElementById("backend-local");
-const backendUrl   = document.getElementById("backend-url");
-const backendNote  = document.getElementById("backend-note");
-
-function paintBackend(url) {
-    const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(url || "");
-    backendPill.textContent = isLocal ? "Local" : "Production";
-    backendPill.classList.toggle("local", isLocal);
-    backendProd.classList.toggle("active", !isLocal);
-    backendLocal.classList.toggle("active", isLocal);
-    backendUrl.value = url || DEFAULT_API_URL;
-    backendNote.textContent = isLocal
-        ? "Talking to a server on this machine. Sign in again after switching — tokens are signed per backend."
-        : "Signed-in features use this server.";
 }
-
-function setBackend(url) {
-    const clean = (url || "").trim().replace(/\/+$/, "") || DEFAULT_API_URL;
-    API_URL = clean;
-    chrome.storage.local.set({ api_url: clean }, () => paintBackend(clean));
-}
-
-backendProd?.addEventListener("click", () => setBackend(DEFAULT_API_URL));
-backendLocal?.addEventListener("click", () => setBackend(LOCAL_API_URL));
-backendUrl?.addEventListener("change", () => setBackend(backendUrl.value));
-
-chrome.storage.local.get("api_url", (r) => paintBackend(r.api_url || DEFAULT_API_URL));
 
 // ── Token helpers ──
 function isTokenExpiringSoon(token, days = 2) {
@@ -153,6 +134,51 @@ logoutBtn.addEventListener("click", () => {
     });
 });
 
+deleteBtn.addEventListener("click", () => {
+    deletePanel.hidden = !deletePanel.hidden;
+    deleteStatus.textContent = "";
+});
+
+document.getElementById("delete-account-cancel").addEventListener("click", () => {
+    deletePanel.hidden = true;
+});
+
+document.getElementById("delete-account-confirm").addEventListener("click", async () => {
+    const confirmInput = document.getElementById("delete-account-input");
+    if (confirmInput.value.trim() !== "DELETE") {
+        deleteStatus.textContent = "Type DELETE to confirm.";
+        return;
+    }
+    const button = document.getElementById("delete-account-confirm");
+    button.disabled = true;
+    deleteStatus.textContent = "Deleting your account and saved data…";
+    try {
+        let { token } = await chrome.storage.local.get("token");
+        if (!token) throw new Error("Please sign in again before deleting your account.");
+        if (isTokenExpiringSoon(token, 2)) {
+            const refreshed = await tryRefreshToken(token);
+            if (refreshed) ({ token } = await chrome.storage.local.get("token"));
+        }
+        const response = await fetch(`${API_URL}/users/me`, {
+            method: "DELETE", headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+            if (response.status === 401) throw new Error("Session expired. Sign in again, then retry deletion.");
+            throw new Error("Deletion is incomplete. Please retry; your account remains available.");
+        }
+        await chrome.storage.local.remove(["user_id", "email", "token", "pm_draft"]);
+        try { await chrome.storage.session?.remove("pm_draft"); } catch { /* server deletion succeeded */ }
+        confirmInput.value = "";
+        deletePanel.hidden = true;
+        showLogin();
+        statusText.textContent = "Account and server data deleted.";
+    } catch (error) {
+        deleteStatus.textContent = error.message || "Could not delete the account. Please retry.";
+    } finally {
+        button.disabled = false;
+    }
+});
+
 // ════════════════════════════════════════════════════════════════
 // BYOK — the user's own free API key
 // ════════════════════════════════════════════════════════════════
@@ -161,8 +187,8 @@ logoutBtn.addEventListener("click", () => {
 // replicates through the user's Google account to every browser they are
 // signed into, which is not somewhere an API key should travel silently.
 //
-// The key is read here and by the service worker. The content script — which
-// runs alongside chatgpt.com and claude.ai — never receives it.
+// Direct calls stay in the worker. A signed-in memory request temporarily
+// passes the key through the isolated content script to our backend.
 
 const PROVIDER_INFO = {
     groq: {
@@ -207,7 +233,7 @@ const keyPrivacy = document.getElementById("key-privacy");
 function renderProvider(providerId, selectedModel) {
     const info = PROVIDER_INFO[providerId] || PROVIDER_INFO.groq;
     keyLink.href = info.keysUrl;
-    keyLink.textContent = `Get a free ${info.label} key →`;
+    keyLink.textContent = `Get a ${info.label} key ↗`;
     keyPrivacy.textContent = info.privacy;
 
     modelSel.innerHTML = "";
@@ -242,6 +268,8 @@ chrome.storage.local.get(["byok_provider", "byok_key", "byok_model"], (r) => {
         keyInput.value = "";
         keyInput.placeholder = `Saved — ${"•".repeat(12)}${r.byok_key.slice(-4)}`;
         setPill(true, (PROVIDER_INFO[provider] || {}).label || provider);
+        keyEntryTitle.textContent = `${(PROVIDER_INFO[provider] || {}).label || provider} connected · manage key`;
+        keyEntrySubtitle.textContent = "Your own provider allowance · Click to change or remove";
     }
 });
 
@@ -283,7 +311,9 @@ document.getElementById("key-save").addEventListener("click", async () => {
             () => {
                 const label = (PROVIDER_INFO[provider] || {}).label || provider;
                 setPill(true, label);
-                setKeyStatus(`${res.detail} You now get your own free allowance.`, "ok");
+                keyEntryTitle.textContent = `${label} connected · manage key`;
+                keyEntrySubtitle.textContent = "Your own provider allowance · Click to change or remove";
+                setKeyStatus(`${res.detail} Your allowance depends on your provider and model.`, "ok");
                 keyInput.value = "";
                 keyInput.placeholder = `Saved — ${"•".repeat(12)}${key.slice(-4)}`;
             }
@@ -296,14 +326,13 @@ document.getElementById("key-clear").addEventListener("click", () => {
         keyInput.value = "";
         keyInput.placeholder = "Paste your key here";
         setPill(false);
+        keyEntryTitle.textContent = "Use your own API key";
+        keyEntrySubtitle.textContent = loginSection.classList.contains("hidden")
+            ? "Optional · Use your provider's allowance"
+            : "No sign-in · Your provider's limits";
         setKeyStatus("Key removed from this browser.", "");
     });
 });
-
-// Opened from the post-install tab: focus the one field that matters.
-if (new URLSearchParams(location.search).get("onboarding")) {
-    keyInput.focus();
-}
 
 // Rendered in a full browser tab (post-install page, or the options page)
 // rather than the 340px toolbar strip — let it use the width it has.
@@ -315,15 +344,34 @@ if (location.search.includes("onboarding") || window.innerWidth > 420) {
 function showProfile(email) {
     loginSection.classList.add("hidden");
     profileSection.classList.remove("hidden");
+    keyDivider.classList.add("hidden");
     userDisplay.innerText = email;
 
     // Set avatar to first letter of email
     const initial = email.charAt(0).toUpperCase();
     profileAvatar.innerText = initial;
+    if (!keyEntryTitle.textContent.includes("connected")) {
+        keyEntryTitle.textContent = "Use your own AI provider key";
+        keyEntrySubtitle.textContent = "Optional · Use your provider's allowance";
+    }
 }
 
 function showLogin() {
     profileSection.classList.add("hidden");
     loginSection.classList.remove("hidden");
+    keyDivider.classList.remove("hidden");
     statusText.innerText = "";
+    if (!keyEntryTitle.textContent.includes("connected")) {
+        keyEntryTitle.textContent = "Use your own API key";
+        keyEntrySubtitle.textContent = "No sign-in · Your provider's limits";
+    }
 }
+
+// Read actual Chrome bindings, including user customization and unassigned keys.
+chrome.commands.getAll((commands) => {
+    if (chrome.runtime.lastError) return;
+    for (const command of commands) {
+        const label = document.querySelector(`[data-command="${command.name}"]`);
+        if (label) label.textContent = command.shortcut || "Not assigned";
+    }
+});

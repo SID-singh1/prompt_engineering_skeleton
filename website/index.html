@@ -4,15 +4,16 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Prompt Memory — AI Prompt Engineering, Supercharged</title>
-    <meta name="description" content="Prompt Memory rewrites your AI prompts to get dramatically better responses from ChatGPT, Claude, Gemini and more. One-click prompt engineering.">
+    <meta name="description" content="Turn a rough idea into a clearer AI prompt on ChatGPT, Claude, Gemini, Perplexity, or Grok. Review every rewrite before using it.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
+    <a class="skip-link" href="#main">Skip to content</a>
     <!-- ═══ NAV ═══ -->
-    <nav class="nav">
+    <nav class="nav" aria-label="Main navigation">
         <div class="container nav-inner">
             <a href="#" class="nav-logo">
                 <span class="nav-logo-icon">⊕</span>
@@ -23,55 +24,53 @@
                 <a href="#how-it-works">How It Works</a>
                 <a href="#pricing">Pricing</a>
             </div>
-            <a href="#pricing" class="btn btn-nav">Get Started</a>
+            <a href="#install" class="btn btn-nav">Get started</a>
         </div>
     </nav>
 
+    <main id="main" tabindex="-1">
     <!-- ═══ HERO ═══ -->
     <section class="hero">
         <div class="container hero-inner">
-            <div class="hero-badge">✨ Now with streaming + voice-to-prompt</div>
+            <div class="hero-badge">Chrome extension · Manual installation</div>
             <h1 class="hero-title">
-                Stop writing <span class="gradient-text">bad prompts.</span><br>
-                Let AI fix them for you.
+                Turn rough ideas into <span class="gradient-text">clearer prompts.</span><br>
+                Right where you chat.
             </h1>
             <p class="hero-subtitle">
-                Prompt Memory rewrites your prompts in real-time to get dramatically better responses 
-                from ChatGPT, Claude, Gemini, and more. One click. No prompt engineering expertise needed.
+                Write a quick thought in ChatGPT, Claude, Gemini, Perplexity, or Grok. Prompt Memory turns it into a more specific request, then lets you review and edit the result before it reaches the chat.
             </p>
-            <!-- INSTALL LINK — every install CTA on this page points here.
-                 There is no Chrome Web Store listing yet, so this goes to the
-                 repo's install-from-source instructions. Replace all four
-                 occurrences of this URL with the store URL at listing time. -->
             <div class="hero-ctas">
-                <a href="https://github.com/siddhm11/prompt_engineering_skeleton#installation" class="btn btn-primary btn-lg">
-                    <span>Install Free Extension</span>
+                <a href="#install" class="btn btn-primary btn-lg">
+                    <span>Try Prompt Memory</span>
                     <span class="btn-arrow">→</span>
                 </a>
                 <a href="#how-it-works" class="btn btn-ghost btn-lg">See How It Works</a>
             </div>
+            <p class="hero-data-note">You choose when to enhance. Signed-in rewrites send your draft and optional recent chat context through our server; using your own key without sign-in sends the draft directly to your provider. <a href="privacy.html">See how your data is handled</a>.</p>
             <div class="hero-stats">
                 <div class="stat">
-                    <span class="stat-value">3x</span>
-                    <span class="stat-label">Better AI responses</span>
+                    <span class="stat-value">3</span>
+                    <span class="stat-label">Rewrite modes</span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat">
-                    <span class="stat-value">5 sec</span>
-                    <span class="stat-label">Average enhance time</span>
+                    <span class="stat-value">1 click</span>
+                    <span class="stat-label">To review a rewrite</span>
                 </div>
                 <div class="stat-divider"></div>
                 <div class="stat">
-                    <span class="stat-value">6+</span>
+                    <span class="stat-value">5</span>
                     <span class="stat-label">Platforms supported</span>
                 </div>
             </div>
 
+            <p class="demo-caption">Illustrative rewrite. AI can add assumptions—review before using.</p>
             <!-- Demo Visual -->
             <div class="hero-demo">
                 <div class="demo-card demo-before">
                     <div class="demo-label">Your prompt</div>
-                    <div class="demo-text">explain quantum computing</div>
+                    <div class="demo-text">explain quantum computing to a beginner in 200 words, with an analogy</div>
                 </div>
                 <div class="demo-arrow">
                     <span class="demo-arrow-icon">⚡</span>
@@ -79,7 +78,7 @@
                 </div>
                 <div class="demo-card demo-after">
                     <div class="demo-label">Enhanced prompt</div>
-                    <div class="demo-text">Explain quantum computing in a structured way: start with the core principles (superposition, entanglement, quantum gates), then compare classical vs quantum computation with concrete examples. Include current real-world applications and limitations. Use analogies for complex concepts. Target audience: someone with basic CS knowledge.</div>
+                    <div class="demo-text">Explain quantum computing to a beginner in about 200 words. Use a simple analogy to introduce the key idea, explain any technical terms, and make clear where the analogy stops being accurate.</div>
                 </div>
             </div>
         </div>
@@ -89,14 +88,13 @@
     <!-- ═══ PLATFORMS ═══ -->
     <section class="platforms">
         <div class="container">
-            <p class="platforms-label">Works everywhere you chat with AI</p>
+            <p class="platforms-label">Works on five popular AI chat sites</p>
             <div class="platforms-grid">
                 <div class="platform-chip">ChatGPT</div>
                 <div class="platform-chip">Claude</div>
                 <div class="platform-chip">Gemini</div>
                 <div class="platform-chip">Perplexity</div>
                 <div class="platform-chip">Grok</div>
-                <div class="platform-chip">DeepSeek</div>
             </div>
         </div>
     </section>
@@ -105,7 +103,7 @@
     <section class="how-it-works" id="how-it-works">
         <div class="container">
             <h2 class="section-title">How It Works</h2>
-            <p class="section-subtitle">Three steps to dramatically better AI responses</p>
+            <p class="section-subtitle">From rough thought to a prompt you can actually use</p>
             <div class="steps-grid">
                 <div class="step-card">
                     <div class="step-number">1</div>
@@ -118,14 +116,14 @@
                     <div class="step-number">2</div>
                     <div class="step-icon">🎯</div>
                     <h3 class="step-title">Press Enhance</h3>
-                    <p class="step-desc">Hit <kbd>Ctrl+Shift+E</kbd> or click "Enhance" — our AI rewrites your prompt with structure, specificity, and context.</p>
+                    <p class="step-desc">Click the ⊕ button, or press <kbd>Ctrl+Shift+E</kbd> (<kbd>⌘+Shift+E</kbd> on Mac) — our AI rewrites your prompt with structure, specificity, and context.</p>
                 </div>
                 <div class="step-connector"></div>
                 <div class="step-card">
                     <div class="step-number">3</div>
                     <div class="step-icon">🚀</div>
-                    <h3 class="step-title">Get better results</h3>
-                    <p class="step-desc">Review the enhanced prompt, click "Use This" — and watch the AI give you a dramatically better response.</p>
+                    <h3 class="step-title">Review, then insert</h3>
+                    <p class="step-desc">Compare the rewrite with your original. Edit it, use it, or dismiss it. You stay in control of what the chat receives.</p>
                 </div>
             </div>
         </div>
@@ -134,8 +132,8 @@
     <!-- ═══ FEATURES ═══ -->
     <section class="features" id="features">
         <div class="container">
-            <h2 class="section-title">Everything you need</h2>
-            <p class="section-subtitle">Prompt engineering shouldn't require a PhD</p>
+            <h2 class="section-title">Tools for your next prompt</h2>
+            <p class="section-subtitle">Start with a rewrite. Add context, saved prompts, or voice when you need them.</p>
             <div class="features-grid">
                 <div class="feature-card">
                     <div class="feature-icon">⚡</div>
@@ -155,7 +153,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">🧠</div>
                     <h3 class="feature-title">Context Aware</h3>
-                    <p class="feature-desc">Scrapes your conversation history and uses saved prompts as context for better enhancements.</p>
+                    <p class="feature-desc">Optionally includes up to six recent chat messages when you enhance. You can turn conversation context off.</p>
                 </div>
                 <div class="feature-card">
                     <div class="feature-icon">💾</div>
@@ -165,7 +163,7 @@
                 <div class="feature-card">
                     <div class="feature-icon">📈</div>
                     <h3 class="feature-title">Learns from You</h3>
-                    <p class="feature-desc">Passive learning from your prompting patterns and feedback. Gets better the more you use it.</p>
+                    <p class="feature-desc">Save useful prompts and give feedback on rewrites. Automatic prompt tracking is off unless you choose to enable it.</p>
                 </div>
             </div>
         </div>
@@ -174,105 +172,79 @@
     <!-- ═══ PRICING ═══ -->
     <section class="pricing" id="pricing">
         <div class="container">
-            <h2 class="section-title">Simple, transparent pricing</h2>
-            <p class="section-subtitle">Start free. Upgrade when you need more.</p>
-
-            <div class="pricing-toggle">
-                <span class="toggle-label" id="toggle-monthly">Monthly</span>
-                <button class="toggle-switch" id="billing-toggle" aria-label="Toggle billing period">
-                    <span class="toggle-thumb"></span>
-                </button>
-                <span class="toggle-label" id="toggle-yearly">Yearly <span class="save-badge">Save 20%</span></span>
-            </div>
+            <h2 class="section-title">Two ways to get started</h2>
+            <p class="section-subtitle">The extension is free. Choose the path that fits how you work.</p>
 
             <div class="pricing-grid">
                 <!-- Free -->
-                <div class="price-card">
-                    <div class="price-tier">Free</div>
+                <div class="price-card price-card-featured">
+                    <div class="price-popular">No API key needed</div>
+                    <div class="price-tier">Sign in for memory</div>
                     <div class="price-amount">
                         <span class="price-currency">$</span>
                         <span class="price-value">0</span>
                         <span class="price-period">/mo</span>
                     </div>
-                    <p class="price-desc">Get started with prompt enhancement</p>
-                    <!-- These must track backend/core/config.py TIER_LIMITS.
-                         The page said "20 enhancements/day" against a
-                         configured 15, and "3 saved prompts" against no saved-
-                         prompt cap anywhere in the code. -->
+                    <p class="price-desc">Use our shared AI key and keep your prompts in a personal library.</p>
                     <ul class="price-features">
                         <li><span class="check">✓</span> 15 enhancements/day on our key</li>
-                        <li><span class="check">✓</span> 1,000/day with your own free API key</li>
                         <li><span class="check">✓</span> Quick, Deep &amp; Creative modes</li>
-                        <li><span class="check">✓</span> Unlimited saved prompts</li>
-                        <li><span class="check">✓</span> All 6 platforms</li>
-                        <li><span class="check">✓</span> Voice to Prompt</li>
+                        <li><span class="check">✓</span> Saved prompts and enhancement history</li>
+                        <li><span class="check">✓</span> Voice transcription with transcript review</li>
                     </ul>
-                    <a href="https://github.com/siddhm11/prompt_engineering_skeleton#installation" class="btn btn-secondary btn-full">Install Free</a>
+                    <a href="#install" class="btn btn-primary btn-full">Start with Google sign-in</a>
                 </div>
 
-                <!-- Pro -->
-                <div class="price-card price-card-featured">
-                    <div class="price-popular">Most Popular</div>
-                    <div class="price-tier">Pro</div>
-                    <div class="price-amount">
-                        <span class="price-currency">$</span>
-                        <span class="price-value" data-monthly="8" data-yearly="6">8</span>
-                        <span class="price-period">/mo</span>
-                    </div>
-                    <p class="price-desc">For power users who chat with AI daily</p>
-                    <ul class="price-features">
-                        <li><span class="check">✓</span> 200 enhancements/day</li>
-                        <li><span class="check">✓</span> All 3 modes</li>
-                        <li><span class="check">✓</span> Unlimited saved prompts</li>
-                        <li><span class="check">✓</span> Voice to Prompt</li>
-                        <li><span class="check">✓</span> Passive learning</li>
-                        <li><span class="check">✓</span> Enhancement history</li>
-                    </ul>
-                    <!-- No Stripe integration and no tier enforcement exists
-                         yet (config.py has empty STRIPE_* keys; nothing reads
-                         subscription_tier on the write path). A working "Get
-                         Pro" button would take money for something that cannot
-                         be delivered or revoked. -->
-                    <a href="#" class="btn btn-primary btn-full" aria-disabled="true"
-                       onclick="return false;" style="opacity:.6;cursor:not-allowed">Coming soon</a>
-                </div>
-
-                <!-- Enterprise -->
+                <!-- Bring your own key -->
                 <div class="price-card">
-                    <div class="price-tier">Enterprise</div>
+                    <div class="price-popular">Optional · For API-key users</div>
+                    <div class="price-tier">Use your own AI key</div>
                     <div class="price-amount">
                         <span class="price-currency">$</span>
-                        <span class="price-value" data-monthly="25" data-yearly="20">25</span>
+                        <span class="price-value">0</span>
                         <span class="price-period">/mo</span>
                     </div>
-                    <p class="price-desc">For teams and heavy AI users</p>
+                    <p class="price-desc">Send drafts directly from your browser to your chosen provider, with no Prompt Memory account.</p>
                     <ul class="price-features">
-                        <li><span class="check">✓</span> Unlimited enhancements</li>
-                        <li><span class="check">✓</span> Premium AI models</li>
-                        <li><span class="check">✓</span> Custom system prompts</li>
-                        <li><span class="check">✓</span> Priority API access</li>
-                        <li><span class="check">✓</span> Team features</li>
-                        <li><span class="check">✓</span> Priority support</li>
+                        <li><span class="check">✓</span> Groq, Gemini, or OpenRouter</li>
+                        <li><span class="check">✓</span> Your key stays in local browser storage</li>
+                        <li><span class="check">✓</span> Review every rewrite before use</li>
+                        <li><span class="check">✓</span> Provider charges, limits, and terms apply</li>
                     </ul>
-                    <a href="#" class="btn btn-secondary btn-full" aria-disabled="true"
-                       onclick="return false;" style="opacity:.6;cursor:not-allowed">Coming soon</a>
+                    <a href="#install" class="btn btn-secondary btn-full">Set up your own key</a>
                 </div>
             </div>
+        </div>
+    </section>
+
+    <section class="installation" id="install" aria-labelledby="install-title">
+        <div class="container install-inner">
+            <h2 class="section-title" id="install-title">Try it in desktop Chrome</h2>
+            <p class="section-subtitle">Manual installation for now. Prompt Memory is not yet available through a Chrome Web Store listing.</p>
+            <ol class="install-steps">
+                <li><strong>Get the files.</strong> <a href="https://github.com/siddhm11/prompt_engineering_skeleton">Open the project on GitHub</a>, choose <strong>Code → Download ZIP</strong>, and extract it. If a friend sent you an extension ZIP, extract that instead.</li>
+                <li><strong>Load the extension.</strong> Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, and select <strong>Load unpacked</strong>. Choose the <code>extension</code> folder inside the project—or the extracted folder containing <code>manifest.json</code>.</li>
+                <li><strong>Choose your setup.</strong> Open Chrome’s Extensions menu and pin Prompt Memory. Open it, review the data disclosure, then continue with Google. Already have an AI provider key? Choose <strong>Use your own API key</strong>.</li>
+                <li><strong>Try one rewrite.</strong> Reload an open supported chat tab. Type the sample below without sending it, click ⊕, review the rewrite, and insert it when you are ready. Inserting does not send the message.</li>
+            </ol>
+            <div class="sample-prompt"><strong>A safe first test</strong><p>Write a friendly email to a fictional teammate, Alex, asking to move our project check-in from Tuesday to Thursday. Keep it under 100 words. Do not invent a reason.</p></div>
+            <details class="install-help"><summary>Installed, but the button is missing?</summary><p>Reload the chat page after installing or updating. Check that Prompt Memory is enabled in Chrome’s Extensions page and allowed on that site. Contact <a href="mailto:hello.promptmemory@gmail.com">hello.promptmemory@gmail.com</a> if it still does not appear; include the site and error message, but no API keys or private conversations.</p></details>
         </div>
     </section>
 
     <!-- ═══ CTA ═══ -->
     <section class="cta-section">
         <div class="container cta-inner">
-            <h2 class="cta-title">Ready to stop writing bad prompts?</h2>
-            <p class="cta-subtitle">Join thousands of users getting better AI responses with zero effort.</p>
-            <a href="#pricing" class="btn btn-primary btn-lg">
-                <span>Get Started Free</span>
+            <h2 class="cta-title">Give your next idea a clearer start.</h2>
+            <p class="cta-subtitle">From “explain this bug” to a precise debugging request with context and constraints—review the rewrite, then send only what you choose.</p>
+            <a href="#install" class="btn btn-primary btn-lg">
+                <span>Get the free extension</span>
                 <span class="btn-arrow">→</span>
             </a>
         </div>
     </section>
 
+    </main>
     <!-- ═══ FOOTER ═══ -->
     <footer class="footer">
         <div class="container footer-inner">
@@ -283,9 +255,7 @@
             <div class="footer-links">
                 <a href="privacy.html">Privacy Policy</a>
                 <a href="https://github.com/siddhm11/prompt_engineering_skeleton">GitHub</a>
-                <!-- TODO: add a real contact address before the store listing;
-                     the Chrome Web Store requires a reachable developer
-                     contact, and privacy.html promises one. -->
+                <a href="mailto:hello.promptmemory@gmail.com">Contact</a>
             </div>
             <p class="footer-copy">© 2026 Prompt Memory. All rights reserved.</p>
         </div>

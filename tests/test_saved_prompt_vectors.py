@@ -31,7 +31,7 @@ class FakeQdrant:
         for p in points:
             store[p.kwargs["id"]] = p.kwargs["payload"]
 
-    def delete(self, collection_name, points_selector):
+    def delete(self, collection_name, points_selector, **kwargs):
         store = self.collections.setdefault(collection_name, {})
 
         # points_selector is either a FilterSelector or a bare list of ids.

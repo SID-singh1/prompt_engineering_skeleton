@@ -599,7 +599,7 @@ def _temperature_for(mode: str) -> float:
 @router.post("/track")
 def track_prompt(request: TrackRequest, user_id: str = Depends(verify_jwt)):
     """Silently learns from user prompts."""
-    print(f"\n🔍 /track — user={user_id[:8]}... prompt=\"{request.prompt[:60]}...\"")
+    print(f"\n🔍 /track — user={user_id[:8]}... length={len(request.prompt)}")
     request.user_id = user_id
     
     MemoryService.log_prompt(
@@ -658,7 +658,7 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
         )
 
     print(f"\n🎯 /enhance — user={user_id[:8]}... mode={request.mode} tier={tier} ({used}/{limit})")
-    print(f"   Prompt: \"{request.prompt[:80]}...\"")
+    print(f"   Prompt length: {len(request.prompt)} chars")
     print(f"   Selected IDs: {request.selected_prompt_ids or 'none'}")
     print(f"   Conversation msgs: {len(request.conversation_context or [])}")
 
@@ -667,16 +667,16 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
     # ── VERBOSE CONTEXT LOGGING ──
     print(f"   ── 📋 Context layers:")
     conv_msgs = len(request.conversation_context or [])
-    print(f"      ├─ 💬 Conversation: {conv_msgs} messages{'  (' + ctx['conversation_ctx'][:80] + '...)' if ctx['conversation_ctx'] else ''}")
+    print(f"      ├─ 💬 Conversation: {conv_msgs} messages")
     print(f"      \u251C\u2500 \U0001F4CC Selected: {len(ctx['selected_context_parts'])} saved prompts")
     for sp in ctx['selected_context_parts']:
-        print(f"      \u2502    \u2514\u2500 {sp[:80]}")
+        print("      selected prompt included")
     print(f"      \u251C\u2500 \U0001F50D Auto-matched: {len(ctx['similar_saved'])} saved prompts")
     for item in ctx['similar_saved']:
-        print(f"      \u2502    \u2514\u2500 \"{item.get('title', 'Untitled')}\" (score: {item['score']})")
+        print(f"      matched saved prompt score: {item['score']}")
     print(f"      \u251C\u2500 \U0001F9E0 Passive: {len(ctx['passive_matches'])} past patterns")
     for pm in ctx['passive_matches']:
-        print(f"      \u2502    \u2514\u2500 \"{pm['original'][:50]}...\" \u2192 score: {pm['score']}")
+        print(f"      passive match score: {pm['score']}")
     print(f"      \u2514\u2500 \U0001F4CA Feedback: {'Active' if ctx['feedback_summary'] else 'None'}")
 
     # ── CALL LLM ──
@@ -730,7 +730,7 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
     )
 
     print(f"   ✅ Enhanced in {process_time}s — {len(enhanced_prompt)} chars")
-    print(f"   Enhanced: \"{enhanced_prompt[:80]}...\"")
+    print(f"   Enhanced length: {len(enhanced_prompt)} chars")
 
     return {
         "original": request.prompt,
@@ -776,7 +776,7 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
     allowed, used, limit, degraded = check_daily_limit(user_id, tier)
 
     print(f"\n⚡ /enhance/stream — user={user_id[:8]}... mode={request.mode} tier={tier} ({used}/{limit})")
-    print(f"   Prompt: \"{request.prompt[:80]}...\"")
+    print(f"   Prompt length: {len(request.prompt)} chars")
 
     if not allowed:
         def refuse():
