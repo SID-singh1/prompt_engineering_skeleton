@@ -10,6 +10,8 @@ export default defineConfig({
         main: resolve(__dirname, 'index.html'),
         privacy: resolve(__dirname, 'privacy.html'),
         builder: resolve(__dirname, 'builder.html'),
+        login: resolve(__dirname, 'login.html'),
+        dashboard: resolve(__dirname, 'dashboard.html'),
       },
     },
   },

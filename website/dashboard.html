@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prompt Memory — Analytics & Intelligence Dashboard</title>
+    <meta name="description" content="Real-time prompt engineering analytics, AI prompt improvement rating out of 100, vector memory stats, and prompt library management.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./dashboard.css">
+</head>
+<body class="dashboard-body">
+    <!-- Ambient glowing backdrop -->
+    <div class="glow-bg">
+        <div class="glow-orb orb-top-left"></div>
+        <div class="glow-orb orb-bottom-right"></div>
+        <div class="grid-overlay"></div>
+    </div>
+
+    <div class="app-layout">
+        <!-- ═══ SIDEBAR NAVIGATION ═══ -->
+        <aside class="app-sidebar" id="app-sidebar">
+            <div class="sidebar-header">
+                <a href="index.html" class="sidebar-logo">
+                    <span class="logo-symbol">⊕</span>
+                    <div class="logo-text-group">
+                        <span class="logo-title">Prompt Memory</span>
+                        <span class="logo-tag">ANALYTICS HUB</span>
+                    </div>
+                </a>
+            </div>
+
+            <nav class="sidebar-nav">
+                <p class="nav-section-title">INTELLIGENCE</p>
+                <button class="nav-item active" data-tab="overview">
+                    <span class="nav-icon">📊</span>
+                    <span class="nav-label">Overview & Impact</span>
+                </button>
+                <button class="nav-item" data-tab="evaluator">
+                    <span class="nav-icon">🎯</span>
+                    <span class="nav-label">Improvement Engine</span>
+                    <span class="nav-badge">0-100 AI</span>
+                </button>
+
+                <p class="nav-section-title">WORKSPACE</p>
+                <button class="nav-item" data-tab="history">
+                    <span class="nav-icon">📜</span>
+                    <span class="nav-label">Prompt History</span>
+                    <span class="nav-count" id="history-count">0</span>
+                </button>
+                <button class="nav-item" data-tab="library">
+                    <span class="nav-icon">💾</span>
+                    <span class="nav-label">Saved Library</span>
+                    <span class="nav-count" id="library-count">0</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="engine-status-pill">
+                    <span class="status-pulse"></span>
+                    <span class="status-text">Vector Memory Live</span>
+                </div>
+                <div class="user-capsule">
+                    <div class="user-avatar" id="user-avatar-initial">U</div>
+                    <div class="user-details">
+                        <span class="user-email" id="user-display-email">demo@promptmemory.ai</span>
+                        <span class="user-tier-badge" id="user-tier-label">Free Tier</span>
+                    </div>
+                    <button class="btn-logout" id="logout-btn" title="Sign out">⏻</button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ═══ MAIN APP CONTAINER ═══ -->
+        <main class="app-main">
+            <!-- Topbar -->
+            <header class="app-topbar">
+                <div class="topbar-left">
+                    <button class="mobile-toggle" id="mobile-toggle" aria-label="Toggle navigation">☰</button>
+                    <div class="breadcrumb">
+                        <span class="breadcrumb-root">Dashboard</span>
+                        <span class="breadcrumb-separator">/</span>
+                        <span class="breadcrumb-current" id="current-view-title">Overview & Impact</span>
+                    </div>
+                </div>
+
+                <div class="topbar-right">
+                    <div id="demo-mode-badge" class="demo-badge hidden">
+                        <span>⚡ Guest Demo Active</span>
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="refresh-data-btn">
+                        <span>↻ Refresh</span>
+                    </button>
+                    <button class="btn btn-primary btn-sm" id="open-eval-modal-btn">
+                        <span>⚡ Live Benchmark</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Notification Toast Container -->
+            <div id="toast-container" class="toast-container"></div>
+
+            <div class="app-content-scroll">
+                <!-- ══════════════════════════════════════════════════════════
+                     TAB 1: OVERVIEW & IMPACT
+                     ══════════════════════════════════════════════════════════ -->
+                <section class="tab-pane active" id="pane-overview">
+                    <div class="hero-impact scroll-reveal">
+                        <div class="hero-impact-text">
+                            <h1 class="page-title">Prompt Engineering <span class="gradient-text">Performance</span></h1>
+                            <p class="page-subtitle">Real-time metrics measuring prompt quality improvement, developer time saved, and vector memory retrieval across all AI platforms.</p>
+                        </div>
+                        <div class="hero-time-filter">
+                            <button class="filter-pill active" data-days="7">Last 7D</button>
+                            <button class="filter-pill" data-days="14">Last 14D</button>
+                            <button class="filter-pill" data-days="30">Last 30D</button>
+                        </div>
+                    </div>
+
+                    <!-- 4 Animated Core Metrics -->
+                    <div class="metric-grid">
+                        <div class="metric-card scroll-reveal stagger-1">
+                            <div class="metric-header">
+                                <span class="metric-title">Prompt Quality Lift</span>
+                                <span class="metric-icon-badge">🎯</span>
+                            </div>
+                            <div class="metric-body">
+                                <div class="metric-value-group">
+                                    <span class="metric-plus">+</span>
+                                    <span class="metric-number" id="metric-lift">49.2</span>
+                                    <span class="metric-unit">pts</span>
+                                </div>
+                                <div class="metric-subtext">Average score: <strong id="metric-avg-score">91.5</strong> / 100</div>
+                            </div>
+                            <div class="metric-progress-bar">
+                                <div class="metric-progress-fill fill-accent" id="bar-lift" style="width: 91.5%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="metric-card scroll-reveal stagger-2">
+                            <div class="metric-header">
+                                <span class="metric-title">Context Accuracy Index</span>
+                                <span class="metric-icon-badge">🧠</span>
+                            </div>
+                            <div class="metric-body">
+                                <div class="metric-value-group">
+                                    <span class="metric-number" id="metric-accuracy">98.4</span>
+                                    <span class="metric-unit">%</span>
+                                </div>
+                                <div class="metric-subtext">High-precision vector match & satisfaction</div>
+                            </div>
+                            <div class="metric-progress-bar">
+                                <div class="metric-progress-fill fill-accent-2" id="bar-accuracy" style="width: 98.4%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="metric-card scroll-reveal stagger-3">
+                            <div class="metric-header">
+                                <span class="metric-title">Developer Time Saved</span>
+                                <span class="metric-icon-badge">⏱</span>
+                            </div>
+                            <div class="metric-body">
+                                <div class="metric-value-group">
+                                    <span class="metric-number" id="metric-time-saved">14.8</span>
+                                    <span class="metric-unit">hrs</span>
+                                </div>
+                                <div class="metric-subtext">Based on 1.8s vs ~3.5 min manual re-prompting</div>
+                            </div>
+                            <div class="metric-progress-bar">
+                                <div class="metric-progress-fill fill-time" id="bar-time" style="width: 82%;"></div>
+                            </div>
+                        </div>
+
+                        <div class="metric-card scroll-reveal stagger-4">
+                            <div class="metric-header">
+                                <span class="metric-title">Active Vector Memory</span>
+                                <span class="metric-icon-badge">💾</span>
+                            </div>
+                            <div class="metric-body">
+                                <div class="metric-value-group">
+                                    <span class="metric-number" id="metric-vectors">48</span>
+                                    <span class="metric-unit">items</span>
+                                </div>
+                                <div class="metric-subtext"><span id="metric-storage-kb">146.8</span> KB • 384-dim Qdrant store</div>
+                            </div>
+                            <div class="metric-progress-bar">
+                                <div class="metric-progress-fill fill-memory" id="bar-memory" style="width: 65%;"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Charts & Distributions Grid -->
+                    <div class="content-grid-two">
+                        <!-- Activity Chart -->
+                        <div class="panel-card chart-panel scroll-reveal">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Daily Enhancement Volume</h2>
+                                    <p class="panel-subtitle">Prompts enhanced across all chat tabs</p>
+                                </div>
+                                <div class="chart-legend">
+                                    <span class="legend-dot dot-accent"></span> Enhancements
+                                </div>
+                            </div>
+                            <div class="chart-container" id="timeline-chart-container">
+                                <!-- Interactive SVG Chart injected by JS -->
+                                <div class="chart-loading">Generating interactive timeline...</div>
+                            </div>
+                        </div>
+
+                        <!-- Platform Breakdown -->
+                        <div class="panel-card scroll-reveal">
+                            <div class="panel-header">
+                                <div>
+                                    <h2 class="panel-title">Platform Distribution</h2>
+                                    <p class="panel-subtitle">Where you write prompts most</p>
+                                </div>
+                                <span class="panel-chip">6 Platforms</span>
+                            </div>
+                            <div class="distribution-list" id="platform-distribution-list">
+                                <!-- Injected dynamically -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Jump-to-Evaluator Banner -->
+                    <div class="evaluator-cta-banner scroll-reveal">
+                        <div class="cta-banner-content">
+                            <div class="cta-banner-badge">✨ FEATURE HIGHLIGHT</div>
+                            <h3 class="cta-banner-title">Prompt Improvement Engine: Rated out of 100 by AI</h3>
+                            <p class="cta-banner-desc">Inspect original prompts vs enhanced outputs with full contextual layer extraction (Extracted context, user-selected rules, and conversation memory).</p>
+                        </div>
+                        <button class="btn btn-primary" id="go-to-eval-tab-btn">Open Improvement Engine →</button>
+                    </div>
+                </section>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     TAB 2: PROMPT IMPROVEMENT ENGINE (The Core Vision Feature)
+                     ══════════════════════════════════════════════════════════ -->
+                <section class="tab-pane" id="pane-evaluator">
+                    <div class="evaluator-header scroll-reveal">
+                        <div>
+                            <div class="badge-pill">AI EVALUATOR (0–100)</div>
+                            <h1 class="page-title">Prompt Improvement <span class="gradient-text">Engine</span></h1>
+                            <p class="page-subtitle">Every enhanced prompt is evaluated against a 100-point AI benchmark measuring Clarity, Specificity, Context Grounding, and Actionability.</p>
+                        </div>
+                        <button class="btn btn-primary" id="trigger-live-eval-btn">
+                            <span>⚡ Test Custom Prompt Live</span>
+                        </button>
+                    </div>
+
+                    <!-- Dual Gauge Score Showcase -->
+                    <div class="gauge-showcase-panel scroll-reveal">
+                        <div class="gauge-container">
+                            <div class="gauge-box">
+                                <span class="gauge-label">Original User Prompt</span>
+                                <div class="radial-gauge" id="gauge-original">
+                                    <svg class="radial-svg" viewBox="0 0 120 120">
+                                        <circle class="circle-bg" cx="60" cy="60" r="50"></circle>
+                                        <circle class="circle-progress circle-orig" cx="60" cy="60" r="50" style="stroke-dashoffset: 200;"></circle>
+                                    </svg>
+                                    <div class="gauge-text">
+                                        <span class="gauge-number" id="gauge-orig-val">38</span>
+                                        <span class="gauge-max">/100</span>
+                                    </div>
+                                </div>
+                                <span class="gauge-status-sub status-amber">Ambiguous & Unstructured</span>
+                            </div>
+
+                            <div class="gauge-center-badge">
+                                <span class="improvement-icon">⚡</span>
+                                <span class="improvement-text" id="gauge-delta-val">+56 Points</span>
+                                <span class="improvement-sub">QUALITY LIFT</span>
+                            </div>
+
+                            <div class="gauge-box">
+                                <span class="gauge-label">Prompt Memory Enhanced</span>
+                                <div class="radial-gauge" id="gauge-enhanced">
+                                    <svg class="radial-svg" viewBox="0 0 120 120">
+                                        <circle class="circle-bg" cx="60" cy="60" r="50"></circle>
+                                        <circle class="circle-progress circle-enh" cx="60" cy="60" r="50" style="stroke-dashoffset: 30;"></circle>
+                                    </svg>
+                                    <div class="gauge-text">
+                                        <span class="gauge-number" id="gauge-enh-val">94</span>
+                                        <span class="gauge-max">/100</span>
+                                    </div>
+                                </div>
+                                <span class="gauge-status-sub status-green">Production-Ready & Grounded</span>
+                            </div>
+                        </div>
+
+                        <!-- Dimensional Breakdown Matrix -->
+                        <div class="dimensions-matrix" id="dimensions-matrix">
+                            <div class="dimension-card">
+                                <div class="dim-title">Clarity & Structure</div>
+                                <div class="dim-scores">
+                                    <span class="dim-orig" id="dim-c-orig">10</span>
+                                    <span class="dim-arrow">→</span>
+                                    <span class="dim-enh" id="dim-c-enh">24</span>
+                                    <span class="dim-max">/25</span>
+                                </div>
+                                <div class="dim-bar"><div class="dim-fill fill-accent" id="dim-bar-c" style="width: 96%;"></div></div>
+                            </div>
+                            <div class="dimension-card">
+                                <div class="dim-title">Specificity & Constraints</div>
+                                <div class="dim-scores">
+                                    <span class="dim-orig" id="dim-s-orig">9</span>
+                                    <span class="dim-arrow">→</span>
+                                    <span class="dim-enh" id="dim-s-enh">23</span>
+                                    <span class="dim-max">/25</span>
+                                </div>
+                                <div class="dim-bar"><div class="dim-fill fill-accent" id="dim-bar-s" style="width: 92%;"></div></div>
+                            </div>
+                            <div class="dimension-card">
+                                <div class="dim-title">Context Grounding</div>
+                                <div class="dim-scores">
+                                    <span class="dim-orig" id="dim-g-orig">8</span>
+                                    <span class="dim-arrow">→</span>
+                                    <span class="dim-enh" id="dim-g-enh">24</span>
+                                    <span class="dim-max">/25</span>
+                                </div>
+                                <div class="dim-bar"><div class="dim-fill fill-accent" id="dim-bar-g" style="width: 96%;"></div></div>
+                            </div>
+                            <div class="dimension-card">
+                                <div class="dim-title">Actionability & Precision</div>
+                                <div class="dim-scores">
+                                    <span class="dim-orig" id="dim-a-orig">11</span>
+                                    <span class="dim-arrow">→</span>
+                                    <span class="dim-enh" id="dim-a-enh">23</span>
+                                    <span class="dim-max">/25</span>
+                                </div>
+                                <div class="dim-bar"><div class="dim-fill fill-accent" id="dim-bar-a" style="width: 92%;"></div></div>
+                            </div>
+                        </div>
+
+                        <!-- AI Verdict Callout -->
+                        <div class="eval-verdict-box" id="eval-verdict-box">
+                            <div class="verdict-icon">💡</div>
+                            <div class="verdict-text" id="eval-verdict-text">
+                                The enhanced prompt transforms a brief request into structured execution steps, introducing concrete architectural constraints, target audience boundaries, and clear output schemas.
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Structural Context Decomposition Layers (User Vision) -->
+                    <div class="decomposition-section scroll-reveal">
+                        <div class="section-title-wrap">
+                            <h2 class="panel-title">Structural Context Decomposition</h2>
+                            <p class="panel-subtitle">How our context engine synthesized the prompt from multiple memory layers</p>
+                        </div>
+
+                        <div class="layers-container">
+                            <!-- Layer 1: User Given Prompt -->
+                            <div class="layer-card">
+                                <div class="layer-header">
+                                    <span class="layer-step">1</span>
+                                    <span class="layer-name">User Given Prompt</span>
+                                    <span class="layer-tag tag-user">Input</span>
+                                </div>
+                                <div class="layer-content" id="layer-original-text">
+                                    explain quantum computing simply
+                                </div>
+                            </div>
+
+                            <!-- Layer 2: Extracted Context by Us -->
+                            <div class="layer-card">
+                                <div class="layer-header">
+                                    <span class="layer-step">2</span>
+                                    <span class="layer-name">Relevant Context Extracted by Us</span>
+                                    <span class="layer-tag tag-auto">Vector Memory</span>
+                                </div>
+                                <div class="layer-content" id="layer-extracted-text">
+                                    Auto-matched from passive history: Software Engineering persona, prefers technical analogies over dry definitions, target depth: intermediate CS knowledge.
+                                </div>
+                            </div>
+
+                            <!-- Layer 3: Context Chosen by User -->
+                            <div class="layer-card">
+                                <div class="layer-header">
+                                    <span class="layer-step">3</span>
+                                    <span class="layer-name">Context Chosen by User (Library)</span>
+                                    <span class="layer-tag tag-chosen">Rules & Prompts</span>
+                                </div>
+                                <div class="layer-content" id="layer-chosen-text">
+                                    Applied Template: "Structured Technical Explainer" — format with 1) Foundations, 2) Gates & Math, 3) Hardware Limitations, 4) Real-world Cryptography.
+                                </div>
+                            </div>
+
+                            <!-- Layer 4: Conversation History -->
+                            <div class="layer-card">
+                                <div class="layer-header">
+                                    <span class="layer-step">4</span>
+                                    <span class="layer-name">Conversation Context</span>
+                                    <span class="layer-tag tag-chat">DOM Scraper</span>
+                                </div>
+                                <div class="layer-content" id="layer-conv-text">
+                                    Previous turn: "We were discussing RSA 2048 encryption vulnerabilities and Shor's algorithm."
+                                </div>
+                            </div>
+
+                            <!-- Final Result -->
+                            <div class="layer-card layer-result">
+                                <div class="layer-header">
+                                    <span class="layer-step">⚡</span>
+                                    <span class="layer-name">Final Enhanced Prompt Output</span>
+                                    <button class="btn-copy-sm" id="copy-enhanced-btn" title="Copy to clipboard">📋 Copy</button>
+                                </div>
+                                <div class="layer-content code-style" id="layer-enhanced-text">
+                                    Explain quantum computing from foundational principles to real-world applications. Target audience: software engineers without quantum physics background. Cover: 1) Qubits, Superposition & Entanglement vs classical bits, 2) Key quantum gates (Hadamard, CNOT), 3) Current NISQ-era hardware limitations, and 4) Practical cryptography impacts (RSA vs Post-Quantum Cryptography). Use clear technical analogies and concise bullet points.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     TAB 3: PROMPT HISTORY & INSPECTOR
+                     ══════════════════════════════════════════════════════════ -->
+                <section class="tab-pane" id="pane-history">
+                    <div class="panel-card scroll-reveal">
+                        <div class="panel-header table-controls">
+                            <div>
+                                <h1 class="page-title">Prompt <span class="gradient-text">History</span></h1>
+                                <p class="panel-subtitle">Review, copy, inspect, or delete past enhanced prompts</p>
+                            </div>
+                            <div class="table-search-row">
+                                <input type="text" id="history-search-input" class="search-input" placeholder="Search prompts..." />
+                                <select id="history-platform-filter" class="select-input">
+                                    <option value="all">All Platforms</option>
+                                    <option value="ChatGPT">ChatGPT</option>
+                                    <option value="Claude">Claude</option>
+                                    <option value="Gemini">Gemini</option>
+                                    <option value="Perplexity">Perplexity</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="data-table" id="history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Date & Platform</th>
+                                        <th>Original Prompt</th>
+                                        <th>Enhanced Preview</th>
+                                        <th>AI Score</th>
+                                        <th>Latency</th>
+                                        <th class="text-right">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="history-table-body">
+                                    <!-- Dynamic rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ══════════════════════════════════════════════════════════
+                     TAB 4: SAVED PROMPTS LIBRARY
+                     ══════════════════════════════════════════════════════════ -->
+                <section class="tab-pane" id="pane-library">
+                    <div class="panel-card scroll-reveal">
+                        <div class="panel-header library-header">
+                            <div>
+                                <h1 class="page-title">Prompt <span class="gradient-text">Library</span></h1>
+                                <p class="panel-subtitle">Your personal vector-indexed templates and context snippets</p>
+                            </div>
+                            <button class="btn btn-primary" id="add-saved-prompt-btn">
+                                <span>+ New Saved Prompt</span>
+                            </button>
+                        </div>
+
+                        <div class="library-grid" id="library-grid">
+                            <!-- Injected dynamically -->
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- ═══ MODAL: LIVE PROMPT EVALUATOR & BENCHMARK ═══ -->
+    <div class="modal-overlay hidden" id="eval-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-icon">⚡</span>
+                    <h3 class="modal-title">Live Prompt Improvement Benchmark</h3>
+                </div>
+                <button class="modal-close" id="close-eval-modal-btn">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <p class="modal-desc">Send your prompt and enhancement to our LLM judge. Both prompts will be critically rated out of 100 with dimensional scoring and actionable feedback.</p>
+
+                <div class="modal-form-group">
+                    <label for="eval-input-original" class="form-label">Original Prompt</label>
+                    <textarea id="eval-input-original" class="form-textarea" rows="3" placeholder="e.g. write a python script to scrape prices"></textarea>
+                </div>
+
+                <div class="modal-form-group">
+                    <label for="eval-input-enhanced" class="form-label">Enhanced Prompt (or leave blank to auto-synthesize)</label>
+                    <textarea id="eval-input-enhanced" class="form-textarea" rows="4" placeholder="e.g. Write a production-grade Python script using httpx and BeautifulSoup4 with retry logic, Pydantic validation, and SQLite storage..."></textarea>
+                </div>
+
+                <div class="modal-form-group">
+                    <label for="eval-input-context" class="form-label">Extracted / User Context (Optional)</label>
+                    <input type="text" id="eval-input-context" class="form-input" placeholder="e.g. Tech Stack: Python 3.11, target website: e-commerce" />
+                </div>
+
+                <div id="eval-modal-status" class="eval-status-box hidden">
+                    <span class="spinner-sm"></span>
+                    <span id="eval-status-text">Evaluating with LLM Judge...</span>
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-eval-btn">Cancel</button>
+                <button class="btn btn-primary" id="run-eval-btn">
+                    <span>⚡ Run 0–100 Benchmark</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: ADD SAVED PROMPT ═══ -->
+    <div class="modal-overlay hidden" id="prompt-modal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-icon">💾</span>
+                    <h3 class="modal-title">Save Prompt to Library</h3>
+                </div>
+                <button class="modal-close" id="close-prompt-modal-btn">✕</button>
+            </div>
+
+            <div class="modal-body">
+                <div class="modal-form-group">
+                    <label for="prompt-title-input" class="form-label">Title</label>
+                    <input type="text" id="prompt-title-input" class="form-input" placeholder="e.g. Structured Python API Guidelines" />
+                </div>
+
+                <div class="modal-form-group">
+                    <label for="prompt-content-input" class="form-label">Prompt Content</label>
+                    <textarea id="prompt-content-input" class="form-textarea" rows="5" placeholder="Enter prompt instructions or context template to inject..."></textarea>
+                </div>
+
+                <div class="modal-form-group">
+                    <label for="prompt-tags-input" class="form-label">Tags (comma-separated)</label>
+                    <input type="text" id="prompt-tags-input" class="form-input" placeholder="python, backend, fastapi" />
+                </div>
+            </div>
+
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-prompt-btn">Cancel</button>
+                <button class="btn btn-primary" id="save-prompt-submit-btn">Save to Vector Store</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./dashboard.js"></script>
+</body>
+</html>

@@ -94,3 +94,20 @@ window.addEventListener('scroll', () => {
     }
     lastScroll = scrollY;
 }, { passive: true });
+
+// ── Check Auth Session on Landing Page ──
+const token = localStorage.getItem('pm_token');
+const isGuest = localStorage.getItem('pm_guest_mode') === 'true';
+const navLoginLink = document.getElementById('nav-login-link');
+const navCtaBtn = document.getElementById('nav-cta-btn');
+
+if (token || isGuest) {
+    if (navLoginLink) {
+        navLoginLink.textContent = 'Dashboard';
+        navLoginLink.href = 'dashboard.html';
+    }
+    if (navCtaBtn) {
+        navCtaBtn.textContent = 'Launch App →';
+        navCtaBtn.href = 'dashboard.html';
+    }
+}

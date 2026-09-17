@@ -20,10 +20,10 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-CONTENT_JS = (ROOT / "extension" / "content.js").read_text()
-STYLES_CSS = (ROOT / "extension" / "styles.css").read_text()
-MANIFEST = (ROOT / "extension" / "manifest.json").read_text()
-BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text()
+CONTENT_JS = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
+STYLES_CSS = (ROOT / "extension" / "styles.css").read_text(encoding="utf-8")
+MANIFEST = (ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")
+BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
 
 
 def _function_bodies(src: str, name_pattern: str) -> dict:

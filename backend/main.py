@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 
 from .core.config import settings
 from .core.database import MongoDB, QdrantDB
-from .routers import auth, users, prompts, saved_prompts, feedback, builder_dashboard, voice
+from .routers import auth, users, prompts, saved_prompts, feedback, builder_dashboard, voice, user_analytics
 from backend.core.logger import logger
 
 
@@ -202,6 +202,7 @@ app.include_router(saved_prompts.router)
 app.include_router(feedback.router)
 app.include_router(builder_dashboard.router)
 app.include_router(voice.router)
+app.include_router(user_analytics.router)
 
 if __name__ == "__main__":
     import uvicorn

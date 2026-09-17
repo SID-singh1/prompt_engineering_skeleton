@@ -79,3 +79,12 @@ class UserFeedbackRequest(BaseModel):
     source: Optional[str] = "extension"  # "extension" | "website"
     page_url: Optional[str] = None
     browser_info: Optional[str] = None
+
+class PromptEvaluationRequest(BaseModel):
+    original_prompt: str
+    enhanced_prompt: str
+    extracted_context: Optional[str] = None
+    selected_context: Optional[str] = None
+    conversation_context: Optional[str] = None
+    mode: Optional[str] = "deep"
+
