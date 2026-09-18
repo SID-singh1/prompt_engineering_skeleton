@@ -7,9 +7,12 @@ it costs, so the heavy third-party modules are stubbed before any backend
 import happens. Everything under test here is our own logic.
 """
 
+import os
 import sys
 import types
 from pathlib import Path
+
+os.environ["MONGO_URI"] = ""
 
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:

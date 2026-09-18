@@ -31,10 +31,15 @@ def _id_from_fresh_interpreter(seed: str) -> str:
         "from backend.services.memory_service import point_id_for;"
         f"print(point_id_for({MONGO_ID!r}))"
     )
+    import os
+    env = dict(os.environ)
+    env["PYTHONHASHSEED"] = seed
+    if os.name != "nt":
+        env["PATH"] = "/usr/bin:/bin"
     out = subprocess.run(
         [sys.executable, "-c", code],
         capture_output=True, text=True, check=True,
-        env={"PYTHONHASHSEED": seed, "PATH": "/usr/bin:/bin"},
+        env=env,
     )
     return out.stdout.strip()
 

@@ -403,6 +403,21 @@ class MemoryService:
             record({"memory_saved": True})
         return {"status": "accepted", "memory_saved": saved}
 
+    @staticmethod
+    def get_prompt_log(log_id: str, user_id: str) -> Optional[dict]:
+        """Fetch a prompt log by log_id and user_id."""
+        if MongoDB.prompts_col is not None:
+            try:
+                doc = MongoDB.prompts_col.find_one({"log_id": log_id, "user_id": user_id, "source": "active"})
+                if doc:
+                    return doc
+            except Exception as exc:
+                logger.warning(f"⚠️ Prompt log lookup failed: {exc}")
+        return next((item for item in in_memory_prompt_logs
+                     if item.get("user_id") == user_id
+                     and item.get("log_id") == log_id
+                     and item.get("source") == "active"), None)
+
     # =========================================================================
     # SAVED PROMPTS (searches the saved_prompt_vectors collection)
     # =========================================================================

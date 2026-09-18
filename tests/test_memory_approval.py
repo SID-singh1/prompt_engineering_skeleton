@@ -96,6 +96,7 @@ def test_accepted_near_duplicate_is_not_memorized(monkeypatch):
 def test_in_memory_approval_is_owner_scoped_and_idempotent(monkeypatch):
     vectors = FakeQdrant()
     monkeypatch.setattr(MongoDB, "prompts_col", None)
+    monkeypatch.setattr(memory_service.settings, "MONGO_URI", "")
     monkeypatch.setattr(memory_service.QdrantDB, "get_client", staticmethod(lambda: vectors))
     monkeypatch.setattr(memory_service, "get_embedding", lambda _: [0.1] * 384)
     monkeypatch.setattr(memory_service, "in_memory_prompt_logs", [])

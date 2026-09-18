@@ -445,10 +445,6 @@ async function activateExistingTabs() {
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
-  const privacy = await chrome.storage.local.get(["pm_data_consent_v1", "pm_tracking"]);
-  if (privacy.pm_data_consent_v1 !== true && privacy.pm_tracking === true) {
-    await chrome.storage.local.set({ pm_tracking: false });
-  }
   if (reason === "update") {
     // Do not inject another copy into a tab that already has the old one.
     // The old isolated world cannot be revived, and two copies race to own

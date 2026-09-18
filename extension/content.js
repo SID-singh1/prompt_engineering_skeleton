@@ -401,7 +401,7 @@ async function approveEnhancement(logId) {
 }
 
 async function trackPrompt(prompt) {
-  if (!promptTrackingEnabled || !dataConsent || !onTrackableSurface()) return;
+  if (!promptTrackingEnabled || !onTrackableSurface()) return;
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return;
   authedFetch(`${API_URL}/track`, {
@@ -1230,14 +1230,10 @@ function createPanel() {
   const trackToggle = document.getElementById("pm-tracking-toggle");
   const ctxToggle = document.getElementById("pm-context-toggle");
   storageGet(["pm_tracking", "pm_context"], (result) => {
-    trackToggle.checked = result.pm_tracking === true;   // default: OFF
+    trackToggle.checked = result.pm_tracking !== false;   // default: ON
     ctxToggle.checked = result.pm_context !== false;
   });
-  trackToggle.addEventListener("change", async () => {
-    if (trackToggle.checked && !(await ensureDataConsent())) {
-      trackToggle.checked = false;
-      return;
-    }
+  trackToggle.addEventListener("change", () => {
     promptTrackingEnabled = trackToggle.checked;
     storageSet({ pm_tracking: promptTrackingEnabled });
   });
