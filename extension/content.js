@@ -2,20 +2,75 @@
 // One-click prompt engineering. Conversation-aware. Mode-aware. Platform-aware.
 // Streaming enhancement. History. Token auto-refresh. Multi-language voice.
 
-// Default API URL — overridden by chrome.storage.local['api_url'] (set via popup)
+// The release extension sends signed-in requests only to our published API.
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
-let API_URL = DEFAULT_API_URL;
+const API_URL = DEFAULT_API_URL;
 
-// Load configured API URL from storage on startup
-chrome.storage.local.get("api_url", (result) => {
-  if (result.api_url) API_URL = result.api_url;
-});
+// ── Orphaned-script handling ──────────────────────────────────
+// Chrome keeps a page's content script running after the extension is
+// reloaded or auto-updated, but cuts its chrome.* handle: the next storage
+// call throws "Extension context invalidated", as an uncaught rejection, on
+// every event that touches storage from then on. That happens to real users
+// whenever the Web Store updates the extension under an open chat tab, so
+// it is handled, once, in one place: say so, stop the timers, go quiet.
+let orphaned = false;
+let navigationPoll = null;
 
-// Listen for URL changes from popup
-chrome.storage.onChanged.addListener((changes) => {
-  if (changes.api_url) API_URL = changes.api_url.newValue || DEFAULT_API_URL;
-});
+function extensionAlive() {
+  try { return Boolean(chrome.runtime && chrome.runtime.id); } catch { return false; }
+}
+
+function onOrphaned(err) {
+  if (orphaned) return;
+  if (extensionAlive() && err && !/context invalidated/i.test(String(err.message || err))) return;
+  orphaned = true;
+  if (navigationPoll) clearInterval(navigationPoll);
+  // Chrome cannot revive this isolated world after an extension reload.
+  // A single page refresh replaces it with the current content script. Use a
+  // persistent notice; a three-second toast disappears before many people
+  // return to the tab, and console.warn shows up as an extension error.
+  const showReloadNotice = () => {
+    if (document.getElementById("pm-reload-notice")) return;
+    const notice = document.createElement("div");
+    notice.id = "pm-reload-notice";
+    notice.className = "pm-reload-notice";
+    notice.setAttribute("role", "status");
+    const message = document.createElement("span");
+    message.textContent = "Prompt Memory updated. Reload this tab to keep using it.";
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Reload tab";
+    button.addEventListener("click", () => window.location.reload());
+    notice.append(message, button);
+    document.body.appendChild(notice);
+  };
+  if (document.body) showReloadNotice();
+  else document.addEventListener("DOMContentLoaded", showReloadNotice, { once: true });
+}
+
+/** chrome.storage.local.get that cannot throw; an orphaned script gets {}. */
+function storageGet(keys, cb) {
+  if (orphaned || !extensionAlive()) { onOrphaned(); cb({}); return; }
+  try {
+    chrome.storage.local.get(keys, (result) => {
+      if (!extensionAlive()) { onOrphaned(); cb({}); return; }
+      cb(result || {});
+    });
+  }
+  catch (e) { onOrphaned(e); cb({}); }
+}
+
+/** chrome.storage.local.set that cannot throw. */
+function storageSet(items, cb) {
+  if (orphaned || !extensionAlive()) { onOrphaned(); cb?.(false); return; }
+  try {
+    chrome.storage.local.set(items, () => {
+      if (!extensionAlive()) { onOrphaned(); cb?.(false); return; }
+      cb?.(!chrome.runtime.lastError);
+    });
+  } catch (e) { onOrphaned(e); cb?.(false); }
+}
 
 console.log("Prompt Memory v4: loaded on", window.location.hostname);
 
@@ -47,19 +102,22 @@ let promptTrackingEnabled = true;
 // that one request, and is not retained as a profile. It stays on by default
 // and is disclosed and toggleable in the panel.
 let contextEnabled = true;
+let dataConsent = false;
 
 // Load privacy preferences
-chrome.storage.local.get(["pm_tracking", "pm_context"], (result) => {
+storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1"], (result) => {
   promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
-  contextEnabled = result.pm_context !== false;          // default: ON
+  contextEnabled = result.pm_context !== false;          // default: on
+  dataConsent = result.pm_data_consent_v1 === true;
 });
-
-chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local") {
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.pm_data_consent_v1) dataConsent = changes.pm_data_consent_v1.newValue === true;
     if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue !== false;
     if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
-  }
-});
+  });
+} catch (error) { onOrphaned(error); }
 
 // ══════════════════════════════════════════════════════════════
 // AUTH HELPERS (with auto-refresh)
@@ -67,8 +125,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 function getAuth() {
   return new Promise((resolve) => {
-    chrome.storage.local.get(["user_id", "token", "email"], (result) => {
-      resolve(result.token ? result : null);
+    storageGet(["user_id", "token", "email"], (result) => {
+      resolve(result && result.token ? result : null);
     });
   });
 }
@@ -102,7 +160,7 @@ async function tryRefreshToken(auth) {
     });
     if (res.ok) {
       const data = await res.json();
-      chrome.storage.local.set({ token: data.token, email: data.email, user_id: data.user_id });
+      storageSet({ token: data.token, email: data.email, user_id: data.user_id });
       console.log("Prompt Memory: token auto-refreshed");
       return data.token;
     }
@@ -113,6 +171,8 @@ async function tryRefreshToken(auth) {
 }
 
 async function authedFetch(url, options = {}) {
+  const { silent = false, ...fetchOptions } = options;
+  options = fetchOptions;
   const auth = await getAuth();
   if (!auth) return null;
 
@@ -124,7 +184,7 @@ async function authedFetch(url, options = {}) {
   }
 
   if (isTokenExpired(token)) {
-    showToast("Session expired — please re-login from the extension popup.", "error");
+    if (!silent) showToast("Session expired — please re-login from the extension popup.", "error");
     return null;
   }
 
@@ -136,12 +196,13 @@ async function authedFetch(url, options = {}) {
   try {
     const res = await fetch(url, options);
     if (res.status === 401) {
-      showToast("Session expired — please re-login from the extension popup.", "error");
+      if (!silent) showToast("Session expired — please re-login from the extension popup.", "error");
       return null;
     }
     return res;
   } catch (err) {
     console.error("Prompt Memory fetch error:", err);
+    if (silent) return null;
     if (err.name === "TypeError" && err.message.includes("Failed to fetch")) {
       showToast("Server unavailable — check your connection or try again later.", "error");
     } else {
@@ -263,6 +324,8 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
     body.byok_model = byok.model;
   }
 
+  const abort = new AbortController();
+  cancelActiveStream = () => abort.abort();
   try {
     const res = await fetch(`${API_URL}/enhance/stream`, {
       method: "POST",
@@ -271,6 +334,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
         Authorization: `Bearer ${auth.token}`,
       },
       body: JSON.stringify(body),
+      signal: abort.signal,
     });
 
     if (!res.ok) {
@@ -312,6 +376,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
       }
     }
   } catch (e) {
+    if (abort.signal.aborted) { onDone({ failed: true, cancelled: true }); return; }
     console.error("Streaming enhance error:", e);
     onDone({ failed: true, detail: "Lost connection to the server mid-response." });
   }
@@ -324,8 +389,19 @@ async function sendFeedback(logId, rating, original, enhanced) {
   });
 }
 
+async function approveEnhancement(logId) {
+  // The server resolves the original/refined text from this user's log. Never
+  // send editable client text as authority for long-term memory.
+  const res = await authedFetch(`${API_URL}/enhance/accept`, {
+    method: "POST",
+    body: JSON.stringify({ log_id: logId }),
+    silent: true,
+  });
+  return Boolean(res && res.ok);
+}
+
 async function trackPrompt(prompt) {
-  if (!promptTrackingEnabled || !onTrackableSurface()) return;
+  if (!promptTrackingEnabled || !dataConsent || !onTrackableSurface()) return;
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return;
   authedFetch(`${API_URL}/track`, {
@@ -412,24 +488,190 @@ function scrapeConversation() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// UI: TRIGGER BUTTON
+// DRAFT — the rewrite as an object that outlives the composer
 // ══════════════════════════════════════════════════════════════
+//
+// The card used to hold its result in a handful of module variables and
+// anchor itself to the composer. Switch chats and the composer it was
+// anchored to is gone; reload the tab and the rewrite is gone with it. So
+// there was no way to enhance in one conversation and use the result in a
+// fresh one — which is exactly when people want it ("this thread is
+// polluted, start clean with the good prompt").
+//
+// The draft is the same data, written through to extension storage. Session
+// storage is preferred: it survives navigation and reloads, is cleared when
+// the browser closes, and is shared across the matched sites — so a draft
+// made on chatgpt.com is waiting in the pill on claude.ai. The service worker
+// grants content scripts access to it (see background.js); if that grant is
+// missing the store falls back to local storage with a hard expiry.
+
+const DRAFT_KEY = "pm_draft";
+const DRAFT_TTL_MS = 60 * 60 * 1000;
+
+const draftStore = {
+  _area: null,
+  async area() {
+    if (this._area) return this._area;
+    try {
+      if (chrome.storage.session) {
+        await chrome.storage.session.get(DRAFT_KEY);   // throws without the access grant
+        this._area = chrome.storage.session;
+        return this._area;
+      }
+    } catch { /* not granted; fall through */ }
+    this._area = chrome.storage.local;
+    return this._area;
+  },
+  async load() {
+    try {
+      const area = await this.area();
+      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+      if (!draft || !draft.result || !draft.result.enhanced) return null;
+      if (Date.now() - (draft.createdAt || 0) > DRAFT_TTL_MS) {
+        area.remove(DRAFT_KEY);
+        return null;
+      }
+      return draft;
+    } catch {
+      return null;
+    }
+  },
+  async save(draft) {
+    try {
+      const area = await this.area();
+      await area.set({ [DRAFT_KEY]: draft });
+    } catch { /* storage is a convenience; the in-memory card still works */ }
+  },
+  async clear() {
+    try {
+      const area = await this.area();
+      await area.remove(DRAFT_KEY);
+    } catch { /* nothing to clear */ }
+  },
+  /** Record whether the card is open, so a reload brings it back the same way. */
+  async setExpanded(expanded) {
+    try {
+      const area = await this.area();
+      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+      if (draft && draft.expanded !== expanded) await area.set({ [DRAFT_KEY]: { ...draft, expanded } });
+    } catch { /* cosmetic */ }
+  },
+};
+
+// ══════════════════════════════════════════════════════════════
+// UI: THE PILL (trigger + draft holder in one)
+// ══════════════════════════════════════════════════════════════
+//
+// The ⊕ button is still the ⊕ button — click enhances, shift-click opens the
+// library — but it now also *holds* the current draft. With nothing pending it
+// is the same round button it always was. Once a rewrite exists it grows into
+// a pill: a status dot, a preview of the rewrite, and a one-click Insert when
+// the composer is empty. Click the preview to expand the full card; press Esc
+// to tuck it away again. The draft stays in the pill until it is inserted or
+// discarded, across chats, reloads and sites.
+//
+// It is draggable. Position is remembered per host and snapped to the nearest
+// side, so it can be moved off anything a site puts in the bottom-right corner
+// and stays put. The library button and the card follow it.
+
+const PILL_MARGIN = 16;
+const PILL_HOME_BOTTOM = 24;   // home: the bottom corner on the docked side
+let pillDock = "right";        // "left" | "right" — which side the pill snaps to
+let pillBottom = PILL_HOME_BOTTOM; // distance from the viewport bottom, in px
+let pillSuppressClick = false; // a drag just ended; swallow the click it fires
+let pillSignature = "";        // last rendered state, to skip no-op renders
+let pillApplied = null;        // { result, thanked, timer } for the 6s after an insert
+
+// Drawn, not typed. U+2295 and U+00D7 render with whatever font the host page
+// falls back to — thin on one machine, off-baseline on the next. A 1.5px
+// stroke drawn to the pixel is the same everywhere.
+const PILL_GLYPH_SVG =
+  '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true">' +
+  '<circle cx="8" cy="8" r="6.75"/><path d="M8 5v6M5 8h6"/></svg>';
+const PILL_X_SVG =
+  '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M2 2l8 8M10 2l-8 8"/></svg>';
+const CARD_MIN_SVG =
+  '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">' +
+  '<path d="M2.5 6h7"/></svg>';
+const PILL_THUMB_SVG = (down) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${down ? ' style="transform:scale(-1)"' : ""}>` +
+  '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
 
 function createTrigger() {
   if (document.getElementById("pm-trigger")) return;
-  const btn = document.createElement("button");
+  // A div, not a <button>: the pill carries its own buttons (Insert, ×), and
+  // a button may not contain buttons. Keyboard access is restored by hand.
+  const btn = document.createElement("div");
   btn.id = "pm-trigger";
   btn.className = "pm-trigger";
-  btn.innerHTML = "⊕";
-  btn.title = "Enhance this prompt (Ctrl+Shift+E)\nShift-click for your library";
+  btn.setAttribute("role", "button");
+  btn.setAttribute("tabindex", "0");
+  btn.setAttribute("aria-live", "polite");
+  btn.dataset.state = "idle";
+  // One verb button, relabelled per state by renderPill(); one × whose
+  // meaning (cancel / dismiss / discard) also follows the state.
+  btn.innerHTML =
+    `<span class="pm-pill-glyph" aria-hidden="true">${PILL_GLYPH_SVG}</span>` +
+    `<span class="pm-pill-dot" aria-hidden="true"></span>` +
+    `<span class="pm-pill-labelwrap"><span class="pm-pill-label"></span></span>` +
+    `<button class="pm-pill-insert" type="button" hidden></button>` +
+    `<span class="pm-pill-rate" hidden>` +
+      `<button class="pm-pill-up" type="button" title="Good rewrite" aria-label="Good rewrite">${PILL_THUMB_SVG(false)}</button>` +
+      `<button class="pm-pill-down" type="button" title="Bad rewrite" aria-label="Bad rewrite">${PILL_THUMB_SVG(true)}</button>` +
+    `</span>` +
+    `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>`;
+  btn.title = "Enhance this prompt\nShift-click for your library";
   // Click runs the thing people came for. This used to open the panel, which
   // meant the primary action sat two clicks deep behind a tab bar; the library
   // is the secondary path now, not the front door.
+  //
+  // With a draft pending, handleEnhance() opens that draft instead of spending
+  // a model call on the same text — see reopenDraftIfRelevant().
   btn.addEventListener("click", (e) => {
     if (e.shiftKey) togglePanel();
+    else if (pillApplied) clearApplied();   // "Inserted" is a receipt, not a button
     else handleEnhance();
   });
+  // A drag ends with a click event on the same element. Capture phase, so it
+  // never reaches the handler above.
+  btn.addEventListener("click", (e) => {
+    if (!pillSuppressClick) return;
+    pillSuppressClick = false;
+    e.stopImmediatePropagation();
+    e.preventDefault();
+  }, true);
+  btn.addEventListener("keydown", (e) => {
+    if (e.target !== btn) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      if (pillOffersInsert()) insertDraft();
+      else handleEnhance();
+    }
+  });
+  btn.querySelector(".pm-pill-insert").addEventListener("click", (e) => {
+    e.stopPropagation();
+    pillVerb();
+  });
+  btn.querySelector(".pm-pill-x").addEventListener("click", (e) => {
+    e.stopPropagation();
+    const was = cardState;
+    closeCard();
+    if (was === "streaming") showToast("Rewrite cancelled.", "info");
+    else if (was === "ready") showToast("Draft discarded.", "info");
+  });
+  btn.querySelector(".pm-pill-up").addEventListener("click", (e) => { e.stopPropagation(); ratePill("up"); });
+  btn.querySelector(".pm-pill-down").addEventListener("click", (e) => { e.stopPropagation(); ratePill("down"); });
   document.body.appendChild(btn);
+  setupPillDrag(btn);
+  restorePillPosition();
+  renderPill();
+  window.addEventListener("resize", () => placePill());
+  // The label opens and closes with a transition, so the pill's width — and
+  // with it where the library button and the card belong, and whether the
+  // pill now reaches the composer — changes frame by frame. Placement follows
+  // the size rather than guessing when the transition is done.
+  new ResizeObserver(() => placePill()).observe(btn);
 
   // A visible way into the library.
   //
@@ -454,11 +696,400 @@ function createTrigger() {
   document.body.appendChild(lib);
 
   // Apply saved theme to both docked controls
-  chrome.storage.local.get("pm_theme", (result) => {
+  storageGet("pm_theme", (result) => {
     const theme = result.pm_theme || "dark";
     btn.setAttribute("data-pm-theme", theme);
     lib.setAttribute("data-pm-theme", theme);
   });
+}
+
+/** Whether the pill's one-click Insert applies right now. */
+function pillOffersInsert() {
+  return cardState === "ready" && Boolean(cardResult) && !cardStale;
+}
+
+/** Insert the draft without opening its review card. */
+async function insertDraft() {
+  if (!pillOffersInsert()) return;
+  cardShowingOriginal = false; // The pill previews the rewrite, never the original.
+  await acceptCard();
+}
+
+/**
+ * The pill's one verb, resolved by state: Insert a ready draft, Redo a stale
+ * one, Retry a failed one. Whatever the state, the chip is the way out of it.
+ */
+function pillVerb() {
+  if (cardState === "ready" && !cardStale) insertDraft();
+  else if (cardState === "ready" && cardStale) redoCard();
+  else if (cardState === "error") { closeCard(); handleEnhance(); }
+}
+
+/** Keyboard focus is in the composer the draft would be written into. */
+function composerHasFocus() {
+  const composer = findComposer();
+  const active = document.activeElement;
+  return Boolean(composer && active && (composer === active || composer.contains(active)));
+}
+
+/**
+ * Six seconds of "Inserted", with the rating question inside the pill. This
+ * replaces the feedback toast for the accept flow: one event, one object.
+ * `result` is null when there is no log_id to rate against, in which case the
+ * pill only confirms.
+ */
+function showApplied(result) {
+  clearTimeout(pillApplied?.timer);
+  pillApplied = { result, thanked: false, timer: setTimeout(clearApplied, 6000) };
+  renderPill();
+}
+
+function clearApplied() {
+  if (!pillApplied) return;
+  clearTimeout(pillApplied.timer);
+  pillApplied = null;
+  renderPill();
+}
+
+function ratePill(rating) {
+  const a = pillApplied;
+  if (!a || !a.result || a.thanked) return;
+  sendFeedback(a.result.log_id, rating, a.result.original, a.result.enhanced);
+  clearTimeout(a.timer);
+  a.thanked = rating;
+  a.timer = setTimeout(clearApplied, 1200);
+  renderPill();
+}
+
+/**
+ * Reflect the draft's state on the pill.
+ *
+ * Called from every card transition and from the input listener, so it must be
+ * cheap and must not touch the DOM when nothing changed — the input listener
+ * fires on every keystroke on the host page.
+ */
+function renderPill() {
+  const pill = document.getElementById("pm-trigger");
+  if (!pill) return;
+
+  // Every non-idle state carries exactly one verb — the one that resolves it.
+  let state = "idle";
+  let label = "";
+  let verb = "";
+  let discard = false;
+
+  if (cardState === "streaming") {
+    // The card beside it shows the text arriving; the pill only says that
+    // something is happening. Streaming the first 40 characters into a
+    // one-line label made a ticker nobody could read.
+    state = "streaming";
+    label = "Rewriting\u2026";
+    discard = true;
+  } else if (cardState === "error") {
+    state = "error";
+    label = cardError || "Enhancement failed";
+    verb = "Retry";
+    discard = true;
+  } else if (cardState === "ready" && cardResult) {
+    discard = true;
+    label = cardResult.enhanced;
+    if (cardStale) {
+      state = "stale";
+      verb = "Redo";
+    } else {
+      // The moment this exists for: a fresh chat, an empty box, a draft that
+      // followed the user here. The verb says what it will do.
+      state = "ready";
+      verb = norm(getCurrentInputText()) ? "Apply" : "Insert";
+    }
+  } else if (pillApplied) {
+    state = "applied";
+    label = pillApplied.thanked ? "Thanks" : "Inserted";
+  }
+
+  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}`;
+  if (sig === pillSignature) return;
+  pillSignature = sig;
+
+  pill.dataset.state = state;
+  pill.classList.toggle("pm-pill-open", state !== "idle");
+  const labelEl = pill.querySelector(".pm-pill-label");
+  labelEl.textContent = label.replace(/\s+/g, " ").trim().slice(0, 120);
+
+  const verbEl = pill.querySelector(".pm-pill-insert");
+  verbEl.hidden = !verb;
+  if (verb) {
+    verbEl.textContent = verb;
+    verbEl.title = {
+      Insert: "Insert into the chat box",
+      Apply: "Replace the chat box text with the rewrite",
+      Redo: "Rewrite what is in the chat box now",
+      Retry: "Try the rewrite again",
+    }[verb];
+  }
+  pill.querySelector(".pm-pill-rate").hidden = !(state === "applied" && pillApplied.result && !pillApplied.thanked);
+  const xEl = pill.querySelector(".pm-pill-x");
+  xEl.hidden = !discard;
+  xEl.title = state === "streaming" ? "Cancel the rewrite" : state === "error" ? "Dismiss" : "Discard this draft";
+  xEl.setAttribute("aria-label", xEl.title);
+
+  pill.setAttribute("aria-label", {
+    idle: "Enhance this prompt",
+    streaming: "Rewriting your prompt",
+    ready: "Enhanced prompt ready. Click to review or use Insert.",
+    stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
+    error: "Enhancement failed. Retry runs it again.",
+    applied: "Rewrite inserted.",
+  }[state]);
+  pill.title = state === "idle"
+    ? "Enhance this prompt\nShift-click for your library"
+    : state === "applied" ? "" : "Click to review the draft \u00b7 drag to move";
+
+  // The pill's width just changed, so everything that hangs off it moves.
+  requestAnimationFrame(placePill);
+}
+
+// ── Position: docked to a side, remembered per host ──
+
+function pillStorageKey() {
+  return `pm_pill_pos:${window.location.hostname}`;
+}
+
+function restorePillPosition() {
+  storageGet(pillStorageKey(), (r) => {
+    const saved = r[pillStorageKey()];
+    if (saved && (saved.edge === "left" || saved.edge === "right")) {
+      pillDock = saved.edge;
+      pillBottom = Number.isFinite(saved.bottom) ? saved.bottom : pillBottom;
+    }
+    placePill();
+  });
+}
+
+/**
+ * Lay the pill out from (pillDock, pillBottom) and move its dependants.
+ *
+ * Docked with `left` or `right` rather than absolute coordinates on purpose:
+ * the pill grows when a draft arrives, and anchoring to the side it sits
+ * against makes it grow *away* from the edge instead of off-screen.
+ */
+/** The composer's box, memoised for one placePill() pass. */
+let _c0cache = null;
+function c0(el) {
+  if (!_c0cache || _c0cache.el !== el) _c0cache = { el, r: el.getBoundingClientRect() };
+  return _c0cache.r;
+}
+
+function placePill() {
+  const pill = document.getElementById("pm-trigger");
+  if (!pill) return;
+  _c0cache = null;
+  const maxBottom = Math.max(PILL_MARGIN, window.innerHeight - pill.offsetHeight - PILL_MARGIN);
+  pillBottom = Math.min(Math.max(PILL_MARGIN, pillBottom), maxBottom);
+
+  // One rule for where the pill goes: the user's spot, unless the card or
+  // the composer is there — then HOME, the bottom corner on its own side,
+  // until the card folds. Home is where the eye already expects the pill, so
+  // a pill that has to move goes somewhere known rather than somewhere new.
+  // An earlier cut parked it on the card's top corner instead: a third
+  // position to learn, and one the card could grow over while streaming.
+  //
+  // None of this is a move — pillBottom and the dock are untouched, and the
+  // pill drops back to its spot the moment the obstacle is gone.
+  //
+  // Last resort, when home itself is under the composer (the wide composers
+  // of the chat views) or under the card that sits on it: step up AND IN to
+  // that object's top corner, card last so the pill ends up on top of the
+  // stack. Straight up left it hanging in mid-air past the composer's edge.
+  let bottom = pillBottom;
+  let inset = PILL_MARGIN;
+  // With the library panel open there is nowhere to step up to — the panel
+  // fills the corner — so the pill stays home and drops its preview instead.
+  pill.classList.toggle("pm-pill-compact", panelOpen);
+  const composer = findComposer();
+  // The card is laid out first: on the composer it is independent of the
+  // pill, and the pill needs its box to know whether to step aside.
+  positionCard();
+  if (!panelOpen) {
+    const w = pill.offsetWidth, h = pill.offsetHeight;
+    const at = () => ({
+      left: pillDock === "left" ? inset : window.innerWidth - inset - w,
+      top: window.innerHeight - bottom - h,
+    });
+    const hits = (r) => {
+      if (!r) return false;
+      const p = at();
+      return p.left < r.right && p.left + w > r.left && p.top < r.bottom && p.top + h > r.top;
+    };
+    const stepAbove = (r, gap) => {
+      bottom = Math.min(maxBottom, Math.round(window.innerHeight - r.top + gap));
+      inset = Math.max(PILL_MARGIN, Math.round(pillDock === "left" ? r.left : window.innerWidth - r.right));
+    };
+    const c = composer && pill.classList.contains("pm-pill-open") ? composer.getBoundingClientRect() : null;
+    const cardEl = document.getElementById("pm-card");
+    const cb = cardEl ? cardEl.getBoundingClientRect() : null;
+    if (hits(c) || hits(cb)) {
+      bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);
+      inset = PILL_MARGIN;
+      if (hits(c)) stepAbove(c, 8);
+      if (hits(cb)) stepAbove(cb, 8);
+    }
+  }
+
+  // A fade on a label that is all there would dim its last letter for
+  // nothing; measured here because the label's box is still opening when
+  // renderPill() runs.
+  const labelEl = pill.querySelector(".pm-pill-label");
+  if (labelEl) labelEl.classList.toggle("pm-pill-label-fits", labelEl.scrollWidth <= labelEl.clientWidth + 1);
+
+  // "auto", never "": clearing an inline value only un-shadows the one in the
+  // stylesheet, and .pm-trigger carries `right: 16px` there. Docked left that
+  // left BOTH offsets live, which stretches an auto-width fixed box across the
+  // viewport — the pill became a 420px bar the moment it was dragged left.
+  pill.style.top = "auto";
+  pill.style.bottom = bottom + "px";
+  pill.style.left = pillDock === "left" ? inset + "px" : "auto";
+  pill.style.right = pillDock === "right" ? inset + "px" : "auto";
+  pill.dataset.dock = pillDock;
+
+  // The library button sits beside the pill, on the side away from the edge —
+  // unless an open pill has grown wide enough that "beside" lands on the
+  // composer. It is revealed on hover, so that put it on top of the send
+  // button of the box the user is typing in. Stacked above the pill instead,
+  // which is empty space in every layout the pill itself fits in.
+  const lib = document.getElementById("pm-library-btn");
+  if (lib) {
+    const beside = inset + pill.offsetWidth + 8;
+    const libLeft = pillDock === "left"
+      ? beside
+      : window.innerWidth - beside - lib.offsetWidth;
+    const libTop = window.innerHeight - bottom - (pill.offsetHeight + lib.offsetHeight) / 2;
+    const cb = composer && c0(composer);
+    const clearOfComposer = !cb || !(
+      libLeft < cb.right && libLeft + lib.offsetWidth > cb.left &&
+      libTop < cb.bottom && libTop + lib.offsetHeight > cb.top
+    );
+
+    lib.dataset.dock = pillDock;
+    const inline = clearOfComposer ? beside : inset;
+    lib.style.top = "auto";
+    lib.style.bottom = clearOfComposer
+      ? (bottom + (pill.offsetHeight - lib.offsetHeight) / 2) + "px"
+      : (bottom + pill.offsetHeight + 8) + "px";
+    lib.style.left = pillDock === "left" ? inline + "px" : "auto";
+    lib.style.right = pillDock === "right" ? inline + "px" : "auto";
+  }
+  positionCard();
+  positionToasts();
+}
+
+function setupPillDrag(pill) {
+  let start = null;
+  let moved = false;
+
+  pill.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    if (e.target.closest(".pm-pill-insert, .pm-pill-x")) return;
+    const box = pill.getBoundingClientRect();
+    start = { x: e.clientX, y: e.clientY, left: box.left, top: box.top };
+    moved = false;
+    pill.setPointerCapture(e.pointerId);
+  });
+
+  pill.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    const dx = e.clientX - start.x;
+    const dy = e.clientY - start.y;
+    // A click with a shaky hand is not a drag.
+    if (!moved && Math.hypot(dx, dy) < 5) return;
+    moved = true;
+    pill.classList.add("pm-pill-dragging");
+    const w = pill.offsetWidth, h = pill.offsetHeight;
+    const left = Math.max(PILL_MARGIN, Math.min(start.left + dx, window.innerWidth - w - PILL_MARGIN));
+    const top = Math.max(PILL_MARGIN, Math.min(start.top + dy, window.innerHeight - h - PILL_MARGIN));
+    pill.style.right = "auto";
+    pill.style.bottom = "auto";
+    pill.style.left = left + "px";
+    pill.style.top = top + "px";
+    // The card and library button follow live, not just on release.
+    const lib = document.getElementById("pm-library-btn");
+    if (lib) lib.style.opacity = "0";
+    positionCard();
+  });
+
+  const end = (e) => {
+    if (!start) return;
+    try { pill.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+    start = null;
+    pill.classList.remove("pm-pill-dragging");
+    const lib = document.getElementById("pm-library-btn");
+    if (lib) lib.style.opacity = "";
+    if (!moved) return;
+    pillSuppressClick = true;
+
+    // Snap to the nearer side; keep the height the user chose.
+    const box = pill.getBoundingClientRect();
+    pillDock = box.left + box.width / 2 < window.innerWidth / 2 ? "left" : "right";
+    pillBottom = Math.round(window.innerHeight - box.bottom);
+    placePill();
+    storageSet({ [pillStorageKey()]: { edge: pillDock, bottom: pillBottom } });
+  };
+  pill.addEventListener("pointerup", end);
+  pill.addEventListener("pointercancel", end);
+}
+
+// ── Navigation: the draft follows the user between chats ──
+
+/**
+ * The host sites are single-page apps: switching conversations changes the URL
+ * with pushState and remounts the composer, and no event tells us. Poll the
+ * URL. On a change, re-find the composer and re-judge the draft against it —
+ * a fresh chat with an empty box is where "Insert" lights up.
+ */
+function watchNavigation() {
+  let lastUrl = window.location.href;
+  const check = () => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+    if (window.location.href === lastUrl) return;
+    lastUrl = window.location.href;
+    onNavigated();
+  };
+  window.addEventListener("popstate", check);
+  navigationPoll = setInterval(check, 500);
+}
+
+function onNavigated() {
+  // The new composer mounts a beat after the URL changes; look twice.
+  for (const delay of [300, 1200]) {
+    setTimeout(() => {
+      refreshCardStaleness();
+      renderPill();
+      placePill();
+    }, delay);
+  }
+}
+
+/** Bring a draft back from storage after a reload or a new tab. */
+async function restoreDraft() {
+  const draft = await draftStore.load();
+  if (!draft || cardState !== "idle") return;
+  cardResult = draft.result;
+  lastEnhanceResult = draft.result;
+  cardOriginal = draft.result.original || "";
+  cardBasedOn = draft.basedOn || norm(cardOriginal);
+  cardHasBaseline = true;
+  cardState = "ready";
+  cardShowingOriginal = false;
+  cardStale = isStaleAgainstComposer();
+  // The card comes back the way it was left: open if it was open, tucked into
+  // the pill if it was minimized.
+  cardMinimized = !draft.expanded;
+  if (draft.expanded) showDiffModal(cardResult);
+  else renderPill();
+  // The host's composer mounts a beat after our init; look again, as
+  // onNavigated() does, so an open card lands on it rather than hanging off
+  // the pill until the next scroll.
+  for (const delay of [300, 1200, 3000]) setTimeout(placePill, delay);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -469,16 +1100,20 @@ function setupKeyboardShortcut() {
   // Primary path: Chrome intercepts the chords declared in manifest.json's
   // "commands" block at the browser level, so they never reach this page. The
   // service worker catches them and forwards them here.
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type !== "PM_COMMAND") return;
-    if (msg.command === "enhance-prompt") handleEnhance();
-    if (msg.command === "voice-prompt") toggleVoice();
-  });
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+  try {
+    chrome.runtime.onMessage.addListener((msg) => {
+      if (orphaned || msg?.type !== "PM_COMMAND") return;
+      if (msg.command === "enhance-prompt") handleEnhance();
+      if (msg.command === "voice-prompt") toggleVoice();
+    });
+  } catch (e) { onOrphaned(e); return; }
 
   // Fallback path: the user may have cleared or rebound the command in
   // chrome://extensions/shortcuts, in which case Chrome does not intercept and
   // the keystroke does arrive here.
   document.addEventListener("keydown", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     // Accept Cmd on macOS as well as Ctrl. The manifest advertises
     // Command+Shift+E on Mac, but this listener only ever checked ctrlKey — so
     // the advertised Mac shortcut did nothing here.
@@ -563,7 +1198,7 @@ function createPanel() {
       </div>
       <div class="pm-enhance-row">
         <button class="pm-enhance-btn" id="pm-enhance-btn">Enhance Current Prompt</button>
-        <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt (Ctrl+Shift+V)">🎤</button>
+        <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt">🎤</button>
       </div>
       <div class="pm-enhance-hint" id="pm-enhance-hint">
         <span class="pm-enhance-hint-btn" id="pm-hint-enhance"><kbd>${CMD_KEY}Shift+E</kbd> enhance</span>
@@ -575,7 +1210,7 @@ function createPanel() {
   document.body.appendChild(panel);
 
   // Restore saved width + theme
-  chrome.storage.local.get(["pm_panel_width", "pm_theme"], (result) => {
+  storageGet(["pm_panel_width", "pm_theme"], (result) => {
     if (result.pm_panel_width) {
       panel.style.width = result.pm_panel_width + "px";
     }
@@ -594,17 +1229,21 @@ function createPanel() {
   // Tracking toggle
   const trackToggle = document.getElementById("pm-tracking-toggle");
   const ctxToggle = document.getElementById("pm-context-toggle");
-  chrome.storage.local.get(["pm_tracking", "pm_context"], (result) => {
+  storageGet(["pm_tracking", "pm_context"], (result) => {
     trackToggle.checked = result.pm_tracking === true;   // default: OFF
     ctxToggle.checked = result.pm_context !== false;
   });
-  trackToggle.addEventListener("change", () => {
+  trackToggle.addEventListener("change", async () => {
+    if (trackToggle.checked && !(await ensureDataConsent())) {
+      trackToggle.checked = false;
+      return;
+    }
     promptTrackingEnabled = trackToggle.checked;
-    chrome.storage.local.set({ pm_tracking: promptTrackingEnabled });
+    storageSet({ pm_tracking: promptTrackingEnabled });
   });
   ctxToggle.addEventListener("change", () => {
     contextEnabled = ctxToggle.checked;
-    chrome.storage.local.set({ pm_context: contextEnabled });
+    storageSet({ pm_context: contextEnabled });
   });
 
   // Theme toggle
@@ -612,7 +1251,7 @@ function createPanel() {
     const current = panel.getAttribute("data-pm-theme") || "dark";
     const next = current === "dark" ? "light" : "dark";
     applyTheme(next);
-    chrome.storage.local.set({ pm_theme: next });
+    storageSet({ pm_theme: next });
   });
 
   // Tabs
@@ -670,7 +1309,7 @@ function createPanel() {
     handle.classList.remove("pm-resizing");
     document.body.style.cursor = "";
     document.body.style.userSelect = "";
-    chrome.storage.local.set({ pm_panel_width: panel.offsetWidth });
+    storageSet({ pm_panel_width: panel.offsetWidth });
   });
 }
 
@@ -681,15 +1320,17 @@ function togglePanel(force) {
   panel.classList.toggle("pm-open", panelOpen);
   // The panel is the card's right-hand boundary, and opening or closing it
   // fires neither resize nor scroll — the only two events the card watches.
+  // placePill() re-runs positionCard() and positionToasts() after settling
+  // the pill, which also has to make way for the panel.
+  placePill();
   positionCard();
-  positionToasts();
   if (panelOpen) {
     // If already logged in, skip onboarding and mark as onboarded
-    chrome.storage.local.get(["pm_onboarded", "token"], (result) => {
-      if (result.token || result.pm_onboarded) {
+    storageGet(["pm_onboarded", "token"], (result) => {
+      if ((result.token || result.pm_onboarded) && dataConsent) {
         // Auto-mark as onboarded if logged in
         if (!result.pm_onboarded) {
-          chrome.storage.local.set({ pm_onboarded: true });
+          storageSet({ pm_onboarded: true });
         }
         // Remove any leftover onboarding overlays
         panel.querySelectorAll(".pm-onboarding").forEach((el) => el.remove());
@@ -740,7 +1381,7 @@ function showOnboarding(panel) {
         <div class="pm-onboarding-icon">🎯</div>
         <div class="pm-onboarding-step-text">
           <div class="pm-onboarding-step-title">Hit Enhance</div>
-          <div class="pm-onboarding-step-desc">Press Ctrl+Shift+E or click Enhance — we'll rewrite it to get better AI responses</div>
+          <div class="pm-onboarding-step-desc">Click Enhance — we'll rewrite it to get better AI responses</div>
         </div>
       </div>
       <div class="pm-onboarding-step">
@@ -751,12 +1392,14 @@ function showOnboarding(panel) {
         </div>
       </div>
     </div>
-    <button class="pm-onboarding-cta" id="pm-onboarding-start">Get Started</button>
+    <p class="pm-onboarding-privacy">When you ask to enhance, your draft goes to an AI provider. Signed-in requests also go through our server and are saved in History; up to six recent chat messages are included by default. Prompt Tracking stays off until you enable it in settings.</p>
+    <button class="pm-onboarding-cta" id="pm-onboarding-start">See privacy choices &amp; continue</button>
   `;
   panel.appendChild(overlay);
 
-  document.getElementById("pm-onboarding-start").addEventListener("click", () => {
-    chrome.storage.local.set({ pm_onboarded: true });
+  document.getElementById("pm-onboarding-start").addEventListener("click", async () => {
+    if (!(await ensureDataConsent())) return;
+    storageSet({ pm_onboarded: true });
     overlay.style.animation = "pm-fadeIn 0.3s ease reverse";
     setTimeout(() => {
       overlay.remove();
@@ -1119,8 +1762,9 @@ function renderHistoryTab(container) {
         </div>
       `;
 
-      card.querySelector(".pm-history-use").addEventListener("click", () => {
-        applyOrFallback(item.enhanced);
+      card.querySelector(".pm-history-use").addEventListener("click", async () => {
+        const applied = await applyOrFallback(item.enhanced);
+        if (applied && item.log_id) await approveEnhancement(item.log_id);
       });
 
       card.querySelector(".pm-history-copy").addEventListener("click", () => {
@@ -1152,7 +1796,7 @@ function getTimeAgo(isoString) {
 
 function renderFeedbackTab(container) {
   // Pre-fill email from chrome.storage
-  chrome.storage.local.get(["email"], (result) => {
+  storageGet(["email"], (result) => {
     const userEmail = result.email || "";
 
     container.innerHTML = `
@@ -1285,11 +1929,15 @@ function loadRecentFeedback() {
 
 /** Open the extension's own settings UI. */
 function openSettings() {
-  chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS" }, () => {
-    if (chrome.runtime.lastError) {
-      showToast("Click the Prompt Memory icon in your toolbar to open settings.", "info");
-    }
-  });
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+  try {
+    chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS" }, () => {
+      if (!extensionAlive()) { onOrphaned(); return; }
+      if (chrome.runtime.lastError) {
+        showToast("Click the Prompt Memory icon in your toolbar to open settings.", "info");
+      }
+    });
+  } catch (e) { onOrphaned(e); }
 }
 
 // Guards against a second enhancement starting while one is in flight. Two
@@ -1298,21 +1946,47 @@ function openSettings() {
 // one result.
 let enhanceInFlight = false;
 
+/**
+ * With a draft pending, the ⊕ shows it rather than starting over.
+ *
+ * Unless the composer holds NEW text — different from what the draft was built
+ * from — in which case the user has moved on and wants that enhanced. An empty
+ * or unchanged box means "show me what you have". This is what keeps a click
+ * on the pill from spending one of fifteen daily enhancements on the same
+ * sentence twice.
+ */
+function reopenDraftIfRelevant() {
+  if (cardState === "idle") return false;
+  if (cardState === "streaming") { toggleCard(); return true; }
+  if (cardState === "error") { toggleCard(); return true; }
+  const now = norm(getCurrentInputText());
+  if (now && now !== cardBasedOn) return false;
+  toggleCard();
+  return true;
+}
+
 async function handleEnhance() {
+  if (orphaned || !extensionAlive()) {
+    onOrphaned();
+    return;
+  }
   if (enhanceInFlight) {
     showToast("Already enhancing — hang on a moment.", "info");
     return;
   }
+  if (reopenDraftIfRelevant()) return;
 
   const inputText = getCurrentInputText();
   if (!inputText || inputText.trim().length < 3) {
     showToast("Type a prompt in the chat input first.", "error");
     return;
   }
+  if (!(await ensureDataConsent())) return;
 
   // Ask the service worker how this request should be routed. It owns the API
   // key, so the decision cannot be made here.
   const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (orphaned) return;
   if (!route) {
     // The worker is unreachable. Almost always this tab's content script was
     // orphaned by an extension update or reload — the page needs refreshing,
@@ -1367,7 +2041,16 @@ async function handleEnhance() {
 /** No account, no server: the service worker calls the user's own provider. */
 async function runDirectEnhance(inputText, route) {
   return new Promise((resolve) => {
-    const port = chrome.runtime.connect({ name: "pm-stream" });
+    let port;
+    try {
+      if (!extensionAlive()) throw new Error("Extension context invalidated");
+      port = chrome.runtime.connect({ name: "pm-stream" });
+      if (!port?.onMessage || !port?.onDisconnect) throw new Error("Extension context invalidated");
+    } catch (e) {
+      onOrphaned(e);
+      resolve();
+      return;
+    }
     let parts = [];
     let settled = false;
 
@@ -1378,6 +2061,7 @@ async function runDirectEnhance(inputText, route) {
       fn();
       resolve();
     };
+    cancelActiveStream = () => finish(() => {});
 
     port.onMessage.addListener((msg) => {
       if (msg.type === "token") {
@@ -1467,8 +2151,10 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
 /** Ask the service worker something; resolves to null if it is unreachable. */
 function askWorker(message) {
   return new Promise((resolve) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); resolve(null); return; }
     try {
       chrome.runtime.sendMessage(message, (response) => {
+        if (!extensionAlive()) { onOrphaned(); resolve(null); return; }
         if (chrome.runtime.lastError) {
           console.warn("Prompt Memory: worker unreachable", chrome.runtime.lastError.message);
           resolve(null);
@@ -1477,7 +2163,7 @@ function askWorker(message) {
         resolve(response);
       });
     } catch (e) {
-      console.warn("Prompt Memory: worker call failed", e);
+      onOrphaned(e);
       resolve(null);
     }
   });
@@ -1499,7 +2185,7 @@ function askWorker(message) {
 //
 // The card anchors to the composer instead, so the conversation stays readable
 // while you judge a rewrite that is supposed to fit it, and the decision is two
-// keys: Tab accepts, Esc dismisses.
+// Explicit buttons insert; Tab navigates; Escape minimizes.
 //
 // The four entry points below keep the names the streaming flow already calls,
 // so runBackendEnhance/runDirectEnhance are untouched.
@@ -1510,6 +2196,7 @@ let cardShowingOriginal = false;
 let cardOriginal = "";
 let cardReposition = null;
 let cardHasBaseline = false;
+let cardLayout = null;          // { detached, x, y, width, height }
 
 // The composer text this rewrite was actually built from, normalised.
 //
@@ -1519,6 +2206,63 @@ let cardHasBaseline = false;
 // card to fresh for free, and whitespace churn is invisible.
 let cardBasedOn = "";
 let cardStale = false;
+// Whether the card is on screen. The draft can exist without the card: hidden
+// in the pill after Esc, or restored from storage on a new page.
+let cardExpanded = false;
+// The user minimized the card and has not asked for it back. A rewrite that
+// finishes while this is set lands in the pill instead of popping the card
+// open over what they moved on to.
+let cardMinimized = false;
+let cardError = "";
+let pillStreamingPreview = "";
+// Set by whichever stream runner is active; called by closeCard() while
+// streaming. Without it "cancel" only hid the card, and the rewrite popped
+// back up as a finished draft when the stream it was still running ended.
+let cancelActiveStream = null;
+
+function cardLayoutStorageKey() {
+  return `pm_card_layout:${window.location.hostname}`;
+}
+
+function restoreCardLayout() {
+  return new Promise((resolve) => {
+    storageGet(cardLayoutStorageKey(), (result) => {
+      const saved = result[cardLayoutStorageKey()];
+      cardLayout = saved?.detached && [saved.x, saved.y, saved.width, saved.height].every(Number.isFinite) ? saved : null;
+      resolve();
+    });
+  });
+}
+
+function saveCardLayout() {
+  if (cardLayout?.detached) {
+    storageSet({ [cardLayoutStorageKey()]: cardLayout });
+  }
+}
+
+function resetCardLayout() {
+  cardLayout = null;
+  storageSet({ [cardLayoutStorageKey()]: null });
+  const card = document.getElementById("pm-card");
+  if (!card) return;
+  card.classList.remove("pm-card-free");
+  card.style.height = "";
+  if (document.activeElement?.id === "pm-card-reset") card.querySelector("#pm-card-layout-toggle")?.focus({ preventScroll: true });
+  positionCard();
+  placePill();
+}
+
+/**
+ * Stale means: the composer holds text that is NOT what this rewrite was built
+ * from. An EMPTY composer is not stale — there is nothing in it that accepting
+ * could destroy, and an empty box in a fresh chat is precisely where a draft
+ * that followed the user is meant to land.
+ */
+function isStaleAgainstComposer() {
+  if (!cardBasedOn) return false;
+  const now = norm(getCurrentInputText());
+  return now !== "" && now !== cardBasedOn;
+}
 
 function getOrCreateCard() {
   let card = document.getElementById("pm-card");
@@ -1529,8 +2273,12 @@ function getOrCreateCard() {
     card.setAttribute("role", "dialog");
     card.setAttribute("aria-label", "Enhanced prompt");
     document.body.appendChild(card);
+    // The card grows as the rewrite streams in. A pill that was clear of it
+    // a moment ago may not be now, and only placePill() knows where to go.
+    card._pmResize = new ResizeObserver(() => placePill());
+    card._pmResize.observe(card);
 
-    chrome.storage.local.get("pm_theme", (r) =>
+    storageGet("pm_theme", (r) =>
       card.setAttribute("data-pm-theme", r.pm_theme || "dark")
     );
   }
@@ -1538,65 +2286,245 @@ function getOrCreateCard() {
 }
 
 /**
- * Sit the card directly above the composer.
+ * The card starts attached to the composer. Dragging its title bar or resize
+ * grip turns it into a floating workspace, remembered for this site.
+ */
+function setupCardInteractions(card) {
+  const head = card.querySelector(".pm-card-head");
+  const grip = card.querySelector(".pm-card-resize");
+  const toggle = card.querySelector("#pm-card-layout-toggle");
+  if (!head || !grip || !toggle) return;
+  const controls = document.createElement("div");
+  controls.id = "pm-card-layout";
+  controls.className = "pm-card-layout";
+  controls.hidden = true;
+  controls.setAttribute("role", "group");
+  controls.setAttribute("aria-label", "Card position and size");
+  const adjustments = {
+    Left: [-24, 0, 0, 0], Right: [24, 0, 0, 0],
+    Up: [0, -24, 0, 0], Down: [0, 24, 0, 0],
+    Narrower: [0, 0, -40, 0], Wider: [0, 0, 40, 0],
+    Shorter: [0, 0, 0, -40], Taller: [0, 0, 0, 40],
+  };
+  const adjust = ([dx, dy, dw, dh]) => {
+    const r = card.getBoundingClientRect();
+    cardLayout = { detached: true, x: r.left + dx, y: r.top + dy, width: r.width + dw, height: r.height + dh };
+    positionCard();
+    saveCardLayout();
+  };
+  for (const [label, delta] of Object.entries(adjustments)) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = label;
+    button.addEventListener("click", () => adjust(delta));
+    controls.appendChild(button);
+  }
+  const reset = document.createElement("button");
+  reset.type = "button";
+  reset.textContent = "Reset layout";
+  reset.addEventListener("click", resetCardLayout);
+  controls.appendChild(reset);
+  head.after(controls);
+  const toggleLayout = () => {
+    controls.hidden = !controls.hidden;
+    toggle.setAttribute("aria-expanded", String(!controls.hidden));
+    positionCard();
+  };
+  toggle.addEventListener("click", toggleLayout);
+  card.querySelector("#pm-card-reset")?.addEventListener("click", resetCardLayout);
+  let suppressGripClick = false;
+  grip.addEventListener("click", (e) => {
+    if (suppressGripClick && e.detail !== 0) { suppressGripClick = false; return; }
+    suppressGripClick = false;
+    toggleLayout();
+  });
+  grip.addEventListener("keydown", (e) => {
+    const delta = { ArrowLeft: [0,0,-12,0], ArrowRight: [0,0,12,0], ArrowUp: [0,0,0,-12], ArrowDown: [0,0,0,12] }[e.key];
+    if (!delta) return;
+    e.preventDefault();
+    adjust(delta.map(value => value * (e.shiftKey ? 3 : 1)));
+  });
+  const begin = (event, kind) => {
+    if (event.button !== 0 || (kind === "move" && event.target.closest("button"))) return;
+    card._pmEndGesture?.();
+    suppressGripClick = false;
+    const r = card.getBoundingClientRect();
+    const start = { x: event.clientX, y: event.clientY };
+    let moved = false;
+    // Capture on the stable card, not header/grip nodes replaced by rerenders.
+    const move = (next) => {
+      if (next.pointerId !== event.pointerId) return;
+      const dx = next.clientX - start.x, dy = next.clientY - start.y;
+      if (!moved && Math.hypot(dx, dy) < 5) return;
+      if (!moved) card.setPointerCapture(event.pointerId);
+      moved = true;
+      card.classList.add(kind === "move" ? "pm-card-moving" : "pm-card-resizing");
+      cardLayout = { detached: true, x: r.left + (kind === "move" ? dx : 0), y: r.top + (kind === "move" ? dy : 0), width: r.width + (kind === "resize" ? dx : 0), height: r.height + (kind === "resize" ? dy : 0) };
+      positionCard();
+      positionToasts();
+    };
+    const end = (next) => {
+      if (next && next.pointerId !== event.pointerId) return;
+      card._pmEndGesture = null;
+      card.removeEventListener("pointermove", move);
+      card.removeEventListener("pointerup", end);
+      card.removeEventListener("pointercancel", end);
+      card.removeEventListener("lostpointercapture", end);
+      try { card.releasePointerCapture(event.pointerId); } catch { /* already released */ }
+      card.classList.remove("pm-card-moving", "pm-card-resizing");
+      if (moved) {
+        suppressGripClick = kind === "resize";
+        const box = card.getBoundingClientRect();
+        cardLayout = { detached: true, x: box.left, y: box.top, width: box.width, height: box.height };
+        saveCardLayout();
+        placePill();
+      }
+    };
+    card._pmEndGesture = end;
+    card.addEventListener("pointermove", move);
+    card.addEventListener("pointerup", end);
+    card.addEventListener("pointercancel", end);
+    card.addEventListener("lostpointercapture", end);
+  };
+  head.addEventListener("pointerdown", e => begin(e, "move"));
+  grip.addEventListener("pointerdown", e => begin(e, "resize"));
+}
+
+function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
+  const margin = Math.min(12, viewportWidth / 4, viewportHeight / 4);
+  const right = Math.max(margin + 1, Math.min(viewportWidth - margin, boundary));
+  const availableWidth = Math.max(1, right - margin);
+  const availableHeight = Math.max(1, viewportHeight - 2 * margin);
+  const finite = (value, fallback) => Number.isFinite(value) ? value : fallback;
+  const width = Math.min(availableWidth, Math.max(260, finite(layout.width, 520)));
+  const height = Math.min(availableHeight, Math.max(180, finite(layout.height, 260)));
+  return {
+    width, height,
+    x: Math.max(margin, Math.min(finite(layout.x, margin), right - width)),
+    y: Math.max(margin, Math.min(finite(layout.y, margin), viewportHeight - margin - height)),
+  };
+}
+
+/**
+ * Hang the card off the pill.
  *
- * Anchored rather than centred because the composer is where the user is
- * already looking, and because a rewrite has to be judged against the
- * conversation it belongs to — which a centred overlay hides.
+ * The pill is the fixed point the user learns, so the card opens from it: same
+ * side, same edge, above it when the pill sits low (the default) and below it
+ * when the pill has been dragged up high. The composer is still respected —
+ * where the two overlap horizontally the card stops short of the composer's
+ * top, because a rewrite has to be judged against the text it belongs to and
+ * cannot be judged while covering it.
  */
 function positionCard() {
   const card = document.getElementById("pm-card");
-  const composer = findComposer();
-  if (!card || !composer) return;
+  const pill = document.getElementById("pm-trigger");
+  if (!card || !pill) return;
 
-  const box = composer.getBoundingClientRect();
-  const gap = 10;
+  const composer = findComposer();
+  const gap = 8;
   const margin = 12;
+  const pillBox = pill.getBoundingClientRect();
 
   // The open panel is a hard right-hand boundary. The card outranks it in the
   // stacking order — deliberately, since nothing may cover a card whose Tab key
-  // is live — which means an overlap would hide the panel's own controls. It
-  // hid the Deep/Creative toggle and the left edge of Enhance Current Prompt.
-  // Ordering decides who wins a collision; this is what stops there being one.
+  // is live — which means an overlap would hide the panel's own controls.
   const panel = document.querySelector("#pm-panel.pm-open");
   const rightBound = panel
     ? Math.min(window.innerWidth - margin, panel.getBoundingClientRect().left - gap)
     : window.innerWidth - margin;
 
-  const width = Math.min(Math.max(box.width, 380), 620, Math.max(240, rightBound - margin));
-  let left = box.left + (box.width - width) / 2;
+  if (panel && rightBound < 280) { hideCard(); return; }
+
+  // Once the user moves or resizes the card, their layout wins. Keep every
+  // edge reachable after a window resize or after the library panel opens.
+  if (cardLayout?.detached) {
+    const { width, height, x: left, y: top } = clampCardLayout(cardLayout, window.innerWidth, window.innerHeight, rightBound);
+    card.classList.add("pm-card-free");
+    card.classList.remove("pm-card-below");
+    card.dataset.anchor = "free";
+    card.style.width = width + "px";
+    card.style.height = height + "px";
+    card.style.left = left + "px";
+    card.style.top = top + "px";
+    markScrollable(card.querySelector(".pm-card-text"));
+    return;
+  }
+
+  card.classList.remove("pm-card-free");
+  card.style.height = "";
+
+  // A sheet on the composer: as wide as the box (capped), right-aligned to
+  // it, so it reads as a suggestion growing out of the box it will land in.
+  // The first cut hung the card off the pill and then pushed it up to clear
+  // the composer, which left it 450px from the pill and aligned to nothing.
+  // With no composer on the page it hangs off the pill instead.
+  const box = composer ? composer.getBoundingClientRect() : null;
+  const onComposer = Boolean(box) && box.width >= 240 && box.top > margin + 120;
+  let width, left;
+  if (onComposer) {
+    width = Math.min(600, Math.max(280, Math.min(box.width, rightBound - 2 * margin)));
+    // Aligned to the composer's edge on the pill's side, so the two share an
+    // edge whichever way the pill is docked.
+    left = pillDock === "left" ? box.left : box.right - width;
+  } else {
+    width = Math.min(520, Math.max(300, rightBound - 2 * margin));
+    left = pillDock === "left" ? pillBox.left : pillBox.right - width;
+  }
+  width = Math.min(width, Math.max(1, rightBound - margin));
   left = Math.max(margin, Math.min(left, rightBound - width));
 
   card.style.width = width + "px";
   card.style.left = left + "px";
 
-  // Everything that is not the scrolling rewrite: stale bar, chip, footer.
-  // Measured rather than assumed, because the stale bar comes and goes.
+  // Everything that is not the scrolling rewrite: head, chip, footer.
+  // Measured rather than assumed, because the head's height varies with its
+  // text.
   const textEl = card.querySelector(".pm-card-text");
   // Not named `chrome`: this file reaches for the extension API global by that
   // name throughout, and shadowing it inside a function is a trap for the next
   // line added here.
   const frame = card.offsetHeight - (textEl ? textEl.clientHeight : 0);
 
-  const roomAbove = box.top - gap - margin;
-  const roomBelow = window.innerHeight - box.bottom - gap - margin;
+  const overlapsComposer = Boolean(box) && left < box.right && left + width > box.left;
 
-  // Above by preference; below when the card genuinely does not fit up top and
-  // there is more room down there.
-  const useAbove = card.offsetHeight <= roomAbove || roomAbove >= roomBelow;
-  const room = useAbove ? roomAbove : roomBelow;
+  // The pill yields to the card, never the other way round. The card is
+  // transient and belongs to the composer — the rewrite has to be read next
+  // to the box it is going into — while the pill's spot is a resting
+  // preference. An earlier cut pushed the card up above a pill that had been
+  // dragged high, which detached it from the composer and squeezed the text
+  // to its minimum. placePill() reads this to know when to step aside.
+  card.dataset.anchor = onComposer ? "composer" : "pill";
 
-  // Give the rewrite whatever is left over, rather than letting the card grow
-  // past the space it has. The old code clamped the card's TOP against the
-  // viewport instead, so a card too tall to fit below slid upwards over the
-  // composer — covering the very text it is a comment on, and doing it exactly
-  // when the stale bar made the card taller. MIN_TEXT stops a short window
-  // collapsing the rewrite to a sliver.
+  // Above the composer when sitting on it; otherwise above the pill when the
+  // pill is in the lower half of the window, below it when it has been
+  // dragged up high.
+  const useAbove = onComposer || pillBox.top + pillBox.height / 2 >= window.innerHeight / 2;
+
+  let room, top;
   const MIN_TEXT = 88;
-  card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
-
-  const height = card.offsetHeight || 160;
-  card.style.top = (useAbove ? Math.max(margin, box.top - gap - height) : box.bottom + gap) + "px";
+  if (useAbove) {
+    // The card's bottom edge: just above whatever it sits on, and never over
+    // the composer.
+    let floor = (onComposer ? box.top : pillBox.top) - gap;
+    if (overlapsComposer && box.top - gap < floor) floor = box.top - gap;
+    room = floor - margin;
+    // Give the rewrite whatever is left over, rather than letting the card grow
+    // past the space it has. Clamping the card's TOP against the viewport
+    // instead would walk it down over the composer exactly when the head made
+    // it taller. MIN_TEXT stops a short window collapsing the rewrite to a
+    // sliver.
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    top = Math.max(margin, floor - (card.offsetHeight || 160));
+  } else {
+    let ceiling = pillBox.bottom + gap;
+    let floor = window.innerHeight - margin;
+    if (overlapsComposer && box.top > ceiling) floor = box.top - gap;
+    room = floor - ceiling;
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    top = ceiling;
+  }
+  card.style.top = top + "px";
+  card.classList.toggle("pm-card-below", !useAbove);
 
   // The height budget just changed, so whether anything is still below the fold
   // changed with it.
@@ -1605,7 +2533,13 @@ function positionCard() {
 
 function openCard(innerHTML) {
   const card = getOrCreateCard();
-  card.innerHTML = innerHTML;
+  const focusedId = card.contains(document.activeElement) ? document.activeElement.id : null;
+  card._pmEndGesture?.();
+  card.innerHTML = innerHTML +
+    `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" title="Drag to resize, or click for layout controls"></button>`;
+  cardExpanded = true;
+  setupCardInteractions(card);
+  if (focusedId) card.querySelector(`[id="${focusedId}"]`)?.focus({ preventScroll: true });
   positionCard();
   requestAnimationFrame(() => card.classList.add("pm-card-visible"));
 
@@ -1617,23 +2551,64 @@ function openCard(innerHTML) {
   return card;
 }
 
-function closeCard() {
+/** Take the card off screen. The draft stays, in the pill. */
+function hideCard() {
   const card = document.getElementById("pm-card");
   if (card) {
+    // Minimize toward the pill rather than blink out: the pill is where the
+    // draft went, and the motion says so. The id is dropped at once so a
+    // re-open during the 160ms builds a fresh card instead of reviving this one.
+    card._pmEndGesture?.();
+    if (card.contains(document.activeElement)) document.getElementById("pm-trigger")?.focus({ preventScroll: true });
+    card.id = "";
+    card._pmResize?.disconnect();
+    const pill = document.getElementById("pm-trigger");
+    const up = pill && pill.getBoundingClientRect().top < card.getBoundingClientRect().top;
     card.classList.remove("pm-card-visible");
-    card.remove();
+    card.classList.add("pm-card-leaving", up ? "pm-card-leaving-up" : "pm-card-leaving-down");
+    setTimeout(() => card.remove(), 180);
   }
   if (cardReposition) {
     window.removeEventListener("resize", cardReposition, true);
     window.removeEventListener("scroll", cardReposition, true);
     cardReposition = null;
   }
+  cardExpanded = false;
+  cardMinimized = true;
+  draftStore.setExpanded(false);
+  renderPill();
+}
+
+/** Show the card again for a draft the pill is holding. */
+function expandCard() {
+  cardMinimized = false;
+  draftStore.setExpanded(true);
+  if (cardState === "ready" && cardResult) showDiffModal(cardResult);
+  else if (cardState === "error") failStreamingModal(cardError);
+  else if (cardState === "streaming") showStreamingCardAgain();
+}
+
+function toggleCard() {
+  if (cardExpanded) hideCard();
+  else expandCard();
+}
+
+/** Discard the draft entirely: card, pill and storage. */
+function closeCard() {
+  if (cardState === "streaming" && cancelActiveStream) cancelActiveStream();
+  cancelActiveStream = null;
+  hideCard();
   cardState = "idle";
   cardResult = null;
   cardShowingOriginal = false;
   cardBasedOn = "";
   cardHasBaseline = false;
   cardStale = false;
+  cardError = "";
+  cardMinimized = false;
+  pillStreamingPreview = "";
+  draftStore.clear();
+  renderPill();
 }
 
 function cardFoot(parts) {
@@ -1641,6 +2616,25 @@ function cardFoot(parts) {
 }
 
 const cardKey = (k) => `<span class="pm-card-key">${k}</span>`;
+
+/**
+ * The card's title bar: what this card is, and the one window control it has.
+ *
+ * Minimize, not close. The draft is never lost from here — it folds down into
+ * the pill and comes back with a click (or ⌘⇧P). Discard is a footer action,
+ * deliberately further from the corner the hand goes to when it wants a
+ * window out of the way. The bar also carries the stale and error notices, so
+ * the card has the same anatomy in every state: head, text, foot.
+ */
+function cardHead(title, kind = "") {
+  return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}" title="Drag to move">` +
+    `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-title">${title}</span>` +
+    `<button class="pm-card-layout-toggle" type="button" id="pm-card-layout-toggle" aria-expanded="false" aria-controls="pm-card-layout">Layout</button>` +
+    `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
+    `<button class="pm-card-min" type="button" id="pm-card-min" title="Minimize to the pill (esc)" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
+  `</div>`;
+}
 
 // ── Entry point 1: the flow is starting ──
 function showStreamingDiffModal(originalText) {
@@ -1650,19 +2644,32 @@ function showStreamingDiffModal(originalText) {
   cardStale = false;
   cardState = "streaming";
   cardShowingOriginal = false;
+  cardMinimized = false;
+  pillStreamingPreview = "";
+  showStreamingCardAgain();
+  renderPill();
+}
+
+/** The streaming card's markup, also used to re-open it from the pill. */
+function showStreamingCardAgain() {
   openCard(
+    cardHead("Rewriting\u2026", "live") +
     `<div class="pm-card-text" id="pm-stream-target"><span class="pm-card-cursor"></span></div>` +
     cardFoot([
       `<button class="pm-card-act" id="pm-card-cancel">${cardKey("esc")} cancel</button>`,
       `<span class="pm-card-spacer"></span>`,
-      `<span class="pm-card-meta">rewriting…</span>`,
+      `<span class="pm-card-meta">the pill keeps it if you minimize</span>`,
     ])
   );
+  if (pillStreamingPreview) updateStreamingText(pillStreamingPreview);
   document.getElementById("pm-card-cancel")?.addEventListener("click", closeCard);
+  document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
 }
 
 // ── Entry point 2: tokens arriving ──
 function updateStreamingText(text) {
+  pillStreamingPreview = text;
+  renderPill();
   const target = document.getElementById("pm-stream-target");
   if (!target) return;
   target.innerHTML = escHtml(text) + '<span class="pm-card-cursor"></span>';
@@ -1671,26 +2678,42 @@ function updateStreamingText(text) {
 
 // ── Entry point 3: finished ──
 function finalizeStreamingModal(result) {
+  // Cancelled — or replaced by something else — while the tokens were still
+  // arriving. The result is dropped; it is no longer the draft.
+  if (cardState !== "streaming") return;
   showDiffModal(result);
 }
 
 // ── Entry point 4: failed ──
 function failStreamingModal(message) {
+  // Only a stream in flight (or a re-opened error) can become an error card;
+  // a cancelled stream's late failure is nobody's business.
+  if (cardState !== "streaming" && cardState !== "error") return;
   cardState = "error";
+  cardError = message;
+  renderPill();
+  if (cardMinimized) return;
   openCard(
-    `<div class="pm-card-text pm-card-error">${escHtml(message)}</div>` +
+    cardHead("Couldn\u2019t rewrite", "error") +
+    `<div class="pm-card-text pm-card-error">${escHtml(message)}<span class="pm-card-error-note">Your text in the chat box is untouched.</span></div>` +
     cardFoot([
-      `<button class="pm-card-act" id="pm-card-retry">${cardKey(CMD_KEY + "\u21B5")} try again</button>`,
+      `<button class="pm-card-act pm-card-primary" id="pm-card-retry">${cardKey(CMD_KEY + "\u21B5")} try again</button>`,
       `<button class="pm-card-act" id="pm-card-dismiss">${cardKey("esc")} dismiss</button>`,
     ])
   );
   document.getElementById("pm-card-retry")?.addEventListener("click", () => { closeCard(); handleEnhance(); });
   document.getElementById("pm-card-dismiss")?.addEventListener("click", closeCard);
+  document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
 }
 
 /** The finished state. Named showDiffModal because several other flows
  *  (voice, re-enhance, feedback) already call it. */
 function showDiffModal(result) {
+  // A new draft from another entry point (voice, history) always shows
+  // itself. The streaming flow finishing is the SAME draft the user already
+  // minimized, and the \ toggle or a staleness flip re-renders the same
+  // result — all of those respect the minimize.
+  if (result !== cardResult && cardState !== "streaming") cardMinimized = false;
   cardResult = result;
   cardState = "ready";
   lastEnhanceResult = result;
@@ -1703,7 +2726,22 @@ function showDiffModal(result) {
 
   // Recomputed on every render, so a rewrite that was in flight while the user
   // edited arrives stale rather than appearing fresh and wrong.
-  cardStale = Boolean(cardBasedOn) && norm(getCurrentInputText()) !== cardBasedOn;
+  cardStale = isStaleAgainstComposer();
+
+  // Written through so the draft outlives this page. Cheap, and idempotent.
+  draftStore.save({
+    result,
+    basedOn: cardBasedOn,
+    createdAt: result.createdAt || Date.now(),
+    source: window.location.hostname,
+    expanded: !cardMinimized,
+  });
+  if (!result.createdAt) result.createdAt = Date.now();
+
+  // Minimized: the pill carries the state (green, Insert) and the card stays
+  // folded until asked for. Popping open over whatever the user moved on to
+  // is exactly what minimizing was meant to stop.
+  if (cardMinimized) { renderPill(); return; }
 
   const body = cardShowingOriginal
     ? `<div class="pm-card-text pm-card-original">${escHtml(result.original || cardOriginal)}</div>`
@@ -1715,11 +2753,11 @@ function showDiffModal(result) {
   // The wording follows the toggle. Under \, the body IS the earlier text, so
   // calling it "a rewrite for the earlier text" would be pointing at the wrong
   // thing — the user would look for a staleness that is not on screen.
-  const staleFlag = cardStale
-    ? `<div class="pm-card-stale-flag">\u26A0 ${cardShowingOriginal
-        ? "prompt changed \u2014 this is the text the rewrite was built from"
-        : "prompt changed \u2014 this rewrite is for the earlier text"}</div>`
-    : "";
+  const head = cardStale
+    ? cardHead(cardShowingOriginal
+        ? "Prompt changed \u2014 this is the text the rewrite was built from"
+        : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
+    : cardHead(cardShowingOriginal ? "Original" : "Rewrite");
 
   // Only shown when a saved prompt actually shaped the rewrite. The old footer
   // printed four zeros on every result, which teaches people to stop reading it.
@@ -1751,18 +2789,22 @@ function showDiffModal(result) {
   // ⌘S save while their key handlers below stayed live. A footer that stops
   // listing keys that still work is worse than one that never listed them, and
   // the reflow made the card visibly rebuild itself the moment you typed.
+  const acceptLabel = cardShowingOriginal ? "Use original" : norm(getCurrentInputText()) ? "Replace draft" : "Insert";
   const accept = cardStale
-    ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${cardKey("Tab")} accept</span>`
-    : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${cardKey("Tab")} accept</button>`;
+    ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${acceptLabel}</span>`
+    : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
   const actions = [
     accept,
     ...(cardStale
-      ? [`<button class="pm-card-act pm-card-primary pm-card-redo" id="pm-card-redo">${cardKey(CMD_KEY + "\u21B5")} redo</button>`]
+      ? [`<button class="pm-card-act pm-card-redo" id="pm-card-redo">${cardKey(CMD_KEY + "\u21B5")} redo</button>`]
       : []),
-    `<button class="pm-card-act pm-card-primary" id="pm-card-close">${cardKey("esc")} dismiss</button>`,
-    `<button class="pm-card-act pm-card-primary" id="pm-card-toggle">${cardKey("\\")} ${cardShowingOriginal ? "rewrite" : "original"}</button>`,
-    `<button class="pm-card-act pm-card-primary" id="pm-card-save">${cardKey(CMD_KEY + "S")} save</button>`,
+    // Hide, not dismiss: the draft goes back into the pill and can be brought
+    // up again — from this chat or the next one. Discard is its own action.
+    `<button class="pm-card-act" id="pm-card-close">${cardKey("esc")} minimize</button>`,
+    `<button class="pm-card-act" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
+    `<button class="pm-card-act" id="pm-card-save">${cardKey(CMD_KEY + "S")} save</button>`,
+    `<button class="pm-card-act pm-card-discard" id="pm-card-discard">discard</button>`,
     `<span class="pm-card-spacer"></span>`,
     truncatedNote,
   ];
@@ -1778,7 +2820,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(staleFlag + body + chip + cardFoot(actions));
+  const card = openCard(head + body + chip + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -1789,13 +2831,16 @@ function showDiffModal(result) {
   markScrollable(textEl);
 
   document.getElementById("pm-card-accept")?.addEventListener("click", acceptCard);
-  document.getElementById("pm-card-close")?.addEventListener("click", closeCard);
+  document.getElementById("pm-card-close")?.addEventListener("click", hideCard);
+  document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
+  document.getElementById("pm-card-discard")?.addEventListener("click", closeCard);
   document.getElementById("pm-card-redo")?.addEventListener("click", redoCard);
   document.getElementById("pm-card-toggle")?.addEventListener("click", () => {
     cardShowingOriginal = !cardShowingOriginal;
     showDiffModal(cardResult);
   });
   document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
+  renderPill();
 }
 
 /**
@@ -1819,10 +2864,15 @@ function redoCard() {
  */
 function refreshCardStaleness() {
   if (cardState !== "ready" || !cardResult) return;
-  const stale = Boolean(cardBasedOn) && norm(getCurrentInputText()) !== cardBasedOn;
+  const stale = isStaleAgainstComposer();
+  // The pill's Insert/Apply wording tracks whether the box is empty, which
+  // can change without the stale flag changing. renderPill() is a no-op
+  // unless something it shows actually differs.
+  renderPill();
   if (stale === cardStale) return;
   cardStale = stale;
-  showDiffModal(cardResult);
+  if (cardExpanded) showDiffModal(cardResult);
+  else renderPill();
 }
 
 // The whole mechanism. Listening for edits anywhere is fine because
@@ -1832,15 +2882,16 @@ document.addEventListener("input", refreshCardStaleness, true);
 /** Write the rewrite into the composer. */
 async function acceptCard() {
   if (cardState !== "ready" || !cardResult) return;
-  if (cardStale) {
+  if (cardStale || isStaleAgainstComposer()) {
     // The dangerous action. Accepting here would replace what the user just
     // typed with a rewrite of text that no longer exists — and it would report
     // success, correctly, because the write really did land. Their work is what
     // would be destroyed.
-    showToast("The prompt changed — press ⌘↵ to redo it first.", "error");
+    showToast("The prompt changed — choose Redo before replacing it.", "error");
     return;
   }
-  const text = cardShowingOriginal ? (cardResult.original || cardOriginal) : cardResult.enhanced;
+  const applyingEnhanced = !cardShowingOriginal;
+  const text = applyingEnhanced ? cardResult.enhanced : (cardResult.original || cardOriginal);
   const result = cardResult;
   closeCard();
 
@@ -1849,8 +2900,14 @@ async function acceptCard() {
   // is actually something to rate. Without a log_id the rating cannot be sent
   // anywhere, and asking anyway spends the user's attention on nothing.
   const canRate = Boolean(result.log_id);
-  const applied = await applyOrFallback(text, canRate ? null : "Applied");
-  if (applied && canRate) showFeedbackToast(result);
+  const applied = await applyOrFallback(text, null);
+  // The pill says "Inserted" and, when there is a log_id to rate against,
+  // asks how it was — in the object the user was already looking at, rather
+  // than a toast beside a pill that had just collapsed.
+  if (applied) showApplied(canRate ? result : null);
+  if (applied && applyingEnhanced && result.log_id) {
+    await approveEnhancement(result.log_id);
+  }
 }
 
 async function saveCard() {
@@ -1866,8 +2923,7 @@ async function saveCard() {
 }
 
 // ── Keymap ──
-// Only active while the card is open, so Tab keeps its normal meaning
-// everywhere else on the page.
+// Card shortcuts respect focus; Tab always keeps its navigation behavior.
 /**
  * A modal or the voice overlay is up.
  *
@@ -1883,45 +2939,42 @@ function overlayHasInput() {
   );
 }
 
-document.addEventListener("keydown", (e) => {
+// Tab is always navigation. Other shortcuts only apply while focus belongs
+// to the composer, pill, or card; ordinary typing never invokes card actions.
+function handleCardKeydown(e) {
+  if (e.key === "Tab" || e.isComposing || e.defaultPrevented) return;
   if (e.key === "Escape" && document.querySelector(".pm-voice-overlay.pm-visible")) {
-    e.preventDefault();
-    e.stopPropagation();
-    cancelVoice();
+    e.preventDefault(); e.stopPropagation(); cancelVoice(); return;
+  }
+  if (cardState === "idle" || overlayHasInput()) return;
+  const card = document.getElementById("pm-card");
+  const active = document.activeElement;
+  const inCard = Boolean(card && active && card.contains(active));
+  const pill = document.getElementById("pm-trigger");
+  const inPill = Boolean(pill && active && pill.contains(active));
+  if (!inCard && !inPill && !composerHasFocus()) return;
+  const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyP";
+  if (chord) {
+    e.preventDefault(); e.stopPropagation();
+    if (card) hideCard(); else expandCard();
     return;
   }
-  if (cardState === "idle") return;
-  const card = document.getElementById("pm-card");
   if (!card) return;
-  if (overlayHasInput()) return;
-
-  if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeCard(); return; }
-  if (cardState !== "ready") return;
-
-  // Redo, while the card is open. Scoped to the card's lifetime so the chord
-  // keeps its normal meaning on the host page the rest of the time.
+  if (e.key === "Escape") {
+    e.preventDefault(); e.stopPropagation();
+    if (cardState === "ready") hideCard(); else closeCard();
+    return;
+  }
+  // Save/redo belong to the review controls, not the host's editor.
+  if (!inCard || cardState !== "ready") return;
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
   }
-
-  if (e.key === "Tab") {
-    e.preventDefault(); e.stopPropagation();
-    // Tab means accept, always. When there is nothing safe to accept it does
-    // nothing and says why — a key that sometimes accepts and sometimes spends
-    // quota is a key you stop trusting.
-    acceptCard();
-    return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
+    e.preventDefault(); e.stopPropagation(); saveCard();
   }
-  if (e.key === "\\") {
-    e.preventDefault(); e.stopPropagation();
-    cardShowingOriginal = !cardShowingOriginal;
-    showDiffModal(cardResult);
-    return;
-  }
-  if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) {
-    e.preventDefault(); e.stopPropagation(); saveCard(); return;
-  }
-}, true);
+}
+document.addEventListener("keydown", handleCardKeydown, true);
 
 function showSetupRequiredModal() {
   const overlay = getOrCreateModalOverlay();
@@ -1936,13 +2989,12 @@ function showSetupRequiredModal() {
       <p class="pm-setup-intro">Prompt Memory needs an AI model to rewrite your prompts. Pick either option — both are free.</p>
 
       <div class="pm-setup-option pm-setup-option-primary">
-        <div class="pm-setup-badge">Recommended · no account needed</div>
+        <div class="pm-setup-badge">Recommended · no Prompt Memory sign-in</div>
         <div class="pm-setup-title">Use your own free Groq key</div>
         <div class="pm-setup-desc">
-          Takes about a minute. Free, no credit card, and it gives you
-          <strong>1,000 enhancements a day</strong> instead of the 15 we can
-          share. Your prompts go straight from your browser to Groq — they never
-          touch our server.
+          Takes about a minute. Your prompts go straight from your browser to
+          your chosen provider and never touch our server. Your usage allowance
+          depends on that provider, model, and account.
         </div>
         <button class="pm-btn pm-btn-primary" id="pm-setup-byok">Add my key</button>
       </div>
@@ -2055,7 +3107,7 @@ function getOrCreateToastStack() {
   // Toasts never carried a theme at all — they read :root, so they rendered
   // dark for everyone regardless of the setting. Read on every show rather than
   // once at creation, so a mid-session theme change is picked up.
-  chrome.storage.local.get("pm_theme", (r) =>
+  storageGet("pm_theme", (r) =>
     stack.setAttribute("data-pm-theme", r.pm_theme || "dark")
   );
   return stack;
@@ -2106,54 +3158,8 @@ function dismissToast(toast) {
   }, 250);
 }
 
-/**
- * The rewrite landed, and how was it?
- *
- * One toast for one event. This used to be the second of two: applyOrFallback
- * raised "Applied" and this covered it a frame later, so the answer to "did
- * that work?" was never actually visible. The confirmation is now the first
- * thing in this toast, and the rating is the favour asked afterwards.
- */
-function showFeedbackToast(result) {
-  document.getElementById("pm-feedback-toast")?.remove();
-
-  const stack = getOrCreateToastStack();
-  const toast = document.createElement("div");
-  toast.id = "pm-feedback-toast";
-  toast.className = "pm-feedback-toast";
-  toast.innerHTML = `
-    <span class="pm-fb-done">\u2713 Applied</span>
-    <span class="pm-fb-sep"></span>
-    <span class="pm-fb-ask">How was it?</span>
-    <button class="pm-fb-btn pm-fb-up" title="Good" aria-label="Good">\u{1F44D}</button>
-    <button class="pm-fb-btn pm-fb-down" title="Bad" aria-label="Bad">\u{1F44E}</button>
-    <button class="pm-fb-close" title="Dismiss" aria-label="Dismiss">\u00D7</button>
-  `;
-
-  stack.appendChild(toast);
-  positionToasts();
-  requestAnimationFrame(() => {
-    toast.classList.add("pm-toast-visible");
-    positionToasts();
-  });
-
-  const autoDismiss = setTimeout(() => dismissToast(toast), 8000);
-
-  const answer = (rating, reply) => {
-    clearTimeout(autoDismiss);
-    sendFeedback(result.log_id, rating, result.original, result.enhanced);
-    toast.innerHTML = `<span class="pm-fb-done">${reply}</span>`;
-    positionToasts();
-    setTimeout(() => dismissToast(toast), 1400);
-  };
-
-  toast.querySelector(".pm-fb-up").addEventListener("click", () => answer("up", "Thanks \u{1F3AF}"));
-  toast.querySelector(".pm-fb-down").addEventListener("click", () => answer("down", "Got it \u2014 we'll improve."));
-  toast.querySelector(".pm-fb-close").addEventListener("click", () => {
-    clearTimeout(autoDismiss);
-    dismissToast(toast);
-  });
-}
+// The rating question after an accepted rewrite lives in the pill: see
+// showApplied() / ratePill().
 
 function showToast(message, type = "info") {
   document.getElementById("pm-toast")?.remove();
@@ -2272,6 +3278,55 @@ function showModal(title, body, buttons = []) {
   });
 
   overlay.classList.add("pm-visible");
+}
+
+let consentRequest = null;
+async function ensureDataConsent() {
+  if (dataConsent) return true;
+  const stored = await new Promise((resolve) =>
+    storageGet("pm_data_consent_v1", (result) => resolve(result.pm_data_consent_v1 === true))
+  );
+  if (stored) { dataConsent = true; return true; }
+  if (consentRequest) return consentRequest;
+
+  consentRequest = new Promise((resolve) => {
+    const overlay = getOrCreateModalOverlay();
+    const modal = overlay.querySelector(".pm-modal");
+    modal.innerHTML = `
+      <div class="pm-modal-header"><span class="pm-modal-title">How Prompt Memory handles your data</span></div>
+      <div class="pm-modal-body pm-consent-body">
+        <p><strong>Only when you ask:</strong> Enhance sends your draft to an AI provider. When signed in, our server also receives it, saves the draft and rewrite in History, and includes up to six recent chat messages for context by default. You can switch that context off in Settings.</p>
+        <p><strong>Your own key:</strong> Without sign-in, the draft goes directly from your browser to the provider. If you also sign in, the key is forwarded through our server for each enhancement request so memory features can work.</p>
+        <p><strong>Other choices:</strong> Sign-in shares your Google email with us. Voice sends audio to our server and Groq when you record. Prompt Tracking logs submitted prompts only if you turn it on.</p>
+        <a href="https://github.com/siddhm11/prompt_engineering_skeleton/blob/main/website/privacy.html" target="_blank" rel="noreferrer">Read the full privacy policy</a>
+      </div>
+      <div class="pm-modal-footer">
+        <button class="pm-btn pm-btn-secondary" id="pm-consent-cancel">Not now</button>
+        <button class="pm-btn pm-btn-primary" id="pm-consent-accept">Agree &amp; continue</button>
+      </div>`;
+
+    const finish = (accepted) => {
+      overlay.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onEscape, true);
+      closeModal();
+      resolve(accepted);
+    };
+    const onBackdrop = (event) => { if (event.target === overlay) finish(false); };
+    const onEscape = (event) => { if (event.key === "Escape") finish(false); };
+    overlay.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onEscape, true);
+    modal.querySelector("#pm-consent-cancel").addEventListener("click", () => finish(false));
+    modal.querySelector("#pm-consent-accept").addEventListener("click", () => {
+      storageSet({ pm_data_consent_v1: true }, (saved) => {
+        if (!saved) { finish(false); return; }
+        dataConsent = true;
+        finish(true);
+      });
+    });
+    overlay.classList.add("pm-visible");
+    modal.querySelector("#pm-consent-accept").focus();
+  }).finally(() => { consentRequest = null; });
+  return consentRequest;
 }
 
 function getOrCreateModalOverlay() {
@@ -2576,6 +3631,7 @@ function setupPassiveTracking() {
   let lastText = "";
 
   document.addEventListener("input", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const el = e.target;
     if (
@@ -2587,6 +3643,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("keydown", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     if (e.key === "Enter" && !e.shiftKey && lastText.trim().length > 5) {
       trackPrompt(lastText);
@@ -2595,6 +3652,7 @@ function setupPassiveTracking() {
   }, true);
 
   document.addEventListener("click", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const btn = e.target.closest("button");
     if (
@@ -2675,12 +3733,14 @@ async function getVoiceAuthToken() {
 }
 
 function toggleVoice() {
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   if (voiceState === "recording") return stopVoice();
   if (voiceState === "idle") return startVoice();
   if (voiceState === "reviewing") return cancelVoice();
 }
 
 async function startVoice() {
+  if (!(await ensureDataConsent())) return;
   if (voiceState !== "idle") return;
   const token = await getVoiceAuthToken();
   if (!token) return;
@@ -3002,7 +4062,7 @@ function updateVoiceUI(recording) {
   if (btn) {
     btn.classList.toggle("pm-recording", recording);
     btn.innerHTML = recording ? "⏹" : "🎤";
-    btn.title = recording ? "Stop recording" : "Voice to Prompt (Ctrl+Shift+V)";
+    btn.title = recording ? "Stop recording" : "Voice to Prompt";
   }
 }
 
@@ -3055,16 +4115,23 @@ function applyTheme(theme) {
 
 async function init() {
   const auth = await getAuth();
+  // The extension may have been reloaded while getAuth awaited storage. Do
+  // not build a second UI or register listeners from this dead script.
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   if (!auth) {
     console.log("Prompt Memory: not logged in, panel will prompt login.");
-  } else if (tokenExpiresWithinDays(auth.token, 2) && !isTokenExpired(auth.token)) {
+  } else if (dataConsent && tokenExpiresWithinDays(auth.token, 2) && !isTokenExpired(auth.token)) {
     tryRefreshToken(auth);
   }
 
+  await restoreCardLayout();
+  if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   createTrigger();
   createPanel();
   setupKeyboardShortcut();
   setupPassiveTracking();
+  watchNavigation();
+  restoreDraft();
 }
 
 if (document.readyState === "loading") {

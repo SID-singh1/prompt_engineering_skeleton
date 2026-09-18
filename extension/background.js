@@ -10,11 +10,10 @@
 //    platforms where Chrome won the race. The handler below closes that gap by
 //    forwarding the command to the active tab.
 //
-// 2. API KEY CUSTODY. The user's own provider key lives here and only here.
-//    The content script runs in an isolated world on chatgpt.com, claude.ai and
-//    other third-party origins; that is the wrong place for a credential. The
-//    content script asks this worker to perform an enhancement and receives
-//    only text back — it never learns the key.
+// 2. API KEY CUSTODY. Direct BYOK calls are made here, so the chat page never
+//    sees the key. For a signed-in request with memory, the content script
+//    temporarily receives it in its isolated world and forwards it to our
+//    backend for that request; it is never inserted into the page DOM.
 
 import {
   PROVIDERS,
@@ -26,6 +25,23 @@ import {
 } from "./lib/providers.js";
 
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";
+
+// ─────────────────────────────────────────────────────────────
+// DRAFT STORAGE ACCESS
+// ─────────────────────────────────────────────────────────────
+//
+// The content script keeps the current draft (the enhanced prompt waiting in
+// the pill) in chrome.storage.session, so it survives chat navigation and
+// reloads but not the browser closing. Session storage is off-limits to
+// content scripts unless the worker opens it; without this line every
+// session.get() in the page rejects and the draft store silently falls back
+// to local storage. Nothing sensitive goes in there — no keys, no tokens —
+// so widening access to the page's isolated world is fine.
+try {
+  chrome.storage.session?.setAccessLevel?.({ accessLevel: "TRUSTED_AND_UNTRUSTED_CONTEXTS" });
+} catch (e) {
+  console.warn("Prompt Memory: could not open session storage to content scripts", e);
+}
 
 // ─────────────────────────────────────────────────────────────
 // SHORTCUTS
@@ -50,13 +66,13 @@ async function getSettings() {
   // Google account to every signed-in browser, which is not somewhere an API
   // key should silently travel.
   const s = await chrome.storage.local.get([
-    "byok_provider", "byok_key", "byok_model", "api_url", "token", "user_id",
+    "byok_provider", "byok_key", "byok_model", "token", "user_id",
   ]);
   return {
     provider: s.byok_provider || DEFAULT_PROVIDER,
     key: s.byok_key || "",
     model: s.byok_model || DEFAULT_MODEL,
-    apiUrl: s.api_url || DEFAULT_API_URL,
+    apiUrl: DEFAULT_API_URL,
     token: s.token || "",
     userId: s.user_id || "",
   };
@@ -429,10 +445,14 @@ async function activateExistingTabs() {
 }
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
+  const privacy = await chrome.storage.local.get(["pm_data_consent_v1", "pm_tracking"]);
+  if (privacy.pm_data_consent_v1 !== true && privacy.pm_tracking === true) {
+    await chrome.storage.local.set({ pm_tracking: false });
+  }
   if (reason === "update") {
-    // An update orphans the content script in every open tab: the old script
-    // keeps running against a worker that no longer exists.
-    await activateExistingTabs();
+    // Do not inject another copy into a tab that already has the old one.
+    // The old isolated world cannot be revived, and two copies race to own
+    // the same UI. The tab's next page load gets the current manifest script.
     return;
   }
   if (reason !== "install") return;

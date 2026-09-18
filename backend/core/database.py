@@ -36,6 +36,10 @@ class MongoDB:
             # Indexes
             cls.users_col.create_index("user_id", unique=True)
             cls.prompts_col.create_index([("user_id", 1), ("timestamp", -1)])
+            # Acceptance resolves an opaque log ID inside one user's history.
+            # Keep this non-unique for compatibility with older log documents
+            # that have no log_id at all.
+            cls.prompts_col.create_index([("user_id", 1), ("log_id", 1)])
             # The private dashboard queries all users inside a time window, so
             # the existing user_id-first index cannot serve it efficiently.
             cls.prompts_col.create_index([("timestamp", -1)])

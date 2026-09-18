@@ -21,6 +21,7 @@ from ..core.logger import logger
 # Any fixed UUID works; this one must never change, or every existing point
 # becomes unreachable by id again.
 _POINT_NS = uuid.UUID("6f9619ff-8b86-d011-b42d-00c04fc964ff")
+_PASSIVE_POINT_NS = uuid.UUID("737a39ef-6e2f-4d97-9c6b-68900f2638e9")
 
 
 def point_id_for(mongo_id: str) -> str:
@@ -109,7 +110,8 @@ class MemoryService:
                         FieldCondition(
                             key="user_id",
                             match=MatchValue(value=user_id)
-                        )
+                        ),
+                        FieldCondition(key="approved", match=MatchValue(value=True)),
                     ]
                 ),
                 limit=limit
@@ -126,7 +128,7 @@ class MemoryService:
                 max_score = hit.score
 
             payload = hit.payload
-            if hit.score > 0.45:
+            if hit.score >= settings.PASSIVE_CONTEXT_MIN_SCORE:
                 context_str += f"- Past Prompt: \"{payload.get('original_prompt')}\"\n"
                 context_str += f"- Refined Version: \"{payload.get('refined_prompt')}\"\n\n"
                 
@@ -153,7 +155,8 @@ class MemoryService:
                 query=query_vector,
                 query_filter=Filter(
                     must=[
-                        FieldCondition(key="user_id", match=MatchValue(value=user_id))
+                        FieldCondition(key="user_id", match=MatchValue(value=user_id)),
+                        FieldCondition(key="approved", match=MatchValue(value=True)),
                     ]
                 ),
                 limit=limit
@@ -165,7 +168,7 @@ class MemoryService:
 
         matched = []
         for hit in results:
-            if hit.score < 0.50:
+            if hit.score < settings.PASSIVE_CONTEXT_MIN_SCORE:
                 continue
             matched.append({
                 "original": hit.payload.get("original_prompt", ""),
@@ -202,6 +205,7 @@ class MemoryService:
     def log_prompt(user_id: str, original: str, enhanced: str = None, score: float = 0.0, latency: float = 0.0, source: str = "active", mode: str = "deep", platform: str = None, provider: str = None, model: str = None, byok: bool = False, input_method: str = "text", input_duration_seconds: float = None):
         """Logs prompt to Mongo or Memory."""
         log_entry = {
+            "log_id": uuid.uuid4().hex,
             "user_id": user_id,
             "timestamp": datetime.now(),
             "original": redact_secrets(original),
@@ -232,21 +236,20 @@ class MemoryService:
         if source == "active" and enhanced:
             usage.record(user_id)
 
-        log_id = "memory-only"
         if MongoDB.prompts_col is not None:
             try:
-                res = MongoDB.prompts_col.insert_one(log_entry)
-                log_id = str(res.inserted_id)
+                MongoDB.prompts_col.insert_one(log_entry)
             except Exception as e:
                 # Was a bare `except: pass`, which also swallowed
                 # KeyboardInterrupt and SystemExit and left no trace anywhere —
                 # the endpoint still returned 200 with an incremented usage
                 # count, so a dead database looked exactly like a healthy one.
                 logger.warning(f"⚠️ Prompt log write failed: {e}")
+                in_memory_prompt_logs.append(log_entry)
         else:
             in_memory_prompt_logs.append(log_entry)
 
-        return log_id
+        return log_entry["log_id"]
 
     @staticmethod
     def get_enhance_history(user_id: str, limit: int = 20) -> List[dict]:
@@ -262,6 +265,7 @@ class MemoryService:
                 for doc in cursor:
                     history.append({
                         "id": str(doc["_id"]),
+                        "log_id": doc.get("log_id"),
                         "original": doc.get("original", ""),
                         "enhanced": doc.get("enhanced", ""),
                         "mode": doc.get("mode", "deep"),
@@ -271,28 +275,35 @@ class MemoryService:
                     })
             except Exception as e:
                 logger.warning(f"⚠️ Error fetching enhance history: {e}")
-        else:
-            user_logs = [
-                log for log in in_memory_prompt_logs
-                if log.get("user_id") == user_id and log.get("source") == "active" and log.get("enhanced")
-            ]
-            for log in user_logs[-limit:]:
-                history.append({
-                    "id": "memory",
-                    "original": log.get("original", ""),
-                    "enhanced": log.get("enhanced", ""),
-                    "mode": log.get("mode", "deep"),
-                    "latency": log.get("latency", 0),
-                    "score": log.get("score", 0),
-                    "timestamp": log.get("timestamp").isoformat() if isinstance(log.get("timestamp"), datetime) else None,
-                })
-            history.reverse()
+        # Mongo can be configured but a particular insert may have failed and
+        # fallen back to process memory. Keep those recent entries visible so
+        # History → Use can retry approval after a transient vector failure.
+        seen = {item.get("log_id") for item in history}
+        user_logs = [
+            log for log in in_memory_prompt_logs
+            if log.get("user_id") == user_id and log.get("source") == "active"
+            and log.get("enhanced") and log.get("log_id") not in seen
+        ]
+        for log in user_logs[-limit:]:
+            history.append({
+                "id": "memory",
+                "log_id": log.get("log_id"),
+                "original": log.get("original", ""),
+                "enhanced": log.get("enhanced", ""),
+                "mode": log.get("mode", "deep"),
+                "latency": log.get("latency", 0),
+                "score": log.get("score", 0),
+                "timestamp": log.get("timestamp").isoformat() if isinstance(log.get("timestamp"), datetime) else None,
+            })
 
-        return history
+        history.sort(key=lambda item: item.get("timestamp") or "", reverse=True)
+        return history[:limit]
 
     @staticmethod
-    def memorize_strategy(user_id: str, original: str, refined: str):
-        """Saves high-quality prompts to passive tracking Vector DB."""
+    def memorize_strategy(user_id: str, original: str, refined: str, *, approval_id: str = None) -> bool:
+        """Write only an approved rewrite, idempotently, to passive memory."""
+        if not approval_id or not original.strip() or not refined.strip() or original == refined:
+            return False
         original = redact_secrets(original)
         refined = redact_secrets(refined)
         try:
@@ -300,8 +311,8 @@ class MemoryService:
             if vec:
                 q_client = QdrantDB.get_client()
                 if q_client:
-                    # Use UUID-based point ID to prevent collisions
-                    point_id = uuid.uuid4().int % (2**63)
+                    # Retries must overwrite the same point, never duplicate it.
+                    point_id = str(uuid.uuid5(_PASSIVE_POINT_NS, f"{user_id}:{approval_id}"))
                     q_client.upsert(
                         collection_name=settings.COLLECTION_NAME,
                         points=[PointStruct(
@@ -310,13 +321,87 @@ class MemoryService:
                             payload={
                                 "user_id": user_id, 
                                 "original_prompt": original, 
-                                "refined_prompt": refined
+                                "refined_prompt": refined,
+                                "approved": True,
+                                "approval_id": approval_id,
                             }
                         )]
                     )
                     logger.info("💾 New strategy memorized.")
+                    return True
         except Exception as e:
             logger.error(f"❌ Memorization failed: {e}")
+        return False
+
+    @staticmethod
+    def approve_enhancement(user_id: str, log_id: str) -> Optional[dict]:
+        """Approve a server-owned enhancement after successful composer apply.
+
+        The client sends only an opaque log ID; it cannot supply memory text or
+        approve another user's log. A retry reuses the same Qdrant point ID.
+        """
+        if not log_id or len(log_id) > 64:
+            return None
+
+        doc = None
+        persistent = False
+        if MongoDB.prompts_col is not None:
+            try:
+                doc = MongoDB.prompts_col.find_one({
+                    "user_id": user_id, "log_id": log_id, "source": "active",
+                })
+                persistent = doc is not None
+            except Exception as exc:
+                logger.warning(f"⚠️ Approval log lookup failed: {exc}")
+        if doc is None:
+            doc = next((item for item in in_memory_prompt_logs
+                        if item.get("user_id") == user_id
+                        and item.get("log_id") == log_id
+                        and item.get("source") == "active"), None)
+        if doc is None or not doc.get("original") or not doc.get("enhanced"):
+            return None
+
+        # A Mongo write may have fallen back to process memory. Never create a
+        # durable vector whose approval record disappears on restart. Restore
+        # the log first, or fail closed while the configured store is down.
+        if not persistent and (MongoDB.prompts_col is not None or settings.MONGO_URI):
+            if MongoDB.prompts_col is None:
+                return {"status": "unavailable", "memory_saved": False}
+            try:
+                MongoDB.prompts_col.insert_one(doc)
+                persistent = True
+            except Exception as exc:
+                logger.warning(f"⚠️ Approval log recovery failed: {exc}")
+                return {"status": "unavailable", "memory_saved": False}
+
+        def record(fields: dict) -> bool:
+            if persistent:
+                try:
+                    MongoDB.prompts_col.update_one(
+                        {"user_id": user_id, "log_id": log_id, "source": "active"},
+                        {"$set": fields},
+                    )
+                except Exception as exc:
+                    logger.warning(f"⚠️ Approval state write failed: {exc}")
+                    return False
+            doc.update(fields)
+            return True
+
+        if not doc.get("accepted_at") and not record({"accepted_at": datetime.now()}):
+            return {"status": "unavailable", "memory_saved": False}
+        if doc.get("memory_saved"):
+            return {"status": "accepted", "memory_saved": True}
+
+        # An already-near-duplicate or unchanged rewrite is accepted, but it
+        # does not need a new passive memory point.
+        if float(doc.get("score") or 0.0) >= 0.90 or doc["original"] == doc["enhanced"]:
+            return {"status": "accepted", "memory_saved": False}
+        saved = MemoryService.memorize_strategy(
+            user_id, doc["original"], doc["enhanced"], approval_id=log_id,
+        )
+        if saved:
+            record({"memory_saved": True})
+        return {"status": "accepted", "memory_saved": saved}
 
     # =========================================================================
     # SAVED PROMPTS (searches the saved_prompt_vectors collection)
@@ -361,7 +446,7 @@ class MemoryService:
             mongo_id = hit.payload.get("mongo_id", "")
             if mongo_id in exclude_set:
                 continue
-            if hit.score < 0.40:
+            if hit.score < settings.SAVED_CONTEXT_MIN_SCORE:
                 continue
             matched.append({
                 "mongo_id": mongo_id,
@@ -459,7 +544,7 @@ class MemoryService:
             ]))
             for collection in (settings.COLLECTION_NAME, QdrantDB.SAVED_COLLECTION):
                 try:
-                    q_client.delete(collection_name=collection, points_selector=selector)
+                    q_client.delete(collection_name=collection, points_selector=selector, wait=True)
                     removed[collection] = "deleted"
                 except Exception as e:
                     removed[collection] = f"failed: {e}"

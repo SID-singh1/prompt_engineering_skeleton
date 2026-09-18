@@ -23,7 +23,7 @@ from backend.core.database import (
     in_memory_analytics_events, in_memory_prompt_logs, in_memory_saved_prompts,
     in_memory_users,
 )
-from backend.routers import prompts
+from backend.routers import prompts, users
 
 
 @pytest.fixture
@@ -84,6 +84,7 @@ def test_normal_body_is_not_refused(client):
     ("/enhance/stream", "post"),
     ("/enhance/usage", "get"),
     ("/enhance/history", "get"),
+    ("/enhance/accept", "post"),
     ("/saved-prompts", "get"),
     ("/track", "post"),
     ("/users/me", "delete"),
@@ -233,6 +234,9 @@ def test_usage_endpoint_agrees_with_what_enhance_enforces(client, auth, monkeypa
 def test_account_deletion_removes_the_users_prompt_history(client, auth, monkeypatch):
     _stub_llm(monkeypatch)
     monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
 
     client.post("/enhance", json={"prompt": "something personal"}, headers=auth)
     assert client.get("/enhance/history", headers=auth).json()["history"]
@@ -246,6 +250,9 @@ def test_account_deletion_removes_the_users_prompt_history(client, auth, monkeyp
 def test_deletion_does_not_touch_another_user(client, monkeypatch):
     _stub_llm(monkeypatch)
     monkeypatch.setitem(settings.TIER_LIMITS, "free", 100)
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
 
     a = {"Authorization": f"Bearer {create_jwt_token('keep-me', 'k@x.com')}"}
     b = {"Authorization": f"Bearer {create_jwt_token('delete-me', 'd@x.com')}"}
@@ -256,6 +263,51 @@ def test_deletion_does_not_touch_another_user(client, monkeypatch):
 
     assert client.get("/enhance/history", headers=a).json()["history"], "wrong user's data was deleted"
     assert client.get("/enhance/history", headers=b).json()["history"] == []
+
+
+def test_deletion_with_synthetic_email_clears_account_and_analytics(client, monkeypatch):
+    """Exercise the real HTTP route without sending mail or touching a real user."""
+    from backend.core.database import in_memory_analytics_events
+
+    user_id = "synthetic-delete-user"
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    email = "privacy-test@example.test"
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, email)}"}
+    in_memory_users[user_id] = {"user_id": user_id, "email": email}
+    in_memory_analytics_events.append({"user_id": user_id, "event": "test"})
+    in_memory_analytics_events.append({"user_id": "another-user", "event": "keep"})
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {
+        settings.COLLECTION_NAME: "deleted", "saved_prompt_vectors": "deleted"})
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 200
+    assert user_id not in in_memory_users
+    assert [item["user_id"] for item in in_memory_analytics_events] == ["another-user"]
+
+
+def test_deletion_reports_vector_failure_and_keeps_account_for_retry(client, monkeypatch):
+    user_id = "synthetic-retry-user"
+    monkeypatch.setattr(settings, "MONGO_URI", None)
+    in_memory_users[user_id] = {"user_id": user_id, "email": "retry@example.test"}
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, 'retry@example.test')}"}
+    monkeypatch.setattr(users.MemoryService, "purge_user_vectors", lambda _: {"qdrant": "unavailable"})
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 503
+    assert user_id in in_memory_users
+    assert "vectors" in response.json()["detail"]["failed_stores"]
+
+
+def test_deletion_refuses_success_when_configured_mongo_is_offline(client, monkeypatch):
+    user_id = "offline-mongo-user"
+    in_memory_users[user_id] = {"user_id": user_id, "email": "offline@example.test"}
+    headers = {"Authorization": f"Bearer {create_jwt_token(user_id, 'offline@example.test')}"}
+    monkeypatch.setattr(settings, "MONGO_URI", "mongodb://synthetic-offline")
+    monkeypatch.setattr(users.MongoDB, "db", None)
+
+    response = client.delete("/users/me", headers=headers)
+    assert response.status_code == 503
+    assert user_id in in_memory_users
 
 
 # ── body size caps ────────────────────────────────────────────────────────
@@ -306,6 +358,16 @@ class _FakeWhisperTranscriptions:
 class _FakeWhisperClient:
     def __init__(self, result):
         self.audio = type("Audio", (), {"transcriptions": _FakeWhisperTranscriptions(result)})()
+
+
+def test_voice_transcription_normalises_whisper_language_names_to_codes():
+    # Groq's verbose_json reports "English"/"Hindi"/"Urdu", not ISO codes.
+    # Before this was handled every real transcript came back "unknown".
+    assert prompts._transcription_parts({"text": "hello there", "language": "English"}) == ("hello there", "en")
+    assert prompts._transcription_parts({"text": "namaste", "language": "Hindi"}) == ("namaste", "hi")
+    assert prompts._transcription_parts({"text": "namaste", "language": "Urdu"}) == ("namaste", "hi")
+    assert prompts._transcription_parts({"text": "hola", "language": "es"}) == ("hola", "es")
+    assert prompts._transcription_parts({"text": "x", "language": "Klingon"}) == ("x", "unknown")
 
 
 def test_voice_transcription_returns_an_editable_transcript_without_storing_audio_or_text(client, auth, monkeypatch):
@@ -450,3 +512,62 @@ def test_both_enhance_endpoints_return_the_same_context_shape(client, auth, monk
         assert key in streamed, f"streaming response is missing {key!r}"
     assert set(plain["context_details"]) == set(streamed["context_details"])
     assert set(plain["context_used"]) == set(streamed["context_used"])
+
+
+def test_only_a_server_owned_applied_rewrite_becomes_passive_memory(client, auth, monkeypatch):
+    _stub_llm(monkeypatch)
+    recorded = []
+    monkeypatch.setattr(
+        prompts.MemoryService, "memorize_strategy",
+        lambda user_id, original, refined, *, approval_id=None:
+            recorded.append((user_id, original, refined, approval_id)) or True,
+    )
+
+    result = client.post("/enhance", json={"prompt": "help with a launch"}, headers=auth)
+    assert result.status_code == 200
+    log_id = result.json()["log_id"]
+    assert log_id and log_id != "memory-only"
+    assert recorded == [], "generation is not user approval"
+    assert "accepted_at" not in in_memory_prompt_logs[0]
+
+    stranger = {"Authorization": f"Bearer {create_jwt_token('stranger', 's@x.com')}"}
+    denied = client.post("/enhance/accept", json={"log_id": log_id}, headers=stranger)
+    assert denied.status_code == 404
+    assert recorded == []
+
+    accepted = client.post(
+        "/enhance/accept",
+        json={"log_id": log_id, "original": "forged", "enhanced": "forged"},
+        headers=auth,
+    )
+    assert accepted.status_code == 200
+    assert accepted.json() == {"status": "accepted", "memory_saved": True}
+    assert recorded == [("integration-user", "help with a launch", "a rewritten prompt", log_id)]
+    assert in_memory_prompt_logs[0]["accepted_at"]
+
+    repeated = client.post("/enhance/accept", json={"log_id": log_id}, headers=auth)
+    assert repeated.status_code == 200
+    assert len(recorded) == 1, "retry must not produce another memory write"
+
+
+def test_streaming_enhancement_waits_for_acceptance_to_memorize(client, auth, monkeypatch):
+    import json as _json
+
+    monkeypatch.setattr(
+        prompts.providers, "chat_stream",
+        lambda **kw: iter([{"token": "Write a concise rollout plan."},
+                           {"meta": {"model": "m", "provider": "p", "byok": False}}]),
+    )
+    calls = []
+    monkeypatch.setattr(
+        prompts.MemoryService, "memorize_strategy",
+        lambda *args, **kwargs: calls.append((args, kwargs)) or True,
+    )
+    response = client.post("/enhance/stream", json={"prompt": "rollout plan"}, headers=auth)
+    assert response.status_code == 200
+    events = [_json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+    done = next(event for event in events if event.get("done"))
+    assert done["log_id"]
+    assert calls == []
+    assert client.post("/enhance/accept", json={"log_id": done["log_id"]}, headers=auth).status_code == 200
+    assert len(calls) == 1

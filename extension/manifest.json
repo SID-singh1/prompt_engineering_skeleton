@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Prompt Memory",
-  "version": "4.1",
+  "version": "4.4",
   "description": "One-click prompt engineering — turns your raw thoughts into precision-crafted LLM queries. Free, with your own API key.",
   "icons": {
     "16": "icon16.png",
@@ -9,7 +9,6 @@
     "128": "icon128.png"
   },
   "permissions": [
-    "activeTab",
     "storage",
     "scripting"
   ],
@@ -23,9 +22,7 @@
     "https://claude.ai/*",
     "https://www.perplexity.ai/*",
     "https://grok.com/*",
-    "https://x.com/i/grok*",
-    "http://localhost:8000/*",
-    "http://127.0.0.1:8000/*"
+    "https://x.com/i/grok*"
   ],
   "background": {
     "service_worker": "background.js",

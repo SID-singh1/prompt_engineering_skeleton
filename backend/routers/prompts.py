@@ -129,7 +129,7 @@ def check_daily_limit(user_id: str, tier: str) -> tuple:
 @router.post("/track")
 def track_prompt(request: TrackRequest, user_id: str = Depends(verify_jwt)):
     """Silently learns from user prompts."""
-    logger.info(f"\n🔍 /track — user={user_id[:8]}... prompt=\"{request.prompt[:60]}...\"")
+    logger.info(f"\n🔍 /track — user={user_id[:8]}... len={len(request.prompt)}")
     request.user_id = user_id
     
     MemoryService.log_prompt(

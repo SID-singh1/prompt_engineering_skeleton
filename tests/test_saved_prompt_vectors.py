@@ -31,7 +31,7 @@ class FakeQdrant:
         for p in points:
             store[p.kwargs["id"]] = p.kwargs["payload"]
 
-    def delete(self, collection_name, points_selector):
+    def delete(self, collection_name, points_selector, **kwargs):
         store = self.collections.setdefault(collection_name, {})
 
         # points_selector is either a FilterSelector or a bare list of ids.
@@ -59,7 +59,7 @@ class FakeQdrant:
             for c in query_filter.kwargs["must"]:
                 wanted[c.kwargs["key"]] = c.kwargs["match"].kwargs["value"]
         points = [
-            type("P", (), {"payload": payload, "score": 1.0, "id": pid})()
+            type("P", (), {"payload": payload, "score": payload.get("_score", 1.0), "id": pid})()
             for pid, payload in store.items()
             if all(payload.get(k) == v for k, v in wanted.items())
         ]
@@ -188,6 +188,60 @@ def test_search_never_returns_another_users_prompt(qdrant):
         hits = MemoryService.search_saved_prompts(user, "anything at all", limit=10)
         titles = {h["title"] for h in hits}
         assert titles == {expected}, f"{user} saw {titles}"
+
+
+def test_passive_retrieval_never_returns_another_users_history(qdrant):
+    """The second retrieval collection needs the same tenant boundary."""
+    MemoryService.memorize_strategy("alice", "Alice asks about pandas", "Explain pandas joins.", approval_id="accepted-alice")
+    MemoryService.memorize_strategy("bob", "Bob asks about payroll", "Draft Bob's payroll report.", approval_id="accepted-bob")
+
+    alice = MemoryService.retrieve_passive_context("alice", "report", limit=10)
+    bob = MemoryService.retrieve_passive_context("bob", "pandas", limit=10)
+
+    assert {item["original"] for item in alice} == {"Alice asks about pandas"}
+    assert {item["original"] for item in bob} == {"Bob asks about payroll"}
+
+
+def test_saved_prompt_threshold_is_inclusive_and_configurable(qdrant, monkeypatch):
+    monkeypatch.setattr(memory_service.settings, "SAVED_CONTEXT_MIN_SCORE", 0.25)
+    qdrant.collections[SAVED] = {
+        1: {"user_id": USER, "mongo_id": "at", "content": "at threshold", "_score": 0.25},
+        2: {"user_id": USER, "mongo_id": "below", "content": "below threshold", "_score": 0.249},
+    }
+    hits = MemoryService.search_saved_prompts(USER, "query", limit=10)
+    assert [hit["mongo_id"] for hit in hits] == ["at"]
+
+
+def test_passive_threshold_is_inclusive_and_configurable(qdrant, monkeypatch):
+    monkeypatch.setattr(memory_service.settings, "PASSIVE_CONTEXT_MIN_SCORE", 0.20)
+    qdrant.collections["prompt_memory"] = {
+        1: {"user_id": USER, "approved": True, "original_prompt": "at", "refined_prompt": "kept", "_score": 0.20},
+        2: {"user_id": USER, "approved": True, "original_prompt": "below", "refined_prompt": "dropped", "_score": 0.199},
+    }
+    hits = MemoryService.retrieve_passive_context(USER, "query", limit=10)
+    assert [hit["original"] for hit in hits] == ["at"]
+
+
+def test_unapproved_legacy_passive_points_are_not_retrieved(qdrant):
+    qdrant.collections["prompt_memory"] = {
+        1: {"user_id": USER, "original_prompt": "old unaccepted draft", "refined_prompt": "invented details"},
+    }
+    assert MemoryService.retrieve_passive_context(USER, "old unaccepted draft") == []
+    assert MemoryService.retrieve_context(USER, "old unaccepted draft")[1] == 0.0
+    # Do not delete historical data during rollout; it simply stops steering
+    # future prompts until a user explicitly approves a new rewrite.
+    assert qdrant.ids("prompt_memory") == {1}
+
+
+def test_approved_passive_write_is_idempotent_and_requires_approval(qdrant):
+    assert not MemoryService.memorize_strategy(USER, "draft", "rewritten")
+    assert qdrant.ids("prompt_memory") == set()
+    assert MemoryService.memorize_strategy(USER, "draft", "rewritten", approval_id="log-1")
+    assert MemoryService.memorize_strategy(USER, "draft", "rewritten", approval_id="log-1")
+    assert len(qdrant.ids("prompt_memory")) == 1
+    payload = next(iter(qdrant.collections["prompt_memory"].values()))
+    assert payload["approved"] is True
+    assert payload["approval_id"] == "log-1"
 
 
 def test_a_user_with_nothing_saved_sees_nothing(qdrant):
