@@ -1,0 +1,59 @@
+name: sync-hf-space
+
+# The Hugging Face Space (siddhm11/prompt-engine) is a deployment artifact,
+# not a mirror: it holds backend/ plus its own Dockerfile and a README.md
+# whose frontmatter tells HF how to build. Only backend/ is replaced here;
+# everything else on the Space is left alone.
+#
+# Drift history: the Space fell 10 commits behind in Sep 2026 and 9 more by
+# the 20th, each time discovered as a live 404. This makes a backend push to
+# main deploy itself.
+#
+# Requires repo secret HF_TOKEN: a Hugging Face access token with write scope.
+
+on:
+  push:
+    branches: [main]
+    paths: ['backend/**']
+  workflow_dispatch:
+
+concurrency:
+  group: sync-hf-space
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Capture the commit subject for the Space commit message
+        id: head
+        run: echo "subject=$(git log -1 --format=%s | cut -c1-72)" >> "$GITHUB_OUTPUT"
+
+      - name: Push backend/ to the Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HEAD_SUBJECT: ${{ steps.head.outputs.subject }}
+        run: |
+          set -euo pipefail
+          if [ -z "${HF_TOKEN}" ]; then
+            echo "::error::HF_TOKEN secret is not set. Add a write-scoped Hugging Face token under Settings → Secrets → Actions."
+            exit 1
+          fi
+          git clone --quiet "https://siddhm11:${HF_TOKEN}@huggingface.co/spaces/siddhm11/prompt-engine" space
+          # Replace wholesale so files deleted on GitHub are deleted on the Space too.
+          rm -rf space/backend
+          git archive HEAD backend | tar -x -C space
+          cd space
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A backend
+          if git diff --cached --quiet; then
+            echo "Space already matches ${GITHUB_SHA::7}; nothing to push."
+            exit 0
+          fi
+          git commit --quiet -m "Sync backend to GitHub ${GITHUB_SHA::7}: ${HEAD_SUBJECT}" \
+            -m "Automated by .github/workflows/sync-hf-space.yml"
+          git push --quiet
+          echo "Pushed backend@${GITHUB_SHA::7} to the Space."
