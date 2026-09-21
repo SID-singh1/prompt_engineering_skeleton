@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 src = (ROOT / 'extension/content.js').read_text(encoding='utf-8')
 parts = []
-for name, end in [('insertDraft', '\n/**'), ('setupCardInteractions', '\nfunction clampCardLayout'), ('handleCardKeydown', '\ndocument.addEventListener("keydown", handleCardKeydown'), ('clampCardLayout', '\n/**\n * Hang the card')]:
+for name, end in [('insertDraft', '\n/**'), ('setupCardInteractions', '\nfunction clampCardResize'), ('clampCardResize', '\nfunction clampCardLayout'), ('handleCardKeydown', '\ndocument.addEventListener("keydown", handleCardKeydown'), ('clampCardLayout', '\n/**\n * Hang the card')]:
     start = src.index('function ' + name + '(')
     if src[max(0, start-6):start] == 'async ': start -= 6
     parts.append(src[start:src.index(end, start)])

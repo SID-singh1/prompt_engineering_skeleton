@@ -4,7 +4,19 @@ function assert(condition, message) { assertions++; if (!condition) throw Error(
 let actions = [], cardState = 'ready', blocked = false, composerFocused = false, voice = false;
 let active = 'outside', open = true;
 const card = { contains: x => x === 'card' }, pill = { contains: x => x === 'pill' };
+const globalListeners = {};
+const window = {
+  innerWidth: 1280, innerHeight: 800,
+  addEventListener(n,f) { (globalListeners[n] ||= new Set()).add(f); },
+  removeEventListener(n,f) { globalListeners[n]?.delete(f); },
+  fire(n,e={}) { for(const f of [...(globalListeners[n]||[])]) f(e); },
+};
 const document = {
+  hidden: false,
+  listeners: {},
+  addEventListener(n,f) { (this.listeners[n] ||= new Set()).add(f); },
+  removeEventListener(n,f) { this.listeners[n]?.delete(f); },
+  fire(n,e={}) { for(const f of [...(this.listeners[n]||[])]) f(e); },
   get activeElement() { return active; },
   getElementById: id => id === 'pm-card' ? (open ? card : null) : pill,
   querySelector: () => voice,
@@ -62,7 +74,7 @@ class Element {
   getBoundingClientRect() { return this.rect; }
 }
 let cardLayout = null, saves=0, resets=0;
-function positionCard() {}
+function positionCard() { if(cardLayout) gestureCard.rect={left:cardLayout.x,top:cardLayout.y,width:cardLayout.width,height:cardLayout.height}; }
 function positionToasts() {}
 function placePill() {}
 function saveCardLayout() { saves++; }
@@ -73,25 +85,44 @@ gestureCard.rect={left:100,top:100,width:400,height:260};
 gestureCard.querySelector = selector => ({'.pm-card-head':head,'.pm-card-resize':grip,'#pm-card-layout-toggle':toggle,'#pm-card-reset':resetButton})[selector];
 setupCardInteractions(gestureCard);
 const event = (x,y) => ({button:0,pointerId:1,clientX:x,clientY:y,target:{closest:()=>null}});
-head.fire('pointerdown',event(100,100));gestureCard.fire('pointerup',event(100,100));
+head.fire('pointerdown',event(100,100));
+assert(gestureCard.captured===1,'Capture starts before any move');
+window.fire('pointerup',event(100,100));
 assert(cardLayout===null && saves===0,'Header click must not detach or save');
-head.fire('pointerdown',event(100,100));gestureCard.fire('pointermove',event(102,102));
+// A quick drag leaves the card before its first move; events arrive on window.
+head.fire('pointerdown',event(100,100));window.fire('pointermove',event(102,102));
 assert(cardLayout===null,'Small pointer wobble must not detach');
-gestureCard.fire('pointermove',event(130,120));
+window.fire('pointermove',event(130,120));
 assert(cardLayout.x===130 && cardLayout.y===120,'Drag tracks pointer');
 assert(gestureCard.captured===1,'Stable card owns capture');
 gestureCard.fire('lostpointercapture',event(130,120));
 assert(gestureCard._pmEndGesture===null && !gestureCard.classes.size,'Lost capture cleans up');
-assert(gestureCard.listeners.pointermove.size===0 && saves===1,'Lost capture removes listeners and persists');
-grip.fire('pointerdown',event(500,360));gestureCard.fire('pointermove',event(550,400));
-assert(cardLayout.width===450 && cardLayout.height===300,'Resize changes dimensions');
+assert(globalListeners.pointermove.size===0 && saves===1,'Lost capture removes listeners and persists');
+window.fire('pointermove',event(1000,700));
+assert(cardLayout.x===130 && cardLayout.y===120,'Stray move after release cannot resize');
+grip.fire('pointerdown',event(530,380));window.fire('pointermove',event(730,530));
+assert(cardLayout.width===600 && cardLayout.height===410,'One fast outside move resizes exactly');
+window.fire('pointerup',event(730,530));
+assert(globalListeners.pointermove.size===0 && gestureCard._pmEndGesture===null,'Outside pointerup cleans up');
+window.fire('pointermove',event(800,600));
+assert(cardLayout.width===600 && cardLayout.height===410,'No phantom resize after pointerup');
+const pinned=clampCardResize({left:720,top:490,width:400,height:260},500,500,1268,800);
+assert(pinned.x===720 && pinned.y===490 && pinned.width===548 && pinned.height===298,'Corner-pinned resize never moves origin');
+grip.fire('pointerdown',event(730,530));window.fire('blur');
+assert(globalListeners.pointermove.size===0 && gestureCard._pmEndGesture===null,'Blur ends active gesture');
+grip.fire('pointerdown',event(730,530));document.hidden=true;document.fire('visibilitychange');document.hidden=false;
+assert(globalListeners.pointermove.size===0,'Hidden page ends active gesture');
+grip.fire('pointerdown',event(730,530));window.fire('pointermove',event(732,532));window.fire('pointerup',event(732,532));
+assert(cardLayout.width===600 && cardLayout.height===410,'Click below dead zone leaves size alone');
+grip.fire('pointerdown',event(730,530));window.fire('pointermove',event(780,570));
+assert(cardLayout.width===650 && cardLayout.height===450,'Resize changes dimensions');
 gestureCard._pmEndGesture();
-assert(!gestureCard.classes.size && gestureCard.listeners.pointermove.size===0,'Rerender cleanup removes active gesture');
+assert(!gestureCard.classes.size && globalListeners.pointermove.size===0,'Rerender cleanup removes active gesture');
 toggle.fire('click');assert(head.afterElement.hidden===false && toggle.attrs['aria-expanded']==='true','Layout reveals controls');
 const leftButton=head.afterElement.children.find(x=>x.textContent==='Left');leftButton.fire('click');
-assert(cardLayout.x===76,'Click-only movement');
+assert(cardLayout.x===106,'Click-only movement');
 const widerButton=head.afterElement.children.find(x=>x.textContent==='Wider');widerButton.fire('click');
-assert(cardLayout.width===440,'Click-only resizing');
+assert(cardLayout.width===690,'Click-only resizing');
 head.afterElement.children.find(x=>x.textContent==='Reset layout').fire('click');
 assert(cardLayout===null && resets===1,'Reset layout available without dragging');
 // The pill must insert what it previews even after reviewing the original.
