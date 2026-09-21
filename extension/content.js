@@ -903,14 +903,14 @@ function placePill() {
   // stack. Straight up left it hanging in mid-air past the composer's edge.
   let bottom = pillBottom;
   let inset = PILL_MARGIN;
-  // With the library panel open there is nowhere to step up to — the panel
-  // fills the corner — so the pill stays home and drops its preview instead.
+  // A compact pill still must yield to the host composer while the library
+  // panel is open. Otherwise it can cover ChatGPT's send button.
   pill.classList.toggle("pm-pill-compact", panelOpen);
   const composer = findComposer();
   // The card is laid out first: on the composer it is independent of the
   // pill, and the pill needs its box to know whether to step aside.
   positionCard();
-  if (!panelOpen) {
+  if (!panelOpen || composer) {
     const w = pill.offsetWidth, h = pill.offsetHeight;
     const at = () => ({
       left: pillDock === "left" ? inset : window.innerWidth - inset - w,
@@ -956,28 +956,34 @@ function placePill() {
   // unless an open pill has grown wide enough that "beside" lands on the
   // composer. It is revealed on hover, so that put it on top of the send
   // button of the box the user is typing in. Stacked above the pill instead,
-  // which is empty space in every layout the pill itself fits in.
+  // and hidden when even that spot would cover the composer.
   const lib = document.getElementById("pm-library-btn");
   if (lib) {
-    const beside = inset + pill.offsetWidth + 8;
-    const libLeft = pillDock === "left"
-      ? beside
-      : window.innerWidth - beside - lib.offsetWidth;
-    const libTop = window.innerHeight - bottom - (pill.offsetHeight + lib.offsetHeight) / 2;
-    const cb = composer && c0(composer);
-    const clearOfComposer = !cb || !(
-      libLeft < cb.right && libLeft + lib.offsetWidth > cb.left &&
-      libTop < cb.bottom && libTop + lib.offsetHeight > cb.top
-    );
+    // The panel itself is the library affordance while open. Hiding the chip
+    // also keeps it from sitting on the host's send button after restore.
+    lib.hidden = panelOpen;
+    if (!panelOpen) {
+      const beside = inset + pill.offsetWidth + 8;
+      const libLeft = pillDock === "left"
+        ? beside
+        : window.innerWidth - beside - lib.offsetWidth;
+      const libTop = window.innerHeight - bottom - (pill.offsetHeight + lib.offsetHeight) / 2;
+      const cb = composer && c0(composer);
+      const overlaps = (left, top) => cb && left < cb.right && left + lib.offsetWidth > cb.left && top < cb.bottom && top + lib.offsetHeight > cb.top;
+      const clearOfComposer = !overlaps(libLeft, libTop);
 
-    lib.dataset.dock = pillDock;
-    const inline = clearOfComposer ? beside : inset;
-    lib.style.top = "auto";
-    lib.style.bottom = clearOfComposer
-      ? (bottom + (pill.offsetHeight - lib.offsetHeight) / 2) + "px"
-      : (bottom + pill.offsetHeight + 8) + "px";
-    lib.style.left = pillDock === "left" ? inline + "px" : "auto";
-    lib.style.right = pillDock === "right" ? inline + "px" : "auto";
+      lib.dataset.dock = pillDock;
+      const inline = clearOfComposer ? beside : inset;
+      lib.style.top = "auto";
+      lib.style.bottom = clearOfComposer
+        ? (bottom + (pill.offsetHeight - lib.offsetHeight) / 2) + "px"
+        : (bottom + pill.offsetHeight + 8) + "px";
+      lib.style.left = pillDock === "left" ? inline + "px" : "auto";
+      lib.style.right = pillDock === "right" ? inline + "px" : "auto";
+      const finalLeft = pillDock === "left" ? inline : window.innerWidth - inline - lib.offsetWidth;
+      const finalTop = clearOfComposer ? libTop : window.innerHeight - bottom - pill.offsetHeight - 8 - lib.offsetHeight;
+      lib.hidden = Boolean(overlaps(finalLeft, finalTop)) || finalTop < PILL_MARGIN;
+    }
   }
   positionCard();
   positionToasts();
@@ -2347,24 +2353,37 @@ function setupCardInteractions(card) {
     const r = card.getBoundingClientRect();
     const start = { x: event.clientX, y: event.clientY };
     let moved = false;
-    // Capture on the stable card, not header/grip nodes replaced by rerenders.
+    // Capture before the pointer can leave the small grip. Window listeners
+    // still finish the gesture if capture is unavailable or the page blurs.
+    try { card.setPointerCapture(event.pointerId); } catch { /* window fallback */ }
     const move = (next) => {
       if (next.pointerId !== event.pointerId) return;
       const dx = next.clientX - start.x, dy = next.clientY - start.y;
       if (!moved && Math.hypot(dx, dy) < 5) return;
-      if (!moved) card.setPointerCapture(event.pointerId);
       moved = true;
       card.classList.add(kind === "move" ? "pm-card-moving" : "pm-card-resizing");
-      cardLayout = { detached: true, x: r.left + (kind === "move" ? dx : 0), y: r.top + (kind === "move" ? dy : 0), width: r.width + (kind === "resize" ? dx : 0), height: r.height + (kind === "resize" ? dy : 0) };
+      if (kind === "resize") {
+        const panel = document.querySelector("#pm-panel.pm-open");
+        const rightBound = panel
+          ? Math.min(window.innerWidth - 12, panel.getBoundingClientRect().left - 8)
+          : window.innerWidth - 12;
+        // A resize keeps its top-left corner fixed. The ordinary layout clamp
+        // can move the whole card when a requested size passes an edge.
+        cardLayout = clampCardResize(r, dx, dy, rightBound, window.innerHeight);
+      } else {
+        cardLayout = { detached: true, x: r.left + dx, y: r.top + dy, width: r.width, height: r.height };
+      }
       positionCard();
       positionToasts();
     };
     const end = (next) => {
-      if (next && next.pointerId !== event.pointerId) return;
+      if (next && next.pointerId !== undefined && next.pointerId !== event.pointerId) return;
       card._pmEndGesture = null;
-      card.removeEventListener("pointermove", move);
-      card.removeEventListener("pointerup", end);
-      card.removeEventListener("pointercancel", end);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", end, true);
+      window.removeEventListener("pointercancel", end, true);
+      window.removeEventListener("blur", end);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       card.removeEventListener("lostpointercapture", end);
       try { card.releasePointerCapture(event.pointerId); } catch { /* already released */ }
       card.classList.remove("pm-card-moving", "pm-card-resizing");
@@ -2376,14 +2395,27 @@ function setupCardInteractions(card) {
         placePill();
       }
     };
+    const onVisibilityChange = () => { if (document.hidden) end(); };
     card._pmEndGesture = end;
-    card.addEventListener("pointermove", move);
-    card.addEventListener("pointerup", end);
-    card.addEventListener("pointercancel", end);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", end, true);
+    window.addEventListener("pointercancel", end, true);
+    window.addEventListener("blur", end);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     card.addEventListener("lostpointercapture", end);
   };
   head.addEventListener("pointerdown", e => begin(e, "move"));
   grip.addEventListener("pointerdown", e => begin(e, "resize"));
+}
+
+function clampCardResize(rect, dx, dy, rightBound, viewportHeight) {
+  return {
+    detached: true,
+    x: rect.left,
+    y: rect.top,
+    width: Math.max(1, Math.min(Math.max(260, rect.width + dx), rightBound - rect.left)),
+    height: Math.max(1, Math.min(Math.max(180, rect.height + dy), viewportHeight - 12 - rect.top)),
+  };
 }
 
 function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
@@ -2436,6 +2468,11 @@ function positionCard() {
   if (cardLayout?.detached) {
     const { width, height, x: left, y: top } = clampCardLayout(cardLayout, window.innerWidth, window.innerHeight, rightBound);
     card.classList.add("pm-card-free");
+    const wide = width >= 900 && cardState === "ready";
+    card.classList.toggle("pm-card-wide", wide);
+    const selection = card.querySelector("#pm-card-toggle");
+    const selectionLabel = `${wide ? "Select" : "Show"} ${cardShowingOriginal ? "rewrite" : "original"}`;
+    if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
     card.classList.remove("pm-card-below");
     card.dataset.anchor = "free";
     card.style.width = width + "px";
@@ -2447,6 +2484,10 @@ function positionCard() {
   }
 
   card.classList.remove("pm-card-free");
+  card.classList.remove("pm-card-wide");
+  const selection = card.querySelector("#pm-card-toggle");
+  const selectionLabel = `Show ${cardShowingOriginal ? "rewrite" : "original"}`;
+  if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
   card.style.height = "";
 
   // A sheet on the composer: as wide as the box (capped), right-aligned to
@@ -2739,9 +2780,13 @@ function showDiffModal(result) {
   // is exactly what minimizing was meant to stop.
   if (cardMinimized) { renderPill(); return; }
 
-  const body = cardShowingOriginal
-    ? `<div class="pm-card-text pm-card-original">${escHtml(result.original || cardOriginal)}</div>`
-    : `<div class="pm-card-text">${escHtml(result.enhanced)}</div>`;
+  const original = escHtml(result.original || cardOriginal);
+  const enhanced = escHtml(result.enhanced);
+  const body = `<div class="pm-card-comparison">` +
+    `<div class="pm-card-reading"><div class="pm-card-pane-label">Selected: ${cardShowingOriginal ? "Original" : "Rewrite"}</div>` +
+    `<div class="pm-card-text${cardShowingOriginal ? " pm-card-original" : ""}">${cardShowingOriginal ? original : enhanced}</div></div>` +
+    `<div class="pm-card-reference"><div class="pm-card-pane-label">${cardShowingOriginal ? "Rewrite" : "Original"}</div>` +
+    `<div class="pm-card-reference-text">${cardShowingOriginal ? enhanced : original}</div></div></div>`;
 
   // Named rather than merely dimmed. "Why is this greyed out" is a worse
   // question to leave a user holding than one line of explanation.

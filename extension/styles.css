@@ -2421,11 +2421,56 @@
     word-break: break-word;
 }
 
+.pm-card-pane-label { display: none; }
+.pm-card-reference { display: none; }
+.pm-card-free .pm-card-comparison {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+.pm-card-free .pm-card-reading {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+}
+
 .pm-card-free .pm-card-text {
     flex: 1 1 auto;
     min-height: 0;
     max-height: none;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 76ch;
+    margin-inline: auto;
 }
+.pm-card-wide .pm-card-comparison { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.pm-card-wide .pm-card-reading,
+.pm-card-wide .pm-card-reference { min-height: 0; min-width: 0; }
+.pm-card-wide .pm-card-reference { display: flex; flex-direction: column; border-left: 1px solid var(--pm-border); }
+.pm-card-wide .pm-card-pane-label {
+    display: block;
+    flex: none;
+    padding: 10px 17px 0;
+    font: 600 11px/1.4 var(--pm-font);
+    color: var(--pm-text-secondary);
+}
+.pm-card-wide .pm-card-text,
+.pm-card-wide .pm-card-reference-text {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 76ch;
+    padding: 12px 17px 16px;
+    margin-inline: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: 15.5px/1.6 var(--pm-font);
+}
+.pm-card-wide .pm-card-reference-text { color: var(--pm-text-secondary); }
 .pm-card-free .pm-card-head,
 .pm-card-free .pm-card-chip,
 .pm-card-free .pm-card-foot { flex: none; }
@@ -2653,6 +2698,7 @@
     transition: opacity 140ms ease, transform 140ms ease;
     transition-delay: 120ms;
 }
+.pm-library-btn[hidden] { display: none; }
 
 /* Bridges the gap to the trigger, so crossing the 8px between them does not
    flicker the button out from under the cursor. */
