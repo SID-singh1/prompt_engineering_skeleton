@@ -2,9 +2,11 @@ import io
 import re
 import time
 import json
+import threading
 from datetime import datetime
+from typing import Optional
 from bson import ObjectId
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Request
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
 from ..models.schemas import TrackRequest, EnhanceRequest, FeedbackRequest
 from ..core.config import settings
@@ -532,8 +534,38 @@ def track_prompt(request: TrackRequest, user_id: str = Depends(verify_jwt)):
     return {"status": "logged"}
 
 
+def _async_evaluate_prompt(log_id: str, user_id: str, original: str, enhanced: str, context_str: str = ""):
+    """Asynchronously evaluates prompt quality in background and persists to database."""
+    if not log_id or not original or not enhanced:
+        return
+    try:
+        from .user_analytics import judge_prompt_improvement
+        evaluation = judge_prompt_improvement(
+            original_prompt=original,
+            enhanced_prompt=enhanced,
+            extracted_context=context_str,
+        )
+        if MongoDB.prompts_col is not None:
+            MongoDB.prompts_col.update_one(
+                {"log_id": log_id},
+                {"$set": {"evaluation": evaluation}}
+            )
+        else:
+            for item in in_memory_prompt_logs:
+                if item.get("log_id") == log_id:
+                    item["evaluation"] = evaluation
+                    break
+        logger.info(f"   🎯 Background evaluation saved for {log_id}: score={evaluation.get('enhanced_score')}/100 (+{evaluation.get('improvement_delta')})")
+    except Exception as e:
+        logger.warning(f"⚠️ Background evaluation error for {log_id}: {e}")
+
+
 @router.post("/enhance")
-def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit)):
+def enhance_prompt(
+    request: EnhanceRequest,
+    user_id: str = Depends(enhance_limit),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
+):
     """The core prompt engineering endpoint — intent-aware, mode-aware."""
     tier = effective_tier(user_id, request)
     allowed, used, limit, degraded = check_daily_limit(user_id, tier)
@@ -612,6 +644,24 @@ def enhance_prompt(request: EnhanceRequest, user_id: str = Depends(enhance_limit
             input_method="voice" if request.input_method == "voice" else "text",
             input_duration_seconds=request.input_duration_seconds,
         )
+
+        if log_id:
+            ctx_snippet = ctx.get("conversation_ctx", "") or ""
+            if background_tasks is not None:
+                background_tasks.add_task(
+                    _async_evaluate_prompt,
+                    log_id=log_id,
+                    user_id=user_id,
+                    original=request.prompt,
+                    enhanced=enhanced_prompt,
+                    context_str=ctx_snippet,
+                )
+            else:
+                threading.Thread(
+                    target=_async_evaluate_prompt,
+                    args=(log_id, user_id, request.prompt, enhanced_prompt, ctx_snippet),
+                    daemon=True,
+                ).start()
 
     logger.info(f"   ✅ Enhanced in {process_time}s — {len(enhanced_prompt)} chars")
 
@@ -724,6 +774,12 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
                     input_method="voice" if request.input_method == "voice" else "text",
                     input_duration_seconds=request.input_duration_seconds,
                 )
+                if log_id:
+                    threading.Thread(
+                        target=_async_evaluate_prompt,
+                        args=(log_id, user_id, request.prompt, enhanced_prompt, ctx.get("conversation_ctx", "") or ""),
+                        daemon=True,
+                    ).start()
             # Generation only creates a prompt log. Memorization happens on /enhance/accept.
         elif not failure:
             failure = "The model returned an empty response."

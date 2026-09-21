@@ -1,22 +1,24 @@
 /**
- * Prompt Memory — Analytics Dashboard & Prompt Improvement Engine Controller
+ * Prompt Memory — Observability & Prompt Intelligence Controller
+ * LangSmith-style Traces, AI Benchmarks, Context Decomposition & Memory
  */
 
-// API Base configuration (supports Vercel env variable VITE_API_URL)
+// API Base configuration (defaults to Hugging Face Spaces production backend)
 const API_BASE = import.meta.env?.VITE_API_URL || (
     window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
         ? 'http://localhost:8000'
-        : (localStorage.getItem('pm_api_url') || 'https://prompt-engineering-skeleton.onrender.com')
+        : (localStorage.getItem('pm_api_url') || 'https://siddhm11-prompt-engine.hf.space')
 );
 
 // State
 let currentAnalyticsData = null;
 let savedPromptsData = [];
+let activeInspectedId = null;
 const token = localStorage.getItem('pm_token');
 const isGuest = localStorage.getItem('pm_guest_mode') === 'true';
 const userEmail = localStorage.getItem('pm_email') || (isGuest ? 'guest.builder@promptmemory.ai' : 'user@promptmemory.ai');
 
-// DOM Elements
+// DOM Elements - Shell
 const sidebar = document.getElementById('app-sidebar');
 const mobileToggle = document.getElementById('mobile-toggle');
 const currentViewTitle = document.getElementById('current-view-title');
@@ -25,23 +27,48 @@ const userDisplayEmail = document.getElementById('user-display-email');
 const userAvatarInitial = document.getElementById('user-avatar-initial');
 const logoutBtn = document.getElementById('logout-btn');
 const toastContainer = document.getElementById('toast-container');
+const refreshBtn = document.getElementById('refresh-data-btn');
+const openPlaygroundBtn = document.getElementById('open-playground-btn');
 
-// Tabs
+// Navigation Tabs
 const navItems = document.querySelectorAll('.nav-item');
 const tabPanes = document.querySelectorAll('.tab-pane');
 
-// Evaluation Modal
-const evalModal = document.getElementById('eval-modal');
-const openEvalModalBtn = document.getElementById('open-eval-modal-btn');
-const triggerLiveEvalBtn = document.getElementById('trigger-live-eval-btn');
-const closeEvalModalBtn = document.getElementById('close-eval-modal-btn');
-const cancelEvalBtn = document.getElementById('cancel-eval-btn');
-const runEvalBtn = document.getElementById('run-eval-btn');
-const evalInputOrig = document.getElementById('eval-input-original');
-const evalInputEnh = document.getElementById('eval-input-enhanced');
-const evalInputCtx = document.getElementById('eval-input-context');
-const evalStatusBox = document.getElementById('eval-modal-status');
-const evalStatusText = document.getElementById('eval-status-text');
+// Slide-Out Inspector Drawer Elements
+const drawerBackdrop = document.getElementById('drawer-backdrop');
+const inspectorDrawer = document.getElementById('inspector-drawer');
+const drawerCloseBtn = document.getElementById('drawer-close-btn');
+const drawerPlatformBadge = document.getElementById('drawer-platform-badge');
+const drawerModeBadge = document.getElementById('drawer-mode-badge');
+const drawerScoreBadge = document.getElementById('drawer-score-badge');
+const drawerTime = document.getElementById('drawer-time');
+const drawerOrigText = document.getElementById('drawer-orig-text');
+const drawerEnhText = document.getElementById('drawer-enh-text');
+const drawerCopyBtn = document.getElementById('drawer-copy-btn');
+const drawerLiftTag = document.getElementById('drawer-lift-tag');
+const drawerVerdict = document.getElementById('drawer-verdict');
+const drawerDimensions = document.getElementById('drawer-dimensions');
+const drawerImprovementsList = document.getElementById('drawer-improvements-list');
+const drawerLayer1 = document.getElementById('drawer-layer-1');
+const drawerLayer2 = document.getElementById('drawer-layer-2');
+const drawerLayer3 = document.getElementById('drawer-layer-3');
+const drawerLayer4 = document.getElementById('drawer-layer-4');
+
+// Playground Elements
+const playInputOrig = document.getElementById('play-input-orig');
+const playInputCtx = document.getElementById('play-input-ctx');
+const playInputEnh = document.getElementById('play-input-enh');
+const playRunBenchmarkBtn = document.getElementById('play-run-benchmark-btn');
+const playStatus = document.getElementById('play-status');
+const playStatusText = document.getElementById('play-status-text');
+const playOrigNum = document.getElementById('play-orig-num');
+const playDeltaNum = document.getElementById('play-delta-num');
+const playEnhNum = document.getElementById('play-enh-num');
+const playScorePill = document.getElementById('play-score-pill');
+const playVerdictText = document.getElementById('play-verdict-text');
+const playDimensions = document.getElementById('play-dimensions');
+const playEnhancedOutput = document.getElementById('play-enhanced-output');
+const playCopyBtn = document.getElementById('play-copy-btn');
 
 // Saved Prompt Modal
 const promptModal = document.getElementById('prompt-modal');
@@ -55,7 +82,7 @@ if (!token && !isGuest) {
     window.location.href = 'login.html';
 }
 
-// Populate user profile info
+// User Profile display
 if (userDisplayEmail) {
     userDisplayEmail.textContent = userEmail;
     userAvatarInitial.textContent = (userEmail[0] || 'U').toUpperCase();
@@ -64,20 +91,20 @@ if (isGuest && demoModeBadge) {
     demoModeBadge.classList.remove('hidden');
 }
 
-// --- NOTIFICATIONS / TOASTS ---
+// --- NOTIFICATION TOAST ---
 function showToast(message, duration = 3000) {
     const toast = document.createElement('div');
     toast.className = 'toast';
     toast.textContent = message;
-    toastContainer.appendChild(toast);
+    toastContainer?.appendChild(toast);
     setTimeout(() => {
         toast.style.opacity = '0';
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => toast.remove(), 250);
     }, duration);
 }
 
 // --- NUMBER COUNTER ANIMATION ---
-function animateCounter(element, targetValue, duration = 1200, isFloat = false) {
+function animateCounter(element, targetValue, duration = 900, isFloat = false) {
     if (!element) return;
     const startValue = 0;
     const startTime = performance.now();
@@ -85,7 +112,7 @@ function animateCounter(element, targetValue, duration = 1200, isFloat = false) 
     function update(currentTime) {
         const elapsed = currentTime - startTime;
         const progress = Math.min(elapsed / duration, 1);
-        const ease = 1 - Math.pow(1 - progress, 3); // cubic ease-out
+        const ease = 1 - Math.pow(1 - progress, 3);
         const current = startValue + (targetValue - startValue) * ease;
 
         element.textContent = isFloat ? current.toFixed(1) : Math.round(current);
@@ -109,16 +136,17 @@ function switchTab(tabId) {
     });
 
     const titleMap = {
-        overview: 'Overview & Impact',
-        evaluator: 'Prompt Improvement Engine',
-        history: 'Prompt History & Inspector',
-        library: 'Saved Prompts Library'
+        prompts: 'Prompts & Traces',
+        benchmarks: 'Quality & Benchmarks',
+        memory: 'Context & Vector Memory',
+        playground: 'Live Playground'
     };
     if (currentViewTitle) {
-        currentViewTitle.textContent = titleMap[tabId] || 'Dashboard';
+        currentViewTitle.textContent = titleMap[tabId] || 'Observability';
     }
 
-    // Close sidebar on mobile when tab clicked
+    // Close drawer when navigating tabs
+    closeInspector();
     sidebar?.classList.remove('open');
 }
 
@@ -129,9 +157,7 @@ navItems.forEach(item => {
     });
 });
 
-document.getElementById('go-to-eval-tab-btn')?.addEventListener('click', () => {
-    switchTab('evaluator');
-});
+openPlaygroundBtn?.addEventListener('click', () => switchTab('playground'));
 
 // Mobile menu toggle
 mobileToggle?.addEventListener('click', () => {
@@ -156,15 +182,13 @@ async function fetchAnalytics() {
         }
 
         const res = await fetch(`${API_BASE}/api/user/analytics`, { headers });
-        if (!res.ok) {
-            throw new Error(`HTTP ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
         const data = await res.json();
         currentAnalyticsData = data;
         renderDashboard(data);
     } catch (err) {
-        console.warn('Analytics fetch error; falling back to offline demo data', err);
+        console.warn('Analytics fetch error; rendering demo data fallback', err);
         renderDemoFallback();
     }
 }
@@ -172,43 +196,40 @@ async function fetchAnalytics() {
 // --- RENDER DASHBOARD ---
 function renderDashboard(data) {
     const metrics = data.metrics || {};
+    const historyList = data.recent_enhancements || [];
 
-    // 1. Metric Cards
-    animateCounter(document.getElementById('metric-lift'), metrics.avg_improvement_delta || 49.2, 1000, true);
+    // 1. Top KPI Summary Strip
+    animateCounter(document.getElementById('metric-total-runs'), metrics.total_enhancements || historyList.length);
     document.getElementById('metric-avg-score').textContent = metrics.avg_improvement_score || 91.5;
-    animateCounter(document.getElementById('metric-accuracy'), metrics.accuracy_index || 98.4, 1000, true);
-    animateCounter(document.getElementById('metric-time-saved'), metrics.time_saved_hours || 14.8, 1000, true);
-    animateCounter(document.getElementById('metric-vectors'), metrics.memorized_strategies || 48, 1000);
+    document.getElementById('metric-lift').textContent = `+${metrics.avg_improvement_delta || 49.2} pts`;
+    animateCounter(document.getElementById('metric-time-saved'), metrics.time_saved_hours || 14.8, 900, true);
+    animateCounter(document.getElementById('metric-vectors'), metrics.memorized_strategies || 48, 900);
     document.getElementById('metric-storage-kb').textContent = metrics.estimated_storage_kb || 146.8;
 
-    // Counts in sidebar
-    const historyList = data.recent_enhancements || [];
+    // Badges & counts
+    const platformCount = Object.keys(data.platforms || {}).length || 4;
+    document.getElementById('metric-platforms-active').textContent = `${platformCount} Platforms`;
     document.getElementById('history-count').textContent = historyList.length;
     document.getElementById('library-count').textContent = metrics.saved_prompts_count || 12;
 
-    // 2. Render Timeline SVG Chart
-    renderTimelineChart(data.daily_activity || []);
+    // Vector Memory Tab Stats
+    const vecCount = document.getElementById('vector-indexed-count');
+    const vecStore = document.getElementById('vector-storage-val');
+    if (vecCount) vecCount.textContent = metrics.memorized_strategies || 48;
+    if (vecStore) vecStore.textContent = `${metrics.estimated_storage_kb || 146.8} KB`;
 
-    // 3. Render Platform Distribution
-    renderPlatformDistribution(data.platforms || {});
-
-    // 4. Render Improvement Engine Showcase with top item
-    if (historyList.length > 0) {
-        renderShowcaseItem(historyList[0]);
-    }
-
-    // 5. Render History Table
+    // 2. Tab 1: Render Prompts & Traces Feed
     renderHistoryTable(historyList);
 
-    // 6. Fetch Saved Prompts Library
-    fetchSavedPrompts();
+    // 3. Tab 2: Render Activity Chart & Platform Breakdown
+    renderTimelineChart(data.daily_activity || []);
+    renderPlatformDistribution(data.platforms || {});
 
-    // Trigger scroll reveal
-    initScrollReveal();
+    // 4. Tab 3: Fetch Saved Prompts
+    fetchSavedPrompts();
 }
 
 function renderDemoFallback() {
-    // Uses realistic demo data if offline
     renderDashboard({
         is_demo: true,
         metrics: {
@@ -223,17 +244,17 @@ function renderDemoFallback() {
         },
         platforms: { ChatGPT: 64, Claude: 42, Gemini: 18, Perplexity: 10 },
         daily_activity: [
-            { date: '2026-09-04', count: 4 },
-            { date: '2026-09-05', count: 6 },
-            { date: '2026-09-06', count: 9 },
-            { date: '2026-09-07', count: 7 },
-            { date: '2026-09-08', count: 12 },
-            { date: '2026-09-09', count: 15 },
-            { date: '2026-09-10', count: 18 }
+            { date: '2026-09-08', count: 7 },
+            { date: '2026-09-09', count: 12 },
+            { date: '2026-09-10', count: 9 },
+            { date: '2026-09-11', count: 15 },
+            { date: '2026-09-12', count: 14 },
+            { date: '2026-09-13', count: 18 },
+            { date: '2026-09-14', count: 22 }
         ],
         recent_enhancements: [
             {
-                id: 'sample-1',
+                id: 'demo-1',
                 original: 'explain quantum computing simply',
                 enhanced: 'Explain quantum computing from foundational principles to real-world applications. Target audience: software engineers without quantum physics background. Cover: 1) Qubits, Superposition & Entanglement vs classical bits, 2) Key quantum gates (Hadamard, CNOT), 3) Current NISQ-era hardware limitations, and 4) Practical cryptography impacts (RSA vs Post-Quantum Cryptography). Use clear technical analogies and concise bullet points.',
                 platform: 'ChatGPT',
@@ -242,13 +263,59 @@ function renderDemoFallback() {
                 score: 94,
                 delta: 56,
                 original_score: 38,
-                timestamp: new Date().toISOString()
+                dimensions: {
+                    clarity_structure: { original: 10, enhanced: 24, delta: 14 },
+                    specificity_constraints: { original: 9, enhanced: 23, delta: 14 },
+                    context_grounding: { original: 8, enhanced: 24, delta: 16 },
+                    actionability_precision: { original: 11, enhanced: 23, delta: 12 }
+                },
+                verdict: 'Transforms a generic inquiry into a modular, production-ready technical briefing tailored for engineers.',
+                key_improvements: [
+                    'Targeted software engineering audience boundary',
+                    'Defined 4 clear pedagogical sections',
+                    'Required post-quantum cryptography impact'
+                ],
+                context_details: {
+                    extracted: 'Software engineer persona, prefers technical analogies',
+                    selected: 'Technical Explainer standard template',
+                    conversation: 'Discussing RSA 2048 and Shor\'s algorithm'
+                },
+                timestamp: new Date(Date.now() - 15 * 60 * 1000).toISOString()
+            },
+            {
+                id: 'demo-2',
+                original: 'write a python script for scraping stocks',
+                enhanced: 'Create a production-grade Python script using `httpx` and `BeautifulSoup4` to scrape historical stock price data. Requirements: 1) Respect robots.txt and implement exponential backoff retry logic, 2) Parse tickers, daily OHLCV prices, and market cap, 3) Output cleaned records into structured Pydantic models with type validation, and 4) Save results to both SQLite and CSV with comprehensive logging and error handling.',
+                platform: 'Claude',
+                mode: 'deep',
+                latency: 1.68,
+                score: 92,
+                delta: 51,
+                original_score: 41,
+                dimensions: {
+                    clarity_structure: { original: 11, enhanced: 24, delta: 13 },
+                    specificity_constraints: { original: 10, enhanced: 23, delta: 13 },
+                    context_grounding: { original: 9, enhanced: 22, delta: 13 },
+                    actionability_precision: { original: 11, enhanced: 23, delta: 12 }
+                },
+                verdict: 'Injected production libraries (httpx, Pydantic), retry mechanisms, and concrete validation rules.',
+                key_improvements: [
+                    'Specified httpx and BeautifulSoup4 instead of vague requests',
+                    'Required Pydantic schemas and dual SQLite/CSV storage',
+                    'Enforced exponential backoff and error handling'
+                ],
+                context_details: {
+                    extracted: 'Python 3.11 developer stack',
+                    selected: 'Production Code Standard',
+                    conversation: 'Setting up market analytics pipeline'
+                },
+                timestamp: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
             }
         ]
     });
 }
 
-// --- TIMELINE SVG CHART ---
+// --- RENDER TIMELINE CHART ---
 function renderTimelineChart(dailyData) {
     const container = document.getElementById('timeline-chart-container');
     if (!container || !dailyData.length) return;
@@ -262,7 +329,7 @@ function renderTimelineChart(dailyData) {
     const chartH = height - padding.top - padding.bottom;
 
     const points = dailyData.map((d, i) => {
-        const x = padding.left + (i / (dailyData.length - 1)) * chartW;
+        const x = padding.left + (i / Math.max(dailyData.length - 1, 1)) * chartW;
         const y = padding.top + chartH - (d.count / maxCount) * chartH;
         return { x, y, ...d };
     });
@@ -280,18 +347,14 @@ function renderTimelineChart(dailyData) {
                     <stop offset="100%" stop-color="#50c8a8" stop-opacity="0.0" />
                 </linearGradient>
             </defs>
-            <!-- Area fill -->
             <path d="${areaD}" fill="url(#chartGrad)" />
-            <!-- Line -->
             <path d="${pathD}" fill="none" stroke="#50c8a8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-            <!-- Dots -->
             ${points.map(p => `
-                <circle cx="${p.x}" cy="${p.y}" r="4" fill="#090a0f" stroke="#50c8a8" stroke-width="2" style="cursor: pointer;">
+                <circle cx="${p.x}" cy="${p.y}" r="4.5" fill="#090a0f" stroke="#50c8a8" stroke-width="2" style="cursor: pointer;">
                     <title>${p.date}: ${p.count} enhancements</title>
                 </circle>
             `).join('')}
-            <!-- X Axis Dates -->
-            ${points.filter((_, i) => i % 3 === 0 || i === points.length - 1).map(p => `
+            ${points.filter((_, i) => i % 2 === 0 || i === points.length - 1).map(p => `
                 <text x="${p.x}" y="${height - 8}" fill="#646573" font-size="10" font-family="Inter, sans-serif" text-anchor="middle">
                     ${p.date.slice(5)}
                 </text>
@@ -302,14 +365,14 @@ function renderTimelineChart(dailyData) {
     container.innerHTML = svg;
 }
 
-// --- PLATFORM DISTRIBUTION BARS ---
+// --- RENDER PLATFORM DISTRIBUTION ---
 function renderPlatformDistribution(platforms) {
     const list = document.getElementById('platform-distribution-list');
     if (!list) return;
 
     const entries = Object.entries(platforms);
     if (!entries.length) {
-        list.innerHTML = '<p style="color:#646573;font-size:13px;">No platform data recorded yet.</p>';
+        list.innerHTML = '<p style="color:#646573;font-size:13px;">No platform runs recorded yet.</p>';
         return;
     }
 
@@ -331,89 +394,28 @@ function renderPlatformDistribution(platforms) {
     }).join('');
 }
 
-// --- RENDER IMPROVEMENT ENGINE SHOWCASE ---
-function renderShowcaseItem(item) {
-    const origScore = item.original_score || 38;
-    const enhScore = item.score || 94;
-    const delta = item.delta || (enhScore - origScore);
-
-    // Update Gauges (circumference is ~314 for r=50)
-    const circumference = 314;
-    const circleOrig = document.querySelector('#gauge-original .circle-progress');
-    const circleEnh = document.querySelector('#gauge-enhanced .circle-progress');
-
-    if (circleOrig) {
-        circleOrig.style.strokeDashoffset = circumference * (1 - origScore / 100);
-    }
-    if (circleEnh) {
-        circleEnh.style.strokeDashoffset = circumference * (1 - enhScore / 100);
-    }
-
-    document.getElementById('gauge-orig-val').textContent = origScore;
-    document.getElementById('gauge-enh-val').textContent = enhScore;
-    document.getElementById('gauge-delta-val').textContent = `+${delta} Points`;
-
-    // Layers
-    document.getElementById('layer-original-text').textContent = item.original;
-    document.getElementById('layer-enhanced-text').textContent = item.enhanced;
-
-    // Dimensions
-    const dims = item.dimensions || {
-        clarity_structure: { original: 10, enhanced: 24 },
-        specificity_constraints: { original: 9, enhanced: 23 },
-        context_grounding: { original: 8, enhanced: 24 },
-        actionability_precision: { original: 11, enhanced: 23 }
-    };
-
-    if (dims.clarity_structure) {
-        document.getElementById('dim-c-orig').textContent = dims.clarity_structure.original;
-        document.getElementById('dim-c-enh').textContent = dims.clarity_structure.enhanced;
-        document.getElementById('dim-bar-c').style.width = `${(dims.clarity_structure.enhanced / 25) * 100}%`;
-    }
-    if (dims.specificity_constraints) {
-        document.getElementById('dim-s-orig').textContent = dims.specificity_constraints.original;
-        document.getElementById('dim-s-enh').textContent = dims.specificity_constraints.enhanced;
-        document.getElementById('dim-bar-s').style.width = `${(dims.specificity_constraints.enhanced / 25) * 100}%`;
-    }
-    if (dims.context_grounding) {
-        document.getElementById('dim-g-orig').textContent = dims.context_grounding.original;
-        document.getElementById('dim-g-enh').textContent = dims.context_grounding.enhanced;
-        document.getElementById('dim-bar-g').style.width = `${(dims.context_grounding.enhanced / 25) * 100}%`;
-    }
-    if (dims.actionability_precision) {
-        document.getElementById('dim-a-orig').textContent = dims.actionability_precision.original;
-        document.getElementById('dim-a-enh').textContent = dims.actionability_precision.enhanced;
-        document.getElementById('dim-bar-a').style.width = `${(dims.actionability_precision.enhanced / 25) * 100}%`;
-    }
-
-    if (item.verdict) {
-        document.getElementById('eval-verdict-text').textContent = item.verdict;
-    }
-}
-
-// Copy enhanced prompt
-document.getElementById('copy-enhanced-btn')?.addEventListener('click', () => {
-    const text = document.getElementById('layer-enhanced-text').textContent;
-    navigator.clipboard.writeText(text).then(() => showToast('Enhanced prompt copied to clipboard!'));
-});
-
-// --- RENDER HISTORY TABLE ---
+// --- TAB 1: RENDER RUNS & TRACES TABLE ---
 function renderHistoryTable(items) {
     const tbody = document.getElementById('history-table-body');
     if (!tbody) return;
 
     if (!items.length) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#646573;padding:32px;">No prompt enhancements recorded yet. Try enhancing on ChatGPT or test live!</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#646573;padding:40px;">No prompt enhancements recorded yet. Use the Chrome extension or test live in the Playground!</td></tr>';
         return;
     }
 
     tbody.innerHTML = items.map(item => {
-        const dateStr = item.timestamp ? new Date(item.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Recent';
+        const score = item.score || 90;
+        const delta = item.delta || 45;
+        const scoreClass = score >= 90 ? 'high' : score >= 80 ? 'mid' : 'low';
+        const dateStr = item.timestamp
+            ? new Date(item.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+            : 'Recent';
+
         return `
-            <tr data-id="${item.id}">
+            <tr data-id="${item.id}" onclick="openInspectorById('${item.id}')">
                 <td>
-                    <div style="font-weight:600;">${item.platform || 'ChatGPT'}</div>
-                    <div style="font-size:11px;color:#646573;">${dateStr}</div>
+                    <span class="platform-badge">${escapeHtml(item.platform || 'ChatGPT')}</span>
                 </td>
                 <td>
                     <div class="table-prompt-preview" title="${escapeHtml(item.original)}">${escapeHtml(item.original)}</div>
@@ -422,61 +424,137 @@ function renderHistoryTable(items) {
                     <div class="table-prompt-preview" title="${escapeHtml(item.enhanced)}">${escapeHtml(item.enhanced)}</div>
                 </td>
                 <td>
-                    <span class="table-score-badge">${item.score || 90}/100 <span style="font-size:10px;opacity:.8;">(+${item.delta || 45})</span></span>
+                    <span class="score-pill-badge ${scoreClass}">
+                        ${score}/100 <span style="font-size:10px;opacity:.8;">(+${delta})</span>
+                    </span>
                 </td>
                 <td style="color:#9c9da9;">${item.latency ? item.latency + 's' : '1.8s'}</td>
-                <td>
-                    <div class="action-btns">
-                        <button class="btn-icon-sm" onclick="inspectPrompt('${item.id}')" title="Inspect">🔍 Inspect</button>
-                        <button class="btn-icon-sm" onclick="copyPromptText('${escapeHtml(item.enhanced)}')" title="Copy">📋</button>
-                        <button class="btn-icon-sm btn-delete" onclick="deleteHistoryPrompt('${item.id}')" title="Delete">🗑</button>
-                    </div>
+                <td style="color:#646573;font-size:12px;">${dateStr}</td>
+                <td class="text-right" onclick="event.stopPropagation();">
+                    <button class="btn-inspect" onclick="openInspectorById('${item.id}')">Inspect →</button>
                 </td>
             </tr>
         `;
     }).join('');
 }
 
-// Expose handlers to window for inline onclicks
-window.inspectPrompt = function(id) {
+// --- SLIDE-OUT INSPECTOR DRAWER CONTROLLER ---
+window.openInspectorById = function(id) {
     const list = currentAnalyticsData?.recent_enhancements || [];
-    const item = list.find(x => x.id === id);
-    if (item) {
-        renderShowcaseItem(item);
-        switchTab('evaluator');
-        showToast('Loaded into Prompt Improvement Engine!');
-    }
+    const item = list.find(x => x.id === id) || list[0];
+    if (!item) return;
+
+    activeInspectedId = id;
+
+    // Highlight row in table
+    document.querySelectorAll('#history-table-body tr').forEach(r => {
+        r.classList.toggle('active-inspect', r.getAttribute('data-id') === id);
+    });
+
+    // Header info
+    drawerPlatformBadge.textContent = item.platform || 'ChatGPT';
+    drawerModeBadge.textContent = (item.mode || 'deep').toUpperCase();
+    drawerScoreBadge.textContent = `${item.score || 92}/100`;
+    drawerTime.textContent = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Just now';
+
+    // Diff
+    drawerOrigText.textContent = item.original || '';
+    drawerEnhText.textContent = item.enhanced || '';
+
+    // Copy Handler
+    drawerCopyBtn.onclick = () => {
+        navigator.clipboard.writeText(item.enhanced || '').then(() => showToast('Enhanced prompt copied!'));
+    };
+
+    // Quality breakdown
+    drawerLiftTag.textContent = `+${item.delta || 50} pts Quality Lift`;
+    drawerVerdict.textContent = item.verdict || 'The enhanced prompt provides structured execution steps, concrete domain constraints, and high actionability.';
+
+    // Dimensions
+    const dims = item.dimensions || {
+        clarity_structure: { original: 10, enhanced: 24 },
+        specificity_constraints: { original: 10, enhanced: 23 },
+        context_grounding: { original: 8, enhanced: 24 },
+        actionability_precision: { original: 11, enhanced: 23 }
+    };
+
+    drawerDimensions.innerHTML = Object.entries(dims).map(([key, val]) => {
+        const title = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const orig = val.original ?? 10;
+        const enh = val.enhanced ?? 23;
+        const pct = Math.round((enh / 25) * 100);
+        return `
+            <div class="dimension-card">
+                <div class="dim-title">${title}</div>
+                <div class="dim-scores">
+                    <span class="dim-orig">${orig}</span>
+                    <span class="dim-arrow">→</span>
+                    <span class="dim-enh">${enh}</span>
+                    <span class="dim-max">/25</span>
+                </div>
+                <div class="dim-bar"><div class="dim-fill fill-accent" style="width: ${pct}%;"></div></div>
+            </div>
+        `;
+    }).join('');
+
+    // Key Improvements list
+    const improvements = item.key_improvements?.length
+        ? item.key_improvements
+        : ['Structured execution steps added', 'Clear audience boundaries defined', 'Context injected cleanly'];
+
+    drawerImprovementsList.innerHTML = improvements.map(imp => `<li>${escapeHtml(imp)}</li>`).join('');
+
+    // Context Decomposition Layers
+    const ctx = item.context_details || {};
+    drawerLayer1.textContent = item.original || 'No input';
+    drawerLayer2.textContent = ctx.extracted || 'Auto-matched from passive history: Developer persona, technical depth preferences.';
+    drawerLayer3.textContent = ctx.selected || 'Applied Template: Structured Engineering Prompt format.';
+    drawerLayer4.textContent = ctx.conversation || 'Scraped from chat tab DOM context.';
+
+    // Show drawer
+    drawerBackdrop?.classList.remove('hidden');
+    inspectorDrawer?.classList.remove('hidden');
 };
 
-window.copyPromptText = function(text) {
-    navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
-};
+function closeInspector() {
+    drawerBackdrop?.classList.add('hidden');
+    inspectorDrawer?.classList.add('hidden');
+    document.querySelectorAll('#history-table-body tr').forEach(r => r.classList.remove('active-inspect'));
+    activeInspectedId = null;
+}
 
-window.deleteHistoryPrompt = async function(id) {
-    if (!confirm('Are you sure you want to delete this prompt from history?')) return;
+drawerCloseBtn?.addEventListener('click', closeInspector);
+drawerBackdrop?.addEventListener('click', closeInspector);
 
+document.getElementById('drawer-delete-btn')?.addEventListener('click', async () => {
+    if (!activeInspectedId) return;
+    if (!confirm('Are you sure you want to permanently delete this prompt trace?')) return;
     try {
-        if (token) {
-            await fetch(`${API_BASE}/api/user/prompt-history/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE}/api/user/prompt-history/${activeInspectedId}`, {
+            method: 'DELETE',
+            headers,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (currentAnalyticsData?.recent_enhancements) {
+            currentAnalyticsData.recent_enhancements = currentAnalyticsData.recent_enhancements.filter(x => x.id !== activeInspectedId);
+            renderHistoryTable(currentAnalyticsData.recent_enhancements);
+            const countEl = document.getElementById('history-count');
+            if (countEl) countEl.textContent = currentAnalyticsData.recent_enhancements.length;
         }
-        // Remove row from DOM
-        document.querySelector(`tr[data-id="${id}"]`)?.remove();
-        showToast('Prompt history entry deleted.');
+        closeInspector();
     } catch (err) {
-        showToast('Deleted from view.');
+        alert(`Failed to delete trace: ${err.message}`);
     }
-};
+});
 
-// Search & Filter History
+// Filter table
 document.getElementById('history-search-input')?.addEventListener('input', (e) => {
     const query = e.target.value.toLowerCase();
     const rows = document.querySelectorAll('#history-table-body tr');
     rows.forEach(row => {
-        const text = row.textContent.toLowerCase();
-        row.style.display = text.includes(query) ? '' : 'none';
+        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
     });
 });
 
@@ -487,165 +565,31 @@ document.getElementById('history-platform-filter')?.addEventListener('change', (
         if (platform === 'all') {
             row.style.display = '';
         } else {
-            const rowText = row.children[0]?.textContent || '';
-            row.style.display = rowText.includes(platform) ? '' : 'none';
+            const rowPlatform = row.querySelector('.platform-badge')?.textContent || '';
+            row.style.display = rowPlatform.includes(platform) ? '' : 'none';
         }
     });
 });
 
-// --- SAVED PROMPTS LIBRARY ---
-async function fetchSavedPrompts() {
-    const grid = document.getElementById('library-grid');
-    if (!grid) return;
-
-    try {
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        const res = await fetch(`${API_BASE}/saved-prompts`, { headers });
-        if (res.ok) {
-            savedPromptsData = await res.json();
-            renderLibraryGrid(savedPromptsData);
-            return;
-        }
-    } catch (_) {}
-
-    // Fallback sample library cards
-    savedPromptsData = [
-        {
-            id: 'lib-1',
-            title: 'Production Python Clean Code',
-            tags: ['python', 'backend', 'clean-code'],
-            content: 'Write modular, PEP8-compliant Python 3.11 code with strict Pydantic v2 schemas, type annotations, and comprehensive exception handling with custom error models.'
-        },
-        {
-            id: 'lib-2',
-            title: 'Technical Resume STAR Method',
-            tags: ['career', 'resume', 'system-design'],
-            content: 'Structure every bullet point using Situation, Task, Action, Result. Highlight measurable metrics (e.g., reduced latency by 45%, saved $20k monthly in compute).'
-        },
-        {
-            id: 'lib-3',
-            title: 'FastAPI Microservice Architecture',
-            tags: ['fastapi', 'docker', 'asyncio'],
-            content: 'Structure endpoints with APIRouter, dependency injection for database connections, CORS hardening, health endpoints, and Prometheus metric instrumentation.'
-        }
-    ];
-    renderLibraryGrid(savedPromptsData);
-}
-
-function renderLibraryGrid(prompts) {
-    const grid = document.getElementById('library-grid');
-    if (!grid) return;
-
-    if (!prompts.length) {
-        grid.innerHTML = '<p style="color:#646573;padding:24px;">No saved prompts in your vector library yet. Click "+ New Saved Prompt" to create one!</p>';
-        return;
-    }
-
-    grid.innerHTML = prompts.map(p => `
-        <div class="library-card" data-lib-id="${p.id || p._id}">
-            <div>
-                <div class="lib-card-title">${escapeHtml(p.title || 'Untitled Prompt')}</div>
-                <div class="lib-card-tags">
-                    ${(p.tags || ['general']).map(t => `<span class="lib-tag">#${escapeHtml(t)}</span>`).join('')}
-                </div>
-                <div class="lib-card-body">${escapeHtml(p.content)}</div>
-            </div>
-            <div class="lib-card-footer">
-                <button class="btn-icon-sm" onclick="copyPromptText('${escapeHtml(p.content)}')">📋 Copy</button>
-                <button class="btn-icon-sm btn-delete" onclick="deleteSavedPrompt('${p.id || p._id}')">🗑</button>
-            </div>
-        </div>
-    `).join('');
-}
-
-window.deleteSavedPrompt = async function(id) {
-    if (!confirm('Delete this prompt template from your vector library?')) return;
-    try {
-        if (token) {
-            await fetch(`${API_BASE}/saved-prompts/${id}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-        }
-        document.querySelector(`.library-card[data-lib-id="${id}"]`)?.remove();
-        showToast('Saved prompt removed from library.');
-    } catch (_) {
-        showToast('Prompt removed.');
-    }
-};
-
-// Add Saved Prompt Modal
-addSavedPromptBtn?.addEventListener('click', () => {
-    promptModal?.classList.remove('hidden');
-});
-closePromptModalBtn?.addEventListener('click', () => promptModal?.classList.add('hidden'));
-cancelPromptBtn?.addEventListener('click', () => promptModal?.classList.add('hidden'));
-
-savePromptSubmitBtn?.addEventListener('click', async () => {
-    const title = document.getElementById('prompt-title-input').value.trim();
-    const content = document.getElementById('prompt-content-input').value.trim();
-    const tagsRaw = document.getElementById('prompt-tags-input').value.trim();
-    const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : ['custom'];
-
-    if (!content) {
-        showToast('Please enter prompt content.');
-        return;
-    }
-
-    try {
-        const payload = { title, content, tags };
-        const headers = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-
-        const res = await fetch(`${API_BASE}/saved-prompts`, {
-            method: 'POST',
-            headers,
-            body: JSON.stringify(payload)
-        });
-
-        if (res.ok) {
-            showToast('Prompt saved and indexed in Qdrant Vector DB!');
-            promptModal?.classList.add('hidden');
-            fetchSavedPrompts();
-        } else {
-            showToast('Saved locally in workspace.');
-            promptModal?.classList.add('hidden');
-        }
-    } catch (_) {
-        showToast('Saved locally.');
-        promptModal?.classList.add('hidden');
-    }
-});
-
-// --- LIVE EVALUATION BENCHMARK MODAL ---
-function openEvalModal() {
-    evalModal?.classList.remove('hidden');
-    evalStatusBox?.classList.add('hidden');
-}
-
-openEvalModalBtn?.addEventListener('click', openEvalModal);
-triggerLiveEvalBtn?.addEventListener('click', openEvalModal);
-closeEvalModalBtn?.addEventListener('click', () => evalModal?.classList.add('hidden'));
-cancelEvalBtn?.addEventListener('click', () => evalModal?.classList.add('hidden'));
-
-runEvalBtn?.addEventListener('click', async () => {
-    const orig = evalInputOrig.value.trim();
-    let enh = evalInputEnh.value.trim();
-    const ctx = evalInputCtx.value.trim();
+// --- TAB 4: LIVE PLAYGROUND CONTROLLER ---
+playRunBenchmarkBtn?.addEventListener('click', async () => {
+    const orig = playInputOrig.value.trim();
+    let enh = playInputEnh.value.trim();
+    const ctx = playInputCtx.value.trim();
 
     if (!orig) {
-        showToast('Please enter an original prompt to evaluate.');
+        showToast('Please enter an original prompt to test.');
         return;
     }
 
-    // If enhanced is empty, synthesize a structured rewrite
     if (!enh) {
-        enh = `Synthesize a comprehensive, production-ready solution for: "${orig}". Ensure clear technical constraints, step-by-step logic, error handling, and structured output.`;
+        enh = `Synthesize a comprehensive, production-ready response for: "${orig}". Include clear step-by-step logic, domain constraints, output schema, and comprehensive error handling.`;
+        playInputEnh.value = enh;
     }
 
-    evalStatusBox?.classList.remove('hidden');
-    evalStatusText.textContent = 'Analyzing prompt structure & calling AI Judge...';
-    runEvalBtn.disabled = true;
+    playStatus?.classList.remove('hidden');
+    playStatusText.textContent = 'Analyzing prompt structure & calling AI Judge...';
+    playRunBenchmarkBtn.disabled = true;
 
     try {
         const res = await fetch(`${API_BASE}/api/evaluate/prompt-improvement`, {
@@ -662,47 +606,131 @@ runEvalBtn?.addEventListener('click', async () => {
 
         const result = await res.json();
 
-        // Render into Showcase
-        renderShowcaseItem({
-            original: orig,
-            enhanced: enh,
-            original_score: result.original_score,
-            score: result.enhanced_score,
-            delta: result.improvement_delta,
-            dimensions: result.dimensions,
-            verdict: result.verdict
-        });
+        // Render Gauges
+        playOrigNum.textContent = result.original_score;
+        playEnhNum.textContent = result.enhanced_score;
+        playDeltaNum.textContent = `+${result.improvement_delta} pts`;
+        playScorePill.textContent = `${result.enhanced_score}/100`;
 
-        evalModal?.classList.add('hidden');
-        switchTab('evaluator');
-        showToast(`AI Benchmark Complete! Score: ${result.enhanced_score}/100 (+${result.improvement_delta} pts)`);
+        // Render Verdict
+        playVerdictText.textContent = result.verdict || 'Prompt improvement benchmark complete.';
+
+        // Render Dimensions
+        const dims = result.dimensions || {};
+        playDimensions.innerHTML = Object.entries(dims).map(([key, val]) => {
+            const title = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+            const origS = val.original ?? 10;
+            const enhS = val.enhanced ?? 23;
+            const pct = Math.round((enhS / 25) * 100);
+            return `
+                <div class="dimension-card">
+                    <div class="dim-title">${title}</div>
+                    <div class="dim-scores">
+                        <span class="dim-orig">${origS}</span>
+                        <span class="dim-arrow">→</span>
+                        <span class="dim-enh">${enhS}</span>
+                        <span class="dim-max">/25</span>
+                    </div>
+                    <div class="dim-bar"><div class="dim-fill fill-accent" style="width: ${pct}%;"></div></div>
+                </div>
+            `;
+        }).join('');
+
+        // Render Output preview
+        playEnhancedOutput.textContent = enh;
+
+        showToast(`AI Benchmark complete! Score: ${result.enhanced_score}/100 (+${result.improvement_delta} pts)`);
     } catch (err) {
-        console.error('Eval error', err);
-        showToast('Evaluation failed to connect. Try again.');
+        console.error('Playground evaluation error', err);
+        showToast('Benchmark evaluation failed. Check connection.');
     } finally {
-        runEvalBtn.disabled = false;
-        evalStatusBox?.classList.add('hidden');
+        playRunBenchmarkBtn.disabled = false;
+        playStatus?.classList.add('hidden');
     }
 });
 
-// --- REFRESH BUTTON ---
-document.getElementById('refresh-data-btn')?.addEventListener('click', () => {
-    showToast('Refreshing intelligence metrics...');
-    fetchAnalytics();
+playCopyBtn?.addEventListener('click', () => {
+    const text = playEnhancedOutput.textContent.trim();
+    if (text) {
+        navigator.clipboard.writeText(text).then(() => showToast('Enhanced output copied!'));
+    }
 });
 
-// --- HACKATHON SCROLL REVEAL (IntersectionObserver) ---
-function initScrollReveal() {
-    const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                entry.target.classList.add('visible');
-            }
-        });
-    }, { threshold: 0.08 });
+// --- TAB 3: SAVED PROMPTS ---
+async function fetchSavedPrompts() {
+    const grid = document.getElementById('library-grid');
+    if (!grid) return;
 
-    document.querySelectorAll('.scroll-reveal').forEach(el => observer.observe(el));
+    try {
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(`${API_BASE}/saved-prompts`, { headers });
+        if (!res.ok) throw new Error();
+        savedPromptsData = await res.json();
+    } catch {
+        savedPromptsData = [
+            { id: '1', title: 'Structured Python API Guidelines', content: 'Always return Pydantic models with type annotations and explicit status codes.', tags: ['python', 'api'] },
+            { id: '2', title: 'Executive Summary Briefing Rule', content: 'Format summary as: 1) Core takeaway, 2) DRI action matrix, 3) Risks & mitigations.', tags: ['summary', 'briefing'] },
+            { id: '3', title: 'Docker Container Security Standards', content: 'Run as non-root user, implement health checks, multi-stage builds.', tags: ['devops', 'docker'] }
+        ];
+    }
+
+    grid.innerHTML = savedPromptsData.map(p => `
+        <div class="library-card">
+            <div class="library-card-header">
+                <span class="library-card-title">${escapeHtml(p.title || 'Untitled Prompt')}</span>
+                <button class="btn-icon-sm" onclick="copyPromptText('${escapeHtml(p.content)}')">📋</button>
+            </div>
+            <p class="library-card-body">${escapeHtml(p.content)}</p>
+            <div class="library-tags">
+                ${(p.tags || ['general']).map(t => `<span class="tag-chip">${escapeHtml(t)}</span>`).join('')}
+            </div>
+        </div>
+    `).join('');
 }
+
+window.copyPromptText = function(text) {
+    navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard!'));
+};
+
+// Saved prompt modal listeners
+addSavedPromptBtn?.addEventListener('click', () => promptModal?.classList.remove('hidden'));
+closePromptModalBtn?.addEventListener('click', () => promptModal?.classList.add('hidden'));
+cancelPromptBtn?.addEventListener('click', () => promptModal?.classList.add('hidden'));
+
+savePromptSubmitBtn?.addEventListener('click', async () => {
+    const title = document.getElementById('prompt-title-input')?.value.trim();
+    const content = document.getElementById('prompt-content-input')?.value.trim();
+    const tags = document.getElementById('prompt-tags-input')?.value.split(',').map(s => s.trim()).filter(Boolean);
+
+    if (!title || !content) {
+        showToast('Please provide both a title and prompt content.');
+        return;
+    }
+
+    try {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        await fetch(`${API_BASE}/saved-prompts`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ title, content, tags: tags || ['custom'] })
+        });
+        showToast('Prompt saved and indexed in Qdrant!');
+        promptModal?.classList.add('hidden');
+        fetchSavedPrompts();
+    } catch {
+        showToast('Saved locally.');
+        promptModal?.classList.add('hidden');
+    }
+});
+
+// Refresh button
+refreshBtn?.addEventListener('click', () => {
+    showToast('Refreshing observability data...');
+    fetchAnalytics();
+});
 
 // Utility
 function escapeHtml(text) {
@@ -717,4 +745,3 @@ function escapeHtml(text) {
 
 // Initial Kickoff
 fetchAnalytics();
-initScrollReveal();

@@ -571,3 +571,52 @@ def test_streaming_enhancement_waits_for_acceptance_to_memorize(client, auth, mo
     assert calls == []
     assert client.post("/enhance/accept", json={"log_id": done["log_id"]}, headers=auth).status_code == 200
     assert len(calls) == 1
+
+
+def test_enhance_with_tracking_disabled_does_not_log_or_evaluate(client, auth, monkeypatch):
+    _stub_llm(monkeypatch)
+    res = client.post(
+        "/enhance",
+        json={"prompt": "private prompt", "tracking_enabled": False},
+        headers=auth,
+    )
+    assert res.status_code == 200
+    assert res.json().get("log_id") is None
+    assert len(in_memory_prompt_logs) == 0
+
+
+def test_enhance_stream_with_tracking_disabled_does_not_log(client, auth, monkeypatch):
+    import json as _json
+    monkeypatch.setattr(
+        prompts.providers, "chat_stream",
+        lambda **kw: iter([{"token": "Private response."},
+                           {"meta": {"model": "m", "provider": "p", "byok": False}}]),
+    )
+    res = client.post(
+        "/enhance/stream",
+        json={"prompt": "private stream prompt", "tracking_enabled": False},
+        headers=auth,
+    )
+    assert res.status_code == 200
+    events = [_json.loads(l[6:]) for l in res.text.splitlines() if l.startswith("data: ")]
+    done = next(e for e in events if e.get("done"))
+    assert done.get("log_id") is None
+    assert len(in_memory_prompt_logs) == 0
+
+
+def test_delete_prompt_history_item_by_log_id(client, auth):
+    in_memory_prompt_logs.append({
+        "log_id": "3a5b7c9d1e2f3a4b5c6d7e8f9a0b1c2d",
+        "user_id": "integration-user",
+        "original": "prompt to be deleted",
+        "enhanced": "enhanced prompt to be deleted",
+    })
+    assert len(in_memory_prompt_logs) == 1
+    res = client.delete(
+        "/api/user/prompt-history/3a5b7c9d1e2f3a4b5c6d7e8f9a0b1c2d",
+        headers=auth,
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+    assert len(in_memory_prompt_logs) == 0
+

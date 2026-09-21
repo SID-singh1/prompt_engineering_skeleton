@@ -46,7 +46,9 @@ class Settings:
     GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
     GOOGLE_REDIRECT_URI = os.getenv(
         "GOOGLE_REDIRECT_URI",
-        "http://localhost:8000/auth/google/callback"
+        "https://siddhm11-prompt-engine.hf.space/auth/google/callback"
+        if os.getenv("ENVIRONMENT", "").lower() == "production"
+        else "http://localhost:8000/auth/google/callback"
     )
     JWT_SECRET = os.getenv("JWT_SECRET", "unsafedefaultsecret")
     ALGORITHM = "HS256"

@@ -276,21 +276,32 @@ body {
     background: var(--border);
 }
 
-.btn-demo {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--text);
-    border: 1px solid var(--border);
+.demo-subtle-box {
+    margin-top: 18px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted);
 }
 
-.btn-demo:hover {
-    background: rgba(80, 200, 168, 0.1);
-    border-color: var(--accent);
+.btn-demo-link {
+    background: none;
+    border: none;
+    padding: 0;
     color: var(--accent);
-    transform: translateY(-1px);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    transition: color var(--transition);
 }
 
-.demo-bolt {
-    color: #ffcc00;
+.btn-demo-link:hover {
+    color: #ffffff;
 }
 
 /* ── Features List ── */

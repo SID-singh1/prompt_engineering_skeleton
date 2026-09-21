@@ -1157,27 +1157,32 @@ function createPanel() {
       <button class="pm-theme-toggle" id="pm-theme-toggle" title="Toggle light/dark mode">🌙</button>
       <button class="pm-header-close" id="pm-close">×</button>
     </div>
-    <div class="pm-settings-panel" id="pm-settings-panel" style="display:none">
+    <div class="pm-settings-popover" id="pm-settings-panel" style="display:none">
+      <div class="pm-popover-header">
+        <span class="pm-popover-title">Settings & Privacy</span>
+        <button class="pm-popover-close" id="pm-settings-close" title="Close">×</button>
+      </div>
       <div class="pm-settings-row">
         <div class="pm-settings-info">
           <div class="pm-settings-label">Prompt Tracking</div>
-          <div class="pm-settings-desc">Logs your submitted prompts to improve future suggestions.</div>
+          <div class="pm-settings-desc">Logs enhancements to dashboard & benchmarks quality.</div>
         </div>
         <label class="pm-toggle">
-          <input type="checkbox" id="pm-tracking-toggle" checked>
+          <input type="checkbox" id="pm-tracking-toggle">
           <span class="pm-toggle-slider"></span>
         </label>
       </div>
       <div class="pm-settings-row" style="margin-top:10px">
         <div class="pm-settings-info">
           <div class="pm-settings-label">Conversation Context</div>
-          <div class="pm-settings-desc">Reads recent chat messages for better enhancement results.</div>
+          <div class="pm-settings-desc">Reads recent chat messages for context grounding.</div>
         </div>
         <label class="pm-toggle">
-          <input type="checkbox" id="pm-context-toggle" checked>
+          <input type="checkbox" id="pm-context-toggle">
           <span class="pm-toggle-slider"></span>
         </label>
       </div>
+      <div class="pm-popover-status" id="pm-settings-status">Tracking active</div>
     </div>
     <div class="pm-tabs">
       <button class="pm-tab pm-active" data-tab="context">Context</button>
@@ -1220,26 +1225,81 @@ function createPanel() {
   // Close
   document.getElementById("pm-close").addEventListener("click", () => togglePanel(false));
 
-  // Settings toggle
-  document.getElementById("pm-settings-toggle").addEventListener("click", () => {
-    const settingsPanel = document.getElementById("pm-settings-panel");
-    settingsPanel.style.display = settingsPanel.style.display === "none" ? "block" : "none";
+  // Settings popover
+  const settingsBtn = document.getElementById("pm-settings-toggle");
+  const settingsPanel = document.getElementById("pm-settings-panel");
+  const settingsCloseBtn = document.getElementById("pm-settings-close");
+  const settingsStatus = document.getElementById("pm-settings-status");
+
+  const closeSettings = () => {
+    if (settingsPanel) settingsPanel.style.display = "none";
+    if (settingsBtn) settingsBtn.classList.remove("pm-active-btn");
+  };
+
+  const toggleSettings = (e) => {
+    e?.stopPropagation();
+    if (!settingsPanel) return;
+    const isVisible = settingsPanel.style.display !== "none";
+    if (isVisible) {
+      closeSettings();
+    } else {
+      settingsPanel.style.display = "block";
+      settingsBtn?.classList.add("pm-active-btn");
+    }
+  };
+
+  settingsBtn?.addEventListener("click", toggleSettings);
+  settingsCloseBtn?.addEventListener("click", closeSettings);
+
+  // Close when clicking anywhere outside settingsPanel or pressing Escape
+  panel.addEventListener("click", (e) => {
+    if (settingsPanel && settingsPanel.style.display !== "none") {
+      if (!settingsPanel.contains(e.target) && e.target !== settingsBtn && !settingsBtn.contains(e.target)) {
+        closeSettings();
+      }
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && settingsPanel && settingsPanel.style.display !== "none") {
+      closeSettings();
+    }
   });
 
-  // Tracking toggle
+  const updateSettingsStatus = () => {
+    if (!settingsStatus) return;
+    if (promptTrackingEnabled && contextEnabled) {
+      settingsStatus.textContent = "✓ Tracking & context active";
+      settingsStatus.className = "pm-popover-status pm-status-active";
+    } else if (promptTrackingEnabled) {
+      settingsStatus.textContent = "✓ Prompt tracking active (context off)";
+      settingsStatus.className = "pm-popover-status pm-status-active";
+    } else {
+      settingsStatus.textContent = "⊘ Tracking off — 0 prompts logged to dashboard";
+      settingsStatus.className = "pm-popover-status pm-status-paused";
+    }
+  };
+
+  // Tracking toggle (ON by default)
   const trackToggle = document.getElementById("pm-tracking-toggle");
   const ctxToggle = document.getElementById("pm-context-toggle");
   storageGet(["pm_tracking", "pm_context"], (result) => {
-    trackToggle.checked = result.pm_tracking !== false;   // default: ON
-    ctxToggle.checked = result.pm_context !== false;
+    promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
+    contextEnabled = result.pm_context !== false;          // default: ON
+    if (trackToggle) trackToggle.checked = promptTrackingEnabled;
+    if (ctxToggle) ctxToggle.checked = contextEnabled;
+    updateSettingsStatus();
   });
-  trackToggle.addEventListener("change", () => {
-    promptTrackingEnabled = trackToggle.checked;
+  trackToggle?.addEventListener("change", () => {
+    promptTrackingEnabled = Boolean(trackToggle.checked);
     storageSet({ pm_tracking: promptTrackingEnabled });
+    updateSettingsStatus();
+    showToast(`Prompt tracking ${promptTrackingEnabled ? "enabled" : "disabled"}.`, "info");
   });
-  ctxToggle.addEventListener("change", () => {
-    contextEnabled = ctxToggle.checked;
+  ctxToggle?.addEventListener("change", () => {
+    contextEnabled = Boolean(ctxToggle.checked);
     storageSet({ pm_context: contextEnabled });
+    updateSettingsStatus();
+    showToast(`Conversation context ${contextEnabled ? "enabled" : "disabled"}.`, "info");
   });
 
   // Theme toggle
@@ -1567,9 +1627,16 @@ function renderContextTab(container) {
         : "";
 
     item.innerHTML = `
-      <input type="checkbox" class="pm-checkbox" ${selectedIds.has(p.id) ? "checked" : ""}>
+      <div class="pm-check-chip" title="Click to include in prompt context">
+        <svg class="pm-check-icon" viewBox="0 0 16 16" fill="none">
+          <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>
       <div class="pm-prompt-body">
-        <div class="pm-prompt-title">${escHtml(displayTitle)}</div>
+        <div class="pm-prompt-title-row">
+          <div class="pm-prompt-title">${escHtml(displayTitle)}</div>
+          <span class="pm-context-badge">In Context</span>
+        </div>
         <div class="pm-prompt-preview">${escHtml(preview)}</div>
         ${tagsHtml}
       </div>
@@ -1580,16 +1647,14 @@ function renderContextTab(container) {
       </div>
     `;
 
-    const checkbox = item.querySelector(".pm-checkbox");
     item.addEventListener("click", (e) => {
       if (e.target.closest(".pm-action-btn")) return;
-      if (e.target !== checkbox) checkbox.checked = !checkbox.checked;
-      if (checkbox.checked) {
-        selectedIds.add(p.id);
-        item.classList.add("pm-checked");
-      } else {
+      if (selectedIds.has(p.id)) {
         selectedIds.delete(p.id);
         item.classList.remove("pm-checked");
+      } else {
+        selectedIds.add(p.id);
+        item.classList.add("pm-checked");
       }
       updateEnhanceHint();
     });
