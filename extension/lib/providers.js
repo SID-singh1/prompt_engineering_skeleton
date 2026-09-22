@@ -191,10 +191,51 @@ const LANGUAGE_DIRECTIVE = {
     "Do NOT transliterate into Devanagari and do NOT translate into pure English.",
 };
 
+// The rewrite styles, word for word as the server sends them
+// (MODE_INSTRUCTIONS in backend/routers/prompts.py). They used to be short
+// paraphrases, and the paraphrase of DEEP had drifted into the opposite rule:
+// it told the model to break vague asks into numbered sub-questions, where the
+// server says a vague one-line ask can stay concise. The same button then gave
+// different rewrites depending on whether the user brought their own key.
+// tests/test_rewrite_styles.py fails if the two ever differ again.
 const MODE_RULES = {
-  quick: "MODE: QUICK. Keep it short and sharp. Fix ambiguity, add just enough specificity, 1-3 sentences. Do not add frameworks or roles.",
-  deep: "MODE: DEEP. Restructure into a clear, well-specified request: context, task, constraints, desired output format. Break vague asks into numbered sub-questions. Match depth to the input's complexity — do not over-engineer a simple question.",
-  creative: "MODE: CREATIVE. Loosen constraints. Invite divergent thinking and multiple angles. Use open-ended framing. Leave room for surprise.",
+  quick: `
+### MODE: QUICK
+Keep it short and sharp. Minimal enhancement.
+- Fix ambiguity and add just enough specificity
+- Do NOT add frameworks, roles, or structures
+- Output should be 1-3 sentences max
+- Think: "What's the clearest way to ask this?"
+- If the user's prompt is already clear and specific, make only minimal changes
+- For simple questions (syntax, one-liners, definitions), keep the refined prompt similarly concise
+- If the prompt contains code, keep the code and just clarify the surrounding question
+`.trim(),
+  deep: `
+### MODE: DEEP
+Rewrite the user's raw text into a comprehensive, well-structured PROMPT (not a response).
+Your output is STILL A PROMPT — a question/request the user will paste into an LLM chat.
+- For technical prompts: clarify the context, task, and supplied constraints;
+  specify an output format only if the user requested one
+- For non-technical: add useful detail only where the user's request supports it
+- Break a complex ask into sub-questions only when the user actually has
+  multiple decisions or deliverables; a vague one-line ask can stay concise
+- Preserve supplied constraints; do not invent new restrictions, counts, or goals
+- The output should read like a well-crafted message someone would type into ChatGPT/Claude
+- NEVER provide the answer/evaluation yourself — write the QUESTION, not the RESPONSE
+- CALIBRATION: Match enhancement depth to prompt complexity:
+  * Simple bug fix with code → add context around the code, clarify the question. Don't over-engineer.
+  * Complex architecture question → full structured enhancement is appropriate.
+  * If the user already provided detailed context, don't over-expand — refine and sharpen instead.
+`.trim(),
+  creative: `
+### MODE: CREATIVE
+Loosen constraints. Encourage exploration and originality.
+- Invite the LLM to think divergently
+- Suggest multiple angles or perspectives
+- Use open-ended framing ("explore", "what if", "imagine")
+- Don't over-constrain — leave room for surprise
+- Keep the tone warm and curious
+`.trim(),
 };
 
 const TEMPERATURE = { quick: 0.5, deep: 0.6, creative: 0.7 };
