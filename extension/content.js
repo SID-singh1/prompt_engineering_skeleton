@@ -1153,36 +1153,9 @@ function createPanel() {
     <div class="pm-header">
       <span class="pm-header-title">Prompt Memory</span>
       <span class="pm-version-badge">v4</span>
-      <button class="pm-settings-toggle" id="pm-settings-toggle" title="Privacy Settings">⚙</button>
+      <button class="pm-settings-toggle" id="pm-settings-toggle" title="Settings & Privacy">⚙</button>
       <button class="pm-theme-toggle" id="pm-theme-toggle" title="Toggle light/dark mode">🌙</button>
       <button class="pm-header-close" id="pm-close">×</button>
-    </div>
-    <div class="pm-settings-popover" id="pm-settings-panel" style="display:none">
-      <div class="pm-popover-header">
-        <span class="pm-popover-title">Settings & Privacy</span>
-        <button class="pm-popover-close" id="pm-settings-close" title="Close">×</button>
-      </div>
-      <div class="pm-settings-row">
-        <div class="pm-settings-info">
-          <div class="pm-settings-label">Prompt Tracking</div>
-          <div class="pm-settings-desc">Logs enhancements to dashboard & benchmarks quality.</div>
-        </div>
-        <label class="pm-toggle">
-          <input type="checkbox" id="pm-tracking-toggle">
-          <span class="pm-toggle-slider"></span>
-        </label>
-      </div>
-      <div class="pm-settings-row" style="margin-top:10px">
-        <div class="pm-settings-info">
-          <div class="pm-settings-label">Conversation Context</div>
-          <div class="pm-settings-desc">Reads recent chat messages for context grounding.</div>
-        </div>
-        <label class="pm-toggle">
-          <input type="checkbox" id="pm-context-toggle">
-          <span class="pm-toggle-slider"></span>
-        </label>
-      </div>
-      <div class="pm-popover-status" id="pm-settings-status">Tracking active</div>
     </div>
     <div class="pm-tabs">
       <button class="pm-tab pm-active" data-tab="context">Context</button>
@@ -1210,6 +1183,67 @@ function createPanel() {
         <span class="pm-enhance-hint-btn" id="pm-hint-voice"><kbd>${CMD_KEY}Shift+V</kbd> speak</span>
       </div>
     </div>
+    <div class="pm-settings-overlay" id="pm-settings-panel" style="display:none">
+      <div class="pm-settings-sheet-header">
+        <div class="pm-settings-sheet-title-group">
+          <div class="pm-settings-sheet-title">Settings & Privacy</div>
+          <div class="pm-settings-sheet-subtitle">Configure tracking, context & privacy controls</div>
+        </div>
+        <button class="pm-header-close" id="pm-settings-close" title="Close">×</button>
+      </div>
+      <div class="pm-settings-sheet-body">
+        <div class="pm-settings-card">
+          <div class="pm-settings-card-top">
+            <div class="pm-settings-card-label">
+              <span class="pm-settings-icon">⚡</span>
+              <span>Prompt Tracking</span>
+            </div>
+            <label class="pm-toggle" title="Toggle prompt tracking">
+              <input type="checkbox" id="pm-tracking-toggle">
+              <span class="pm-toggle-slider"></span>
+            </label>
+          </div>
+          <div class="pm-settings-card-desc">
+            Logs original & enhanced prompts to your personal dashboard and runs background LLM quality evaluations.
+          </div>
+          <div class="pm-settings-card-badge" id="pm-tracking-status-badge">
+            <span class="pm-status-dot pm-dot-active"></span>
+            <span class="pm-status-text">Active · Prompts logged</span>
+          </div>
+        </div>
+
+        <div class="pm-settings-card">
+          <div class="pm-settings-card-top">
+            <div class="pm-settings-card-label">
+              <span class="pm-settings-icon">💬</span>
+              <span>Conversation Context</span>
+            </div>
+            <label class="pm-toggle" title="Toggle conversation context">
+              <input type="checkbox" id="pm-context-toggle">
+              <span class="pm-toggle-slider"></span>
+            </label>
+          </div>
+          <div class="pm-settings-card-desc">
+            Reads recent chat messages to ground prompt enhancements in active conversation context.
+          </div>
+          <div class="pm-settings-card-badge" id="pm-context-status-badge">
+            <span class="pm-status-dot pm-dot-active"></span>
+            <span class="pm-status-text">Active · Grounding enabled</span>
+          </div>
+        </div>
+
+        <div class="pm-settings-privacy-card">
+          <div class="pm-privacy-header">🛡️ Privacy Guarantee</div>
+          <div class="pm-privacy-text">
+            When tracking is disabled, enhancements run with strictly zero database logging, zero history retention, and zero evaluations.
+          </div>
+        </div>
+      </div>
+      <div class="pm-settings-sheet-footer">
+        <div class="pm-popover-status" id="pm-settings-status">Tracking active</div>
+        <button class="pm-btn pm-btn-primary" id="pm-settings-done">Done</button>
+      </div>
+    </div>
   `;
 
   document.body.appendChild(panel);
@@ -1225,11 +1259,14 @@ function createPanel() {
   // Close
   document.getElementById("pm-close").addEventListener("click", () => togglePanel(false));
 
-  // Settings popover
+  // Settings overlay
   const settingsBtn = document.getElementById("pm-settings-toggle");
   const settingsPanel = document.getElementById("pm-settings-panel");
   const settingsCloseBtn = document.getElementById("pm-settings-close");
+  const settingsDoneBtn = document.getElementById("pm-settings-done");
   const settingsStatus = document.getElementById("pm-settings-status");
+  const trackingBadge = document.getElementById("pm-tracking-status-badge");
+  const contextBadge = document.getElementById("pm-context-status-badge");
 
   const closeSettings = () => {
     if (settingsPanel) settingsPanel.style.display = "none";
@@ -1243,22 +1280,15 @@ function createPanel() {
     if (isVisible) {
       closeSettings();
     } else {
-      settingsPanel.style.display = "block";
+      settingsPanel.style.display = "flex";
       settingsBtn?.classList.add("pm-active-btn");
     }
   };
 
   settingsBtn?.addEventListener("click", toggleSettings);
   settingsCloseBtn?.addEventListener("click", closeSettings);
+  settingsDoneBtn?.addEventListener("click", closeSettings);
 
-  // Close when clicking anywhere outside settingsPanel or pressing Escape
-  panel.addEventListener("click", (e) => {
-    if (settingsPanel && settingsPanel.style.display !== "none") {
-      if (!settingsPanel.contains(e.target) && e.target !== settingsBtn && !settingsBtn.contains(e.target)) {
-        closeSettings();
-      }
-    }
-  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "Escape" && settingsPanel && settingsPanel.style.display !== "none") {
       closeSettings();
@@ -1266,6 +1296,24 @@ function createPanel() {
   });
 
   const updateSettingsStatus = () => {
+    if (trackingBadge) {
+      if (promptTrackingEnabled) {
+        trackingBadge.innerHTML = `<span class="pm-status-dot pm-dot-active"></span><span class="pm-status-text">Active · Prompts logged</span>`;
+        trackingBadge.className = "pm-settings-card-badge pm-badge-active";
+      } else {
+        trackingBadge.innerHTML = `<span class="pm-status-dot pm-dot-paused"></span><span class="pm-status-text">Paused · Zero prompts logged</span>`;
+        trackingBadge.className = "pm-settings-card-badge pm-badge-paused";
+      }
+    }
+    if (contextBadge) {
+      if (contextEnabled) {
+        contextBadge.innerHTML = `<span class="pm-status-dot pm-dot-active"></span><span class="pm-status-text">Active · Grounding enabled</span>`;
+        contextBadge.className = "pm-settings-card-badge pm-badge-active";
+      } else {
+        contextBadge.innerHTML = `<span class="pm-status-dot pm-dot-paused"></span><span class="pm-status-text">Disabled · Chat context ignored</span>`;
+        contextBadge.className = "pm-settings-card-badge pm-badge-paused";
+      }
+    }
     if (!settingsStatus) return;
     if (promptTrackingEnabled && contextEnabled) {
       settingsStatus.textContent = "✓ Tracking & context active";
@@ -1620,11 +1668,6 @@ function renderContextTab(container) {
     item.className = `pm-prompt-item${selectedIds.has(p.id) ? " pm-checked" : ""}`;
 
     const displayTitle = p.title || truncate(p.content, 40);
-    const preview = truncate(p.content, 80);
-    const tagsHtml =
-      p.tags && p.tags.length > 0
-        ? `<div class="pm-tags">${p.tags.map((t) => `<span class="pm-tag">${escHtml(t)}</span>`).join("")}</div>`
-        : "";
 
     item.innerHTML = `
       <div class="pm-check-chip" title="Click to include in prompt context">
@@ -1634,14 +1677,12 @@ function renderContextTab(container) {
       </div>
       <div class="pm-prompt-body">
         <div class="pm-prompt-title-row">
-          <div class="pm-prompt-title">${escHtml(displayTitle)}</div>
+          <div class="pm-prompt-title" title="${escHtml(displayTitle)}">${escHtml(displayTitle)}</div>
           <span class="pm-context-badge">In Context</span>
         </div>
-        <div class="pm-prompt-preview">${escHtml(preview)}</div>
-        ${tagsHtml}
       </div>
       <div class="pm-prompt-actions">
-        <button class="pm-action-btn pm-view" title="View">◎</button>
+        <button class="pm-action-btn pm-view" title="View details">◎</button>
         <button class="pm-action-btn pm-edit" title="Edit">✎</button>
         <button class="pm-action-btn pm-delete" title="Delete">✕</button>
       </div>
@@ -1661,7 +1702,7 @@ function renderContextTab(container) {
 
     item.querySelector(".pm-view").addEventListener("click", (e) => {
       e.stopPropagation();
-      showModal("Saved Prompt", p.content, [{ label: "Close", action: "close", style: "secondary" }]);
+      showViewPromptModal(p);
     });
 
     item.querySelector(".pm-edit").addEventListener("click", (e) => {
@@ -3241,6 +3282,73 @@ function showToast(message, type = "info") {
   });
 
   setTimeout(() => dismissToast(toast), 3000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// VIEW PROMPT MODAL
+// ══════════════════════════════════════════════════════════════
+
+function showViewPromptModal(prompt) {
+  const overlay = getOrCreateModalOverlay();
+  const modal = overlay.querySelector(".pm-modal");
+
+  const displayTitle = prompt.title || "Untitled Prompt";
+  const tags = Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [];
+  const tagsHtml =
+    tags.length > 0
+      ? `<div class="pm-view-section">
+           <div class="pm-view-label">Tags</div>
+           <div class="pm-tags">${tags.map((t) => `<span class="pm-tag">${escHtml(t)}</span>`).join("")}</div>
+         </div>`
+      : "";
+
+  modal.innerHTML = `
+    <div class="pm-modal-header">
+      <span class="pm-modal-title">Saved Prompt Details</span>
+      <button class="pm-header-close pm-modal-close-btn" title="Close">×</button>
+    </div>
+    <div class="pm-modal-body pm-view-modal-body">
+      <div class="pm-view-section">
+        <div class="pm-view-label">Title</div>
+        <div class="pm-view-title-text">${escHtml(displayTitle)}</div>
+      </div>
+      <div class="pm-view-section">
+        <div class="pm-view-label">Prompt Content</div>
+        <div class="pm-view-content-box">${escHtml(prompt.content || "")}</div>
+      </div>
+      ${tagsHtml}
+    </div>
+    <div class="pm-modal-footer">
+      <button class="pm-btn pm-btn-secondary" id="pm-view-copy-btn">📋 Copy Content</button>
+      <button class="pm-btn pm-btn-secondary" id="pm-view-edit-btn">✎ Edit</button>
+      <button class="pm-btn pm-btn-primary pm-modal-close-btn">Close</button>
+    </div>
+  `;
+
+  overlay.querySelectorAll(".pm-modal-close-btn").forEach((b) =>
+    b.addEventListener("click", closeModal)
+  );
+
+  const copyBtn = modal.querySelector("#pm-view-copy-btn");
+  copyBtn?.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(prompt.content || "");
+      copyBtn.textContent = "✓ Copied!";
+      setTimeout(() => {
+        if (copyBtn) copyBtn.textContent = "📋 Copy Content";
+      }, 2000);
+    } catch {
+      showToast("Failed to copy content", "warning");
+    }
+  });
+
+  const editBtn = modal.querySelector("#pm-view-edit-btn");
+  editBtn?.addEventListener("click", () => {
+    closeModal();
+    showEditModal(prompt);
+  });
+
+  overlay.classList.add("pm-visible");
 }
 
 // ══════════════════════════════════════════════════════════════
