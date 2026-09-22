@@ -960,42 +960,50 @@
     gap: 8px;
 }
 
-/* ── Mode Selector (Pill Toggle) ── */
+/* ── Mode Selector (iOS / macOS Segmented Control Pill) ── */
 .pm-mode-selector {
     display: flex;
-    gap: 4px;
+    align-items: center;
+    gap: 3px;
     padding: 3px;
     background: var(--pm-bg-secondary);
-    border-radius: 8px;
+    border-radius: 9999px;
     border: 1px solid var(--pm-border);
-    margin-bottom: 10px;
+    margin-bottom: 12px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 
 .pm-mode-pill {
     flex: 1;
-    padding: 6px 8px;
-    font-size: 12px;
+    padding: 6px 10px;
+    font-size: 11.5px;
     font-weight: 500;
     font-family: var(--pm-font);
     color: var(--pm-text-muted);
     background: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 9999px;
     cursor: pointer;
-    transition: all var(--pm-transition);
+    transition: all 0.16s cubic-bezier(0.16, 1, 0.3, 1);
     text-align: center;
     white-space: nowrap;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    user-select: none;
 }
 
 .pm-mode-pill:not(.pm-mode-pill-active):hover {
-    color: var(--pm-text-secondary);
+    color: var(--pm-text);
     background: var(--pm-bg-hover);
 }
 
 .pm-mode-pill-active {
-    background: var(--pm-gradient);
-    color: #fff;
-    box-shadow: 0 2px 8px rgba(80, 200, 168, 0.2);
+    background: var(--pm-bg);
+    color: var(--pm-accent);
+    border: 1px solid var(--pm-border-accent);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25), inset 0 1px 0 rgba(255, 255, 255, 0.08);
     font-weight: 600;
 }
 
