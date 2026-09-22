@@ -7,6 +7,9 @@
   Every state the pill and card can be in is reachable from the console:
 
     H.type(H.ORIG); H.stream(); H.tokens(60); H.done()   -> streaming, then ready
+    H.type(H.ORIG); handleEnhance()                      -> the real flow, via the fake direct stream
+    card: Shorter / Open-ended, ‹ 1 of 2 ›, [ and ]      -> style reruns and versions (FAKE.calls logs them)
+    FAKE.failNext = true / FAKE.delay = 400              -> a failing or slow rerun
     H.type("something else")                             -> stale
     H.fail()                                             -> error
     Tab in the composer                                  -> applied (rating in the pill)
@@ -60,9 +63,38 @@
     runtime: {
       id: "pill-harness",
       lastError: null,
-      sendMessage(msg, cb) { if (cb) cb(undefined); return Promise.resolve(undefined); },
+      // Routes every enhancement to the direct path, which the port below fakes.
+      sendMessage(msg, cb) {
+        const r = msg?.type === "PM_GET_ROUTE" ? { route: "direct", hasKey: true } : undefined;
+        if (cb) setTimeout(() => cb(r), 0); return Promise.resolve(r);
+      },
       onMessage: { addListener() {} },
-      connect() { return { onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} }; },
+      // A fake provider stream: a style-specific rewrite in a few tokens. The
+      // harness's FAKE object (below) sets the text, speed and failures.
+      connect() {
+        const msgL = [], discL = [];
+        let timer = null, closed = false;
+        const port = {
+          onMessage: { addListener(f) { msgL.push(f); } },
+          onDisconnect: { addListener(f) { discL.push(f); } },
+          postMessage(m) {
+            if (m.type !== "PM_ENHANCE_STREAM") return;
+            const F = window.FAKE; F.calls.push(m.mode);
+            const text = F.text[m.mode] || F.text.deep;
+            const words = text.split(/(?<= )/);
+            let i = 0;
+            const tick = () => {
+              if (closed) return;
+              if (F.failNext) { F.failNext = false; msgL.forEach(f => f({ type: "error", error: "Rate limited \u2014 try again in 20 s" })); return; }
+              if (i < words.length) { msgL.forEach(f => f({ type: "token", token: words[i++] })); timer = setTimeout(tick, F.delay); }
+              else msgL.forEach(f => f({ type: "done", enhanced: text, model: "fake" }));
+            };
+            timer = setTimeout(tick, F.delay);
+          },
+          disconnect() { closed = true; clearTimeout(timer); },
+        };
+        return port;
+      },
       getURL: (p) => p,
     },
   };
@@ -82,6 +114,18 @@
   <p>Prevest DenPro is a real Indian dental manufacturer, so no import roulette, no expiry gamble. 16% is the right concentration band. It's sold as a whitening system, meaning it may include trays. Four ratings at 4.1 isn't much, but it's an actual product doing an actual job.</p>
 </div>
 <form onsubmit="return false"><div id="composer" contenteditable="true" role="textbox"></div><button class="send" type="button">↑</button></form>
+<script>
+// Consent is a one-time prompt in the real extension; the harness has given it.
+(() => { const s = JSON.parse(localStorage.getItem("pm") || "{}"); if (s.pm_data_consent_v1 === undefined) { s.pm_data_consent_v1 = true; localStorage.setItem("pm", JSON.stringify(s)); } })();
+window.FAKE = {
+  calls: [], delay: 25, failNext: false,
+  text: {
+    deep: "Show me how to sort a list of dictionaries in Python by a specific key, handling cases where some dictionaries might not have that key. Explain the choice between a default value and filtering, and include a short code example.",
+    quick: "How do I sort a list of Python dicts by a key when some dicts are missing it?",
+    creative: "Explore the different ways to sort Python dictionaries by a key that some of them lack. What are the trade-offs of defaults, filtering or custom key functions, and when would each surprise me?",
+  },
+};
+</script>
 <script src="../content.js"></script>
 <script>
 // Test drivers, exposed for the session.
