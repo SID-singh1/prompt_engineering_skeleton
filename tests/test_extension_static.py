@@ -881,9 +881,15 @@ def test_the_worker_opens_session_storage_to_content_scripts():
 
 
 def test_escape_hides_a_finished_draft_but_discards_a_failed_one():
-    """Esc on a finished rewrite tucks it into the pill. A stream in flight or
-    an error has nothing worth keeping."""
-    assert re.search(r'if \(cardState === "ready"\) hideCard\(\); else closeCard\(\);', CONTENT_JS)
+    """Esc on a finished rewrite tucks it into the pill. A first stream in
+    flight or an error has nothing worth keeping; a style rerun in flight goes
+    back to the version it started from (cancelStreaming decides which)."""
+    assert re.search(r'if \(cardState === "ready"\) hideCard\(\);\s*'
+                     r'else if \(cardState === "streaming"\) cancelStreaming\(\);\s*'
+                     r'else closeCard\(\);', CONTENT_JS)
+    cancel = _function_bodies(CONTENT_JS, r"cancelStreaming")["cancelStreaming"]
+    assert "!cardRerunFrom) { closeCard(); return; }" in cancel, \
+        "a first rewrite in flight must still be discarded on Esc"
     body = _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
     assert "cardState" not in body and "draftStore.clear" not in body, \
         "hideCard must leave the draft intact"

@@ -91,6 +91,20 @@ let currentTab = "context"; // "context" | "save" | "history" | "feedback"
 const STYLES = ["quick", "deep", "creative"];
 const DEFAULT_STYLE = "deep";
 let currentMode = DEFAULT_STYLE; // the default style ⊕ runs
+const STYLE_NAMES = { quick: "Quick", deep: "Deep", creative: "Creative" };
+const STYLE_HINTS = {
+  quick: "1\u20133 sentences, just the essentials",
+  deep: "structured, with the context and constraints spelled out",
+  creative: "open-ended, inviting other angles",
+};
+// The card names the other two styles by what they would change about the
+// version on screen. "Quick" means nothing next to a Quick rewrite you are
+// already reading; "Shorter" says what the click will do.
+const STYLE_VERBS = {
+  deep: { quick: "Shorter", creative: "Open-ended" },
+  quick: { deep: "More detail", creative: "Open-ended" },
+  creative: { quick: "Shorter", deep: "More focused" },
+};
 let lastEnhanceResult = null;
 let searchQuery = "";
 let isRecording = false;
@@ -705,6 +719,7 @@ function createTrigger() {
   btn.querySelector(".pm-pill-x").addEventListener("click", (e) => {
     e.stopPropagation();
     const was = cardState;
+    if (was === "streaming" && cardRerunFrom) { cancelStreaming(); return; }
     closeCard();
     if (was === "streaming") showToast("Rewrite cancelled.", "info");
     else if (was === "ready") showToast("Draft discarded.", "info");
@@ -1128,9 +1143,14 @@ function onNavigated() {
 async function restoreDraft() {
   const draft = await draftStore.load();
   if (!draft || cardState !== "idle") return;
-  cardResult = draft.result;
-  lastEnhanceResult = draft.result;
-  cardOriginal = draft.result.original || "";
+  // Drafts saved before versions existed carry a single result.
+  const versions = Array.isArray(draft.versions) && draft.versions.every((v) => v?.enhanced)
+    && draft.versions.length ? draft.versions : [draft.result];
+  cardVersions = versions;
+  cardVersionIndex = Math.min(Math.max(0, draft.index | 0), versions.length - 1);
+  cardResult = versions[cardVersionIndex];
+  lastEnhanceResult = cardResult;
+  cardOriginal = cardResult.original || "";
   cardBasedOn = draft.basedOn || norm(cardOriginal);
   cardHasBaseline = true;
   cardState = "ready";
@@ -2274,6 +2294,15 @@ let cardExpanded = false;
 let cardMinimized = false;
 let cardError = "";
 let pillStreamingPreview = "";
+// Every rewrite of this draft, one per style asked for, oldest first. The card
+// shows cardVersions[cardVersionIndex]; cardResult is always that entry.
+let cardVersions = [];
+let cardVersionIndex = 0;
+// Set while a style rerun streams: the versions to go back to if it is
+// cancelled or fails. A rerun must never cost the user the draft they had.
+let cardRerunFrom = null;
+// The style the streaming card is waiting on, for its title.
+let cardStreamingStyle = "";
 // Set by whichever stream runner is active; called by closeCard() while
 // streaming. Without it "cancel" only hid the card, and the rewrite popped
 // back up as a finished draft when the stream it was still running ended.
@@ -2701,6 +2730,10 @@ function closeCard() {
   cardError = "";
   cardMinimized = false;
   pillStreamingPreview = "";
+  cardVersions = [];
+  cardVersionIndex = 0;
+  cardRerunFrom = null;
+  cardStreamingStyle = "";
   draftStore.clear();
   renderPill();
 }
@@ -2731,7 +2764,8 @@ function cardHead(title, kind = "") {
 }
 
 // ── Entry point 1: the flow is starting ──
-function showStreamingDiffModal(originalText) {
+function showStreamingDiffModal(originalText, style = currentMode) {
+  cardStreamingStyle = style;
   cardOriginal = originalText;
   cardBasedOn = norm(originalText);
   cardHasBaseline = true;
@@ -2747,7 +2781,7 @@ function showStreamingDiffModal(originalText) {
 /** The streaming card's markup, also used to re-open it from the pill. */
 function showStreamingCardAgain() {
   openCard(
-    cardHead("Rewriting\u2026", "live") +
+    cardHead(`Rewriting${STYLE_NAMES[cardStreamingStyle] ? " \u00b7 " + STYLE_NAMES[cardStreamingStyle] : ""}\u2026`, "live") +
     `<div class="pm-card-text" id="pm-stream-target"><span class="pm-card-cursor"></span></div>` +
     cardFoot([
       `<button class="pm-card-act" id="pm-card-cancel">${cardKey("esc")} cancel</button>`,
@@ -2756,7 +2790,7 @@ function showStreamingCardAgain() {
     ])
   );
   if (pillStreamingPreview) updateStreamingText(pillStreamingPreview);
-  document.getElementById("pm-card-cancel")?.addEventListener("click", closeCard);
+  document.getElementById("pm-card-cancel")?.addEventListener("click", cancelStreaming);
   document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
 }
 
@@ -2775,7 +2809,33 @@ function finalizeStreamingModal(result) {
   // Cancelled — or replaced by something else — while the tokens were still
   // arriving. The result is dropped; it is no longer the draft.
   if (cardState !== "streaming") return;
+  if (cardRerunFrom) {
+    cardVersions = [...cardRerunFrom.versions, result];
+    cardRerunFrom = null;
+  }
   showDiffModal(result);
+}
+
+/**
+ * Stop the rewrite in flight. A first rewrite has nothing to fall back to, so
+ * the draft goes; a style rerun goes back to the version it started from.
+ */
+function cancelStreaming() {
+  if (cardState !== "streaming" || !cardRerunFrom) { closeCard(); return; }
+  if (cancelActiveStream) cancelActiveStream();
+  cancelActiveStream = null;
+  restoreFromRerun();
+}
+
+/** Put the draft back exactly as it was before a style rerun started. */
+function restoreFromRerun() {
+  const from = cardRerunFrom;
+  cardRerunFrom = null;
+  cardVersions = from.versions;
+  cardVersionIndex = from.index;
+  cardState = "ready";
+  pillStreamingPreview = "";
+  showDiffModal(cardVersions[cardVersionIndex]);
 }
 
 // ── Entry point 4: failed ──
@@ -2783,6 +2843,15 @@ function failStreamingModal(message) {
   // Only a stream in flight (or a re-opened error) can become an error card;
   // a cancelled stream's late failure is nobody's business.
   if (cardState !== "streaming" && cardState !== "error") return;
+  if (cardState === "streaming" && cardRerunFrom) {
+    // The error card's "try again" and "dismiss" both discard the draft. For
+    // a rerun that would throw away the version the user was happy enough
+    // with to ask for a variation of, so it comes back instead.
+    const style = STYLE_NAMES[cardStreamingStyle] || "new";
+    restoreFromRerun();
+    showToast(`Couldn\u2019t make the ${style} version: ${message}`, "error");
+    return;
+  }
   cardState = "error";
   cardError = message;
   renderPill();
@@ -2808,6 +2877,9 @@ function showDiffModal(result) {
   // minimized, and the \ toggle or a staleness flip re-renders the same
   // result — all of those respect the minimize.
   if (result !== cardResult && cardState !== "streaming") cardMinimized = false;
+  // A result that is not one of this draft's versions is a new draft.
+  if (!cardVersions.includes(result)) cardVersions = [result];
+  cardVersionIndex = cardVersions.indexOf(result);
   cardResult = result;
   cardState = "ready";
   lastEnhanceResult = result;
@@ -2825,6 +2897,8 @@ function showDiffModal(result) {
   // Written through so the draft outlives this page. Cheap, and idempotent.
   draftStore.save({
     result,
+    versions: cardVersions,
+    index: cardVersionIndex,
     basedOn: cardBasedOn,
     createdAt: result.createdAt || Date.now(),
     source: window.location.hostname,
@@ -2855,7 +2929,7 @@ function showDiffModal(result) {
     ? cardHead(cardShowingOriginal
         ? "Prompt changed \u2014 this is the text the rewrite was built from"
         : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
-    : cardHead(cardShowingOriginal ? "Original" : "Rewrite");
+    : cardHead(cardShowingOriginal ? "Original" : `Rewrite${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
 
   // Only shown when a saved prompt actually shaped the rewrite. The old footer
   // printed four zeros on every result, which teaches people to stop reading it.
@@ -2918,7 +2992,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + chip + cardFoot(actions));
+  const card = openCard(head + body + chip + cardStyleRow(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -2938,7 +3012,92 @@ function showDiffModal(result) {
     showDiffModal(cardResult);
   });
   document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
+  card.querySelectorAll("[data-pm-style]").forEach((b) =>
+    b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
+  document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
+  document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
   renderPill();
+}
+
+/**
+ * The other two styles, and a way back through the versions already made.
+ *
+ * Hidden while the original is showing (there is no rewrite to vary) and while
+ * the draft is stale (Redo is the only honest action then). A style already
+ * made is shown rather than re-requested: switching back to it is free, and
+ * spending one of fifteen daily rewrites on text you have already seen is the
+ * thing this row must never do.
+ */
+function cardStyleRow(result) {
+  if (cardShowingOriginal || cardStale) return "";
+  const on = STYLES.includes(result.mode) ? result.mode : currentMode;
+  const left = result.direct ? Infinity : usageData.limit - usageData.count;
+  const cost = result.direct ? "Makes one more call with your own key." : "Uses one of today\u2019s rewrites.";
+  const styles = STYLES.filter((s) => s !== on).map((s) => {
+    const made = cardVersions.some((v) => v.mode === s);
+    const spent = !made && left <= 0;
+    const note = !made && left > 0 && left <= 3 ? ` \u00b7 ${left} left` : "";
+    const title = made
+      ? `Show the ${STYLE_NAMES[s]} version you already made`
+      : spent
+        ? "No rewrites left today"
+        : `Rewrite your original again in the ${STYLE_NAMES[s]} style: ${STYLE_HINTS[s]}. ${cost}`;
+    return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
+      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
+  }).join("");
+  const n = cardVersions.length;
+  const versions = n > 1
+    ? `<span class="pm-card-versions" role="group" aria-label="Versions">` +
+      `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
+      `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
+      `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
+      `</span>`
+    : "";
+  return `<div class="pm-card-styles">${versions}<span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+}
+
+/** Show another version of this draft. Free: nothing is requested. */
+function stepVersion(delta) {
+  const i = cardVersionIndex + delta;
+  if (cardState !== "ready" || i < 0 || i >= cardVersions.length) return;
+  cardShowingOriginal = false;
+  showDiffModal(cardVersions[i]);
+}
+
+/**
+ * Rewrite the same original again in another style, keeping the versions
+ * already made. The default ⊕ runs is not changed by this.
+ */
+async function rerunInStyle(style) {
+  if (cardState !== "ready" || !cardResult || cardStale || !STYLES.includes(style)) return;
+  const made = cardVersions.findIndex((v) => v.mode === style);
+  if (made !== -1) { stepVersion(made - cardVersionIndex); return; }
+  if (enhanceInFlight) {
+    showToast("Already enhancing \u2014 hang on a moment.", "info");
+    return;
+  }
+  if (!cardResult.direct && usageData.limit - usageData.count <= 0) {
+    showToast("No rewrites left today.", "error");
+    return;
+  }
+  const original = cardVersions[0]?.original || cardResult.original || cardOriginal;
+  if (!original) return;
+  const route = await resolveEnhanceRoute();
+  // The user may have inserted, discarded or edited while the worker answered.
+  if (!route || cardState !== "ready" || isStaleAgainstComposer()) return;
+
+  cardRerunFrom = { versions: cardVersions.slice(), index: cardVersionIndex };
+  enhanceInFlight = true;
+  showStreamingDiffModal(original, style);
+  try {
+    if (route.route === "direct") await runDirectEnhance(original, route, style);
+    else await runBackendEnhance(original, {}, style);
+  } catch (err) {
+    console.error("Prompt Memory: style rerun failed", err);
+    failStreamingModal(err?.message || "Enhancement failed. Please try again.");
+  } finally {
+    enhanceInFlight = false;
+  }
 }
 
 /**
@@ -3060,11 +3219,16 @@ function handleCardKeydown(e) {
   if (!card) return;
   if (e.key === "Escape") {
     e.preventDefault(); e.stopPropagation();
-    if (cardState === "ready") hideCard(); else closeCard();
+    if (cardState === "ready") hideCard();
+    else if (cardState === "streaming") cancelStreaming();
+    else closeCard();
     return;
   }
   // Save/redo belong to the review controls, not the host's editor.
   if (!inCard || cardState !== "ready") return;
+  if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey && cardVersions.length > 1) {
+    e.preventDefault(); e.stopPropagation(); stepVersion(e.key === "]" ? 1 : -1); return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
   }

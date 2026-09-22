@@ -89,3 +89,40 @@ def test_the_panel_does_not_hardcode_deep_as_selected():
     js = CONTENT_JS.read_text(encoding="utf-8")
     assert 'class="pm-mode-pill pm-mode-pill-active"' not in js
     assert "syncStylePills()" in js
+
+
+def _js_object(js: str, name: str) -> str:
+    start = js.index(f"const {name} = ")
+    return js[start:js.index("};", start) + 2]
+
+
+def test_the_card_knows_the_same_three_styles():
+    js = CONTENT_JS.read_text(encoding="utf-8")
+    assert re.search(r'const STYLES = \["quick", "deep", "creative"\];', js)
+    names = _js_object(js, "STYLE_NAMES")
+    hints = _js_object(js, "STYLE_HINTS")
+    for style in STYLES:
+        assert f"{style}:" in names and f"{style}:" in hints
+
+
+def test_every_style_names_the_other_two_by_what_they_change():
+    verbs = _js_object(CONTENT_JS.read_text(encoding="utf-8"), "STYLE_VERBS")
+    for on in STYLES:
+        row = re.search(rf"^  {on}: \{{([^}}]*)\}},?$", verbs, re.M)
+        assert row, f"no verbs for a {on} rewrite"
+        assert set(re.findall(r"(\w+): \"", row.group(1))) == STYLES - {on}
+
+
+def test_a_rerun_that_fails_or_is_cancelled_keeps_the_draft():
+    js = CONTENT_JS.read_text(encoding="utf-8")
+    fail = js[js.index("function failStreamingModal("):]
+    assert fail.index("restoreFromRerun()") < fail.index('cardState = "error"'), \
+        "a failed rerun must restore the draft before becoming an error card"
+    cancel = js[js.index("function cancelStreaming("):js.index("function restoreFromRerun(")]
+    assert "restoreFromRerun()" in cancel
+
+
+def test_drafts_saved_before_versions_existed_still_load():
+    js = CONTENT_JS.read_text(encoding="utf-8")
+    restore = js[js.index("async function restoreDraft("):js.index("// KEYBOARD SHORTCUT")]
+    assert ": [draft.result]" in restore
