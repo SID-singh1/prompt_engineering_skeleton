@@ -318,7 +318,7 @@ async function enhancePrompt(prompt, selectedPromptIds) {
   return null;
 }
 
-async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}) {
+async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}, style = currentMode) {
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return null;
 
@@ -326,7 +326,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   const body = {
     prompt,
     platform: window.location.hostname,
-    mode: currentMode,
+    mode: style,
     conversation_context: conversation,
     tracking_enabled: promptTrackingEnabled,
   };
@@ -1994,6 +1994,43 @@ function reopenDraftIfRelevant() {
   return true;
 }
 
+/**
+ * Ask the service worker how an enhancement should be routed, or explain why
+ * it cannot run. Resolves to the route, or null once the user has been told.
+ * Shared by ⊕ and by the card's style buttons, which must fail the same way.
+ */
+async function resolveEnhanceRoute() {
+  if (!(await ensureDataConsent())) return null;
+  // Ask the service worker how this request should be routed. It owns the API
+  // key, so the decision cannot be made here.
+  const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (orphaned) return null;
+  if (!route) {
+    // The worker is unreachable. Almost always this tab's content script was
+    // orphaned by an extension update or reload — the page needs refreshing,
+    // which is a different problem from "you have not set anything up yet".
+    showToast("Prompt Memory was updated — please reload this page.", "error");
+    return null;
+  }
+  if (route.route === "expired") {
+    // Signed in at some point, token past its 7-day life, and no API key to
+    // fall back on. Previously this routed at the backend anyway and produced
+    // an unexplained failure on every attempt.
+    showToast("Your session expired — please sign in again.", "error");
+    openSettings();
+    return null;
+  }
+  if (route.route === "none") {
+    // Neither signed in nor holding a key. Previously this said "Please log in
+    // first" and stopped — the extension delivered nothing at all until the
+    // user completed a Google OAuth flow. Now there are two ways forward and
+    // the faster one needs no account.
+    showSetupRequiredModal();
+    return null;
+  }
+  return route;
+}
+
 async function handleEnhance() {
   if (orphaned || !extensionAlive()) {
     onOrphaned();
@@ -2010,35 +2047,8 @@ async function handleEnhance() {
     showToast("Type a prompt in the chat input first.", "error");
     return;
   }
-  if (!(await ensureDataConsent())) return;
-
-  // Ask the service worker how this request should be routed. It owns the API
-  // key, so the decision cannot be made here.
-  const route = await askWorker({ type: "PM_GET_ROUTE" });
-  if (orphaned) return;
-  if (!route) {
-    // The worker is unreachable. Almost always this tab's content script was
-    // orphaned by an extension update or reload — the page needs refreshing,
-    // which is a different problem from "you have not set anything up yet".
-    showToast("Prompt Memory was updated — please reload this page.", "error");
-    return;
-  }
-  if (route.route === "expired") {
-    // Signed in at some point, token past its 7-day life, and no API key to
-    // fall back on. Previously this routed at the backend anyway and produced
-    // an unexplained failure on every attempt.
-    showToast("Your session expired — please sign in again.", "error");
-    openSettings();
-    return;
-  }
-  if (route.route === "none") {
-    // Neither signed in nor holding a key. Previously this said "Please log in
-    // first" and stopped — the extension delivered nothing at all until the
-    // user completed a Google OAuth flow. Now there are two ways forward and
-    // the faster one needs no account.
-    showSetupRequiredModal();
-    return;
-  }
+  const route = await resolveEnhanceRoute();
+  if (!route) return;
 
   const btn = document.getElementById("pm-enhance-btn");
   if (btn) {
@@ -2068,7 +2078,7 @@ async function handleEnhance() {
 }
 
 /** No account, no server: the service worker calls the user's own provider. */
-async function runDirectEnhance(inputText, route) {
+async function runDirectEnhance(inputText, route, style = currentMode) {
   return new Promise((resolve) => {
     let port;
     try {
@@ -2103,7 +2113,7 @@ async function runDirectEnhance(inputText, route) {
             enhanced: msg.enhanced,
             log_id: null,          // nothing is logged in direct mode
             latency: null,
-            mode: currentMode,
+            mode: style,
             direct: true,
             model: msg.model,
           };
@@ -2119,12 +2129,12 @@ async function runDirectEnhance(inputText, route) {
       finish(() => failStreamingModal("Connection to the extension worker was lost."));
     });
 
-    port.postMessage({ type: "PM_ENHANCE_STREAM", prompt: inputText, mode: currentMode });
+    port.postMessage({ type: "PM_ENHANCE_STREAM", prompt: inputText, mode: style });
   });
 }
 
 /** Signed in: go through the backend so memory features still apply. */
-async function runBackendEnhance(inputText, inputMetadata = {}) {
+async function runBackendEnhance(inputText, inputMetadata = {}, style = currentMode) {
   let parts = [];
   let finished = false;
 
@@ -2152,7 +2162,7 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
         enhanced: parts.join(""),
         log_id: metadata.log_id,
         latency: metadata.latency,
-        mode: metadata.mode,
+        mode: metadata.mode || style,
         model: metadata.model,
         context_used: metadata.context_used,
       };
@@ -2166,7 +2176,8 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
       }
       updateUsageBar();
     },
-    inputMetadata
+    inputMetadata,
+    style
   );
 
   // enhancePromptStream returns without ever invoking onDone if the request
