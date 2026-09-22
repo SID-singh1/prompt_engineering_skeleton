@@ -85,7 +85,12 @@ let savedPrompts = [];
 let selectedIds = new Set();
 let panelOpen = false;
 let currentTab = "context"; // "context" | "save" | "history" | "feedback"
-let currentMode = "deep";   // "quick" | "deep" | "creative"
+// The three rewrite styles. The default is what ⊕ runs; the card offers the
+// other two, since which style a prompt needed is usually only clear once
+// you have read a rewrite in the one it got.
+const STYLES = ["quick", "deep", "creative"];
+const DEFAULT_STYLE = "deep";
+let currentMode = DEFAULT_STYLE; // the default style ⊕ runs
 let lastEnhanceResult = null;
 let searchQuery = "";
 let isRecording = false;
@@ -105,10 +110,11 @@ let contextEnabled = true;
 let dataConsent = false;
 
 // Load privacy preferences
-storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1"], (result) => {
+storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1", "pm_mode"], (result) => {
   promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
   contextEnabled = result.pm_context !== false;          // default: on
   dataConsent = result.pm_data_consent_v1 === true;
+  setDefaultStyle(result.pm_mode, false);
 });
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -116,8 +122,32 @@ try {
     if (changes.pm_data_consent_v1) dataConsent = changes.pm_data_consent_v1.newValue === true;
     if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue !== false;
     if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
+    // Picked in another tab: this one's next ⊕ should agree with it.
+    if (changes.pm_mode) setDefaultStyle(changes.pm_mode.newValue, false);
   });
 } catch (error) { onOrphaned(error); }
+
+/**
+ * Make `style` the one ⊕ runs.
+ *
+ * Remembered. It used to live only in memory, so every page load quietly put
+ * a user who had chosen Quick back on Deep, and the panel went on showing
+ * whichever button was pressed last in a tab that no longer existed.
+ */
+function setDefaultStyle(style, persist = true) {
+  currentMode = STYLES.includes(style) ? style : DEFAULT_STYLE;
+  syncStylePills();
+  if (persist) storageSet({ pm_mode: currentMode });
+}
+
+/** Show the default style on the panel's buttons, if the panel exists yet. */
+function syncStylePills() {
+  document.querySelectorAll("#pm-panel .pm-mode-pill").forEach((b) => {
+    const on = b.dataset.mode === currentMode;
+    b.classList.toggle("pm-mode-pill-active", on);
+    b.setAttribute("aria-pressed", String(on));
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // AUTH HELPERS (with auto-refresh)
@@ -1199,7 +1229,7 @@ function createPanel() {
       </div>
       <div class="pm-mode-selector">
         <button class="pm-mode-pill" data-mode="quick" title="Short & sharp">⚡ Quick</button>
-        <button class="pm-mode-pill pm-mode-pill-active" data-mode="deep" title="Full structured enhancement">🎯 Deep</button>
+        <button class="pm-mode-pill" data-mode="deep" title="Full structured enhancement">🎯 Deep</button>
         <button class="pm-mode-pill" data-mode="creative" title="Open-ended, exploratory">✨ Creative</button>
       </div>
       <div class="pm-enhance-row">
@@ -1266,14 +1296,11 @@ function createPanel() {
     });
   });
 
-  // Mode pills
+  // Style buttons: the default ⊕ runs.
   panel.querySelectorAll(".pm-mode-pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      currentMode = btn.dataset.mode;
-      panel.querySelectorAll(".pm-mode-pill").forEach((b) => b.classList.remove("pm-mode-pill-active"));
-      btn.classList.add("pm-mode-pill-active");
-    });
+    btn.addEventListener("click", () => setDefaultStyle(btn.dataset.mode));
   });
+  syncStylePills();
 
   // Enhance
   document.getElementById("pm-enhance-btn").addEventListener("click", handleEnhance);

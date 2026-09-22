@@ -71,3 +71,21 @@ def test_every_route_uses_the_same_temperatures():
     assert set(router) == STYLES
     assert _temperatures(BUILDER) == router
     assert _js_temperatures() == router
+
+
+CONTENT_JS = ROOT / "extension" / "content.js"
+
+
+def test_the_default_style_survives_a_reload():
+    js = CONTENT_JS.read_text(encoding="utf-8")
+    load = js[js.index('storageGet(["pm_tracking"'):]
+    assert '"pm_mode"' in load[:120], "the saved default is never read back"
+    assert "setDefaultStyle(result.pm_mode, false)" in load[:600]
+    assert "storageSet({ pm_mode: currentMode })" in js
+    assert "changes.pm_mode" in js, "another tab's choice is ignored until reload"
+
+
+def test_the_panel_does_not_hardcode_deep_as_selected():
+    js = CONTENT_JS.read_text(encoding="utf-8")
+    assert 'class="pm-mode-pill pm-mode-pill-active"' not in js
+    assert "syncStylePills()" in js
