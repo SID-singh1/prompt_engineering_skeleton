@@ -540,6 +540,17 @@ const DRAFT_TTL_MS = 60 * 60 * 1000;
 
 const draftStore = {
   _area: null,
+  // Every operation waits for the one before it. setExpanded() is a read then
+  // a write, and closeCard() starts it (through hideCard) a moment before
+  // clear(). The read landed, then the clear, then the write put the draft
+  // straight back — so every Insert and every Discard reappeared as a draft
+  // on the next page load.
+  _queue: Promise.resolve(),
+  _serial(fn) {
+    const run = this._queue.then(fn);
+    this._queue = run.catch(() => {});
+    return run;
+  },
   async area() {
     if (this._area) return this._area;
     try {
@@ -552,39 +563,47 @@ const draftStore = {
     this._area = chrome.storage.local;
     return this._area;
   },
-  async load() {
-    try {
-      const area = await this.area();
-      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
-      if (!draft || !draft.result || !draft.result.enhanced) return null;
-      if (Date.now() - (draft.createdAt || 0) > DRAFT_TTL_MS) {
-        area.remove(DRAFT_KEY);
+  load() {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+        if (!draft || !draft.result || !draft.result.enhanced) return null;
+        if (Date.now() - (draft.createdAt || 0) > DRAFT_TTL_MS) {
+          await area.remove(DRAFT_KEY);
+          return null;
+        }
+        return draft;
+      } catch {
         return null;
       }
-      return draft;
-    } catch {
-      return null;
-    }
+    });
   },
-  async save(draft) {
-    try {
-      const area = await this.area();
-      await area.set({ [DRAFT_KEY]: draft });
-    } catch { /* storage is a convenience; the in-memory card still works */ }
+  save(draft) {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        await area.set({ [DRAFT_KEY]: draft });
+      } catch { /* storage is a convenience; the in-memory card still works */ }
+    });
   },
-  async clear() {
-    try {
-      const area = await this.area();
-      await area.remove(DRAFT_KEY);
-    } catch { /* nothing to clear */ }
+  clear() {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        await area.remove(DRAFT_KEY);
+      } catch { /* nothing to clear */ }
+    });
   },
   /** Record whether the card is open, so a reload brings it back the same way. */
-  async setExpanded(expanded) {
-    try {
-      const area = await this.area();
-      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
-      if (draft && draft.expanded !== expanded) await area.set({ [DRAFT_KEY]: { ...draft, expanded } });
-    } catch { /* cosmetic */ }
+  setExpanded(expanded) {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+        if (draft && draft.expanded !== expanded) await area.set({ [DRAFT_KEY]: { ...draft, expanded } });
+      } catch { /* cosmetic */ }
+    });
   },
 };
 

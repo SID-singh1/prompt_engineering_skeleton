@@ -1191,3 +1191,16 @@ def test_an_orphaned_script_says_so_and_stops_polling():
 def test_update_does_not_reinject_into_tabs_with_old_scripts():
     update = BACKGROUND_JS.split('if (reason === "update") {', 1)[1].split('if (reason !== "install")', 1)[0]
     assert "activateExistingTabs()" not in update
+
+
+# ── a finished draft stays finished ────────────────────────────────────────
+# closeCard() hides the card (setExpanded: a read, then a write) and then
+# clears the draft. Unordered, the write landed after the clear and put the
+# draft back, so every Insert and Discard reappeared on the next page load.
+
+def test_draft_storage_operations_run_one_at_a_time():
+    store = CONTENT_JS[CONTENT_JS.index("const draftStore = {"):CONTENT_JS.index("// UI: THE PILL")]
+    assert "_serial(fn)" in store
+    for method in ("load()", "save(draft)", "clear()", "setExpanded(expanded)"):
+        body = store[store.index("  " + method):]
+        assert body[:120].count("this._serial(") == 1, f"draftStore.{method} bypasses the queue"
