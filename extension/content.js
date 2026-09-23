@@ -1162,6 +1162,7 @@ function onNavigated() {
   // The new composer mounts a beat after the URL changes; look twice.
   for (const delay of [300, 1200]) {
     setTimeout(() => {
+      watchComposer();
       refreshCardStaleness();
       renderPill();
       placePill();
@@ -2085,6 +2086,14 @@ function renderSlash() {
       if (e.target.closest("[data-act='attach']")) slashAttach(); else slashInsert();
     });
     document.body.appendChild(menu);
+    // The rewrite card sits on the chat box, which is exactly where this menu
+    // opens, and typing // has just made its draft stale: the text no longer
+    // matches what was rewritten. It folds into the pill, as esc would fold
+    // it, rather than have a menu drawn across its text and buttons. The pill
+    // keeps the draft and offers Redo (or Insert again, if the // is deleted
+    // and the text matches once more). It does not spring back when the menu
+    // closes: the user is mid-sentence.
+    if (cardExpanded) hideCard();
   }
   const items = slashItems();
   slashSel = Math.max(0, Math.min(slashSel, items.length - 1));
@@ -2114,6 +2123,19 @@ function renderSlash() {
   }
 }
 
+/**
+ * Where the //query is now. The position noted when the menu opened can be
+ * stale by the time a prompt is chosen: an editor that re-renders on every
+ * transaction may have replaced the text node it pointed into. The caret has
+ * not moved (the menu keeps focus in the chat box), so it is read again.
+ */
+function refreshSlashToken(s) {
+  const ctx = slashContext(s.el);
+  const m = ctx && ctx.text.match(SLASH_TOKEN);
+  if (!m || m[2] !== s.q) return s;
+  return { ...s, node: ctx.node, start: ctx.offset - s.q.length - 2, end: ctx.offset };
+}
+
 /** Select the //query token in the composer, so the next edit replaces it. */
 function selectSlashToken(s) {
   s.el.focus({ preventScroll: true });
@@ -2140,7 +2162,8 @@ function typeIntoSelection(el, text) {
 }
 
 async function slashInsert() {
-  const s = slash, p = slashItems()[slashSel];
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
   if (!s || !p) return;
   closeSlash();
   const before = composerText(s.el);
@@ -2158,7 +2181,8 @@ async function slashInsert() {
 }
 
 function slashAttach() {
-  const s = slash, p = slashItems()[slashSel];
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
   if (!s || !p) return;
   closeSlash();
   if (!selectedIds.has(p.id)) toggleAttachment(p);
@@ -2194,6 +2218,45 @@ function handleSlashKeydown(e) {
   e.stopImmediatePropagation();
 }
 
+// ── Watching the chat box ──
+//
+// Most editors fire `input` as the user types. ProseMirror, the editor ChatGPT
+// and Claude are built on, does not: it takes each keypress itself and writes
+// the text through its own transaction, so no input event ever reaches the
+// page. Everything here that reacted to typing listened for `input` — the //
+// menu, the rail following the box as it grows, a draft turning stale — and on
+// those two sites heard nothing: // never opened, and the Enter meant to pick
+// a prompt sent the message instead. A MutationObserver on the composer sees
+// every change to its text whoever makes it, and selectionchange sees the
+// caret move; `input` stays as the fast path where it does fire.
+
+let watchedComposer = null;
+let composerObserver = null;
+let composerChangeQueued = false;
+
+/** Observe whatever the composer is now. Cheap to call often. */
+function watchComposer() {
+  const el = findComposer();
+  if (el === watchedComposer) return;
+  composerObserver?.disconnect();
+  watchedComposer = el;
+  if (!el) return;
+  composerObserver = new MutationObserver(onComposerChanged);
+  composerObserver.observe(el, { subtree: true, childList: true, characterData: true });
+}
+
+/** The chat box's text changed. Batched: one keystroke can be many mutations. */
+function onComposerChanged() {
+  if (composerChangeQueued) return;
+  composerChangeQueued = true;
+  Promise.resolve().then(() => {
+    composerChangeQueued = false;
+    checkSlash();
+    refreshCardStaleness();
+    positionRail();
+  });
+}
+
 function setupLibraryListeners() {
   window.addEventListener("keydown", handleSlashKeydown, true);
   document.addEventListener("input", (e) => {
@@ -2203,6 +2266,13 @@ function setupLibraryListeners() {
       requestAnimationFrame(positionRail);
     }
   }, true);
+  // The caret moving (a click, an arrow key) opens or closes // too, and it is
+  // the one signal every editor gives.
+  document.addEventListener("selectionchange", () => {
+    if (slash || composerHasFocus()) checkSlash();
+  });
+  document.addEventListener("focusin", watchComposer, true);
+  watchComposer();
   document.addEventListener("focusout", (e) => {
     if (slash && (e.target === slash.el || slash.el.contains(e.target))) setTimeout(() => {
       if (slash && !slash.el.contains(document.activeElement) && document.activeElement !== slash.el) closeSlash();
@@ -4066,15 +4136,25 @@ function selectAllIn(el) {
  * every editor tested, and costs nothing where the selection would have been
  * replaced anyway.
  */
-function clearComposer(el) {
+async function clearComposer(el) {
   el.focus();
   selectAllIn(el);
+  // Editors that keep their own model of the selection (Lexical) learn of a
+  // programmatic one from selectionchange, a beat later. Deleting at once
+  // deleted nothing in their model, execCommand's DOM edit was then reverted,
+  // and the insert that followed landed after the old text: the chat box
+  // ended up holding its text and the rewrite twice.
+  await nextFrame();
+  // Ask the way a real delete key does. An editor that handles it cancels the
+  // event and deletes through its own state; one that does not leaves it to
+  // execCommand, as before.
+  const handled = !el.dispatchEvent(new InputEvent("beforeinput", {
+    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
+  }));
+  if (handled) { await nextFrame(); return; }
   try {
     if (document.execCommand("delete", false)) return;
   } catch { /* fall through */ }
-  el.dispatchEvent(new InputEvent("beforeinput", {
-    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
-  }));
   if (norm(composerText(el))) el.textContent = "";
 }
 
@@ -4181,8 +4261,9 @@ async function applyToInput(text) {
     }
 
     for (const strategy of INSERT_STRATEGIES) {
-      clearComposer(el);
+      await clearComposer(el);
       selectAllIn(el);
+      await nextFrame();   // the same beat, for the insert's selection
       try {
         strategy(el, text);
       } catch {
