@@ -1210,3 +1210,14 @@ def test_draft_storage_operations_run_one_at_a_time():
     for method in ("load()", "save(draft)", "clear()", "setExpanded(expanded)"):
         body = store[store.index("  " + method):]
         assert body[:120].count("this._serial(") == 1, f"draftStore.{method} bypasses the queue"
+
+
+def test_the_popup_shows_the_manifest_version():
+    """The popup's label was typed into the HTML and stayed at 4.4 while the
+    manifest moved on; it now reads chrome.runtime.getManifest()."""
+    import json
+    popup_js = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
+    popup_html = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+    assert 'chrome.runtime.getManifest().version' in popup_js
+    version = json.loads(MANIFEST)["version"]
+    assert f'id="popup-version">v{version}<' in popup_html, "the fallback label disagrees with the manifest"
