@@ -1650,7 +1650,6 @@
     transform: translateX(8px);
     pointer-events: none;
     transition: opacity 140ms ease, transform 140ms ease;
-    transition-delay: 120ms;
 }
 .pm-library-btn[hidden] { display: none; }
 /* A host's own `button { width: … }` squeezed the chip until its label spilled
@@ -1686,20 +1685,11 @@
 }
 .pm-library-btn .pm-library-count[hidden] { display: none; }
 
-/* Bridges the gap to the trigger, so crossing the 8px between them does not
-   flicker the button out from under the cursor. */
-.pm-library-btn::after {
-    content: "";
-    position: absolute;
-    left: 100%;
-    top: 0;
-    width: 14px;
-    height: 100%;
-}
-
-.pm-trigger:hover ~ .pm-library-btn,
+/* Revealed by pointer intent (.pm-lib-reveal, set from content.js) rather
+   than by .pm-trigger:hover: that lasted only while the pointer was on ⊕,
+   so crossing the gap to the chip lost it. Keyboard focus still reveals it. */
+.pm-library-btn.pm-lib-reveal,
 .pm-trigger:focus-visible ~ .pm-library-btn,
-.pm-library-btn:hover,
 .pm-library-btn:focus-visible {
     opacity: 1;
     transform: translateX(0);

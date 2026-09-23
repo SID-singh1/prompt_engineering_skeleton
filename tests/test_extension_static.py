@@ -779,9 +779,27 @@ def test_the_library_has_a_visible_way_in():
 
 
 def test_the_library_button_follows_the_trigger_in_the_dom():
-    """The reveal is a sibling selector, so order is load-bearing."""
+    """The keyboard reveal is a sibling selector, so order is load-bearing."""
     assert CONTENT_JS.index('btn.id = "pm-trigger"') < CONTENT_JS.index('lib.id = "pm-library-btn"')
-    assert ".pm-trigger:hover ~ .pm-library-btn" in STYLES_CSS
+    assert ".pm-trigger:focus-visible ~ .pm-library-btn" in STYLES_CSS
+
+
+def test_the_chip_survives_the_trip_from_the_plus():
+    """
+    The pointer reveal was `.pm-trigger:hover ~ .pm-library-btn`, which lasted
+    only while the pointer was on ⊕: crossing the gap lost it and the chip
+    faded from under the click. A bridge over the gap pointed one way only,
+    and the chip moves to either side of the pill, or above it. Pointer intent
+    over both, with a grace period on leaving, covers any gap in any direction.
+    """
+    assert ".pm-trigger:hover ~ .pm-library-btn" not in STYLES_CSS
+    assert ".pm-library-btn.pm-lib-reveal" in STYLES_CSS
+    create = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    assert "for (const el of [btn, lib])" in create
+    assert 'addEventListener("pointerenter", revealChip)' in create
+    assert 'addEventListener("pointerleave", concealChip)' in create
+    assert re.search(r"setTimeout\(\(\) => lib\.classList\.remove\(\"pm-lib-reveal\"\), \d{3}\)", create), \
+        "leaving must hide the chip after a grace period, not at once"
 
 
 def test_the_primary_action_is_unchanged():

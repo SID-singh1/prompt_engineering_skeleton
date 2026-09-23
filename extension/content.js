@@ -764,6 +764,28 @@ function createTrigger() {
   });
   document.body.appendChild(lib);
 
+  // Shown by pointer intent, not by CSS :hover. A sibling :hover lasts only
+  // while the pointer is on ⊕ itself, so the gap between ⊕ and the chip was
+  // enough to lose it on the way over, and the chip faded out from under the
+  // click. An invisible bridge across the gap only ever pointed one way, and
+  // the chip is not always on that side: it sits right of the pill when the
+  // pill is docked left or has grown wide, and above it when beside would put
+  // it on the chat box. Entering either one shows the chip; leaving both
+  // hides it after a grace period long enough to cross any gap.
+  let libRevealTimer = null;
+  const revealChip = () => {
+    clearTimeout(libRevealTimer);
+    if (!panelOpen) lib.classList.add("pm-lib-reveal");
+  };
+  const concealChip = () => {
+    clearTimeout(libRevealTimer);
+    libRevealTimer = setTimeout(() => lib.classList.remove("pm-lib-reveal"), 350);
+  };
+  for (const el of [btn, lib]) {
+    el.addEventListener("pointerenter", revealChip);
+    el.addEventListener("pointerleave", concealChip);
+  }
+
   // Apply saved theme to both docked controls
   storageGet("pm_theme", (result) => {
     const theme = result.pm_theme || "dark";
@@ -1328,7 +1350,9 @@ function togglePanel(force) {
   }
   panelOpen = open;
   lib.hidden = !open;
-  document.getElementById("pm-library-btn")?.setAttribute("aria-expanded", String(open));
+  const chip = document.getElementById("pm-library-btn");
+  chip?.setAttribute("aria-expanded", String(open));
+  if (open) chip?.classList.remove("pm-lib-reveal");
   if (open) {
     closeSlash();
     libPage = "list";
