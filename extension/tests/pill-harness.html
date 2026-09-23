@@ -10,6 +10,8 @@
     H.type(H.ORIG); handleEnhance()                      -> the real flow, via the fake direct stream
     card: Shorter / Open-ended, ‹ 1 of 2 ›, [ and ]      -> style reruns and versions (FAKE.calls logs them)
     FAKE.failNext = true / FAKE.delay = 400              -> a failing or slow rerun
+    H.signIn(); location.reload()                        -> the library, against FAKE_API
+    hover ⊕ → Library, ⌘⇧L, or // in the chat box        -> the sheet, and the caret menu
     H.type("something else")                             -> stale
     H.fail()                                             -> error
     Tab in the composer                                  -> applied (rating in the pill)
@@ -117,6 +119,46 @@
 <script>
 // Consent is a one-time prompt in the real extension; the harness has given it.
 (() => { const s = JSON.parse(localStorage.getItem("pm") || "{}"); if (s.pm_data_consent_v1 === undefined) { s.pm_data_consent_v1 = true; localStorage.setItem("pm", JSON.stringify(s)); } })();
+// A fake Prompt Memory server for the library: saved prompts, history, usage,
+// feedback. Signed out until H.signIn(); every call is logged in FAKE_API.calls.
+window.FAKE_API = {
+  calls: [], usage: { count: 9, limit: 15 }, nextId: 100,
+  prompts: [
+    { id: "p1", title: "Code review template", content: "Review this diff like a senior engineer: correctness first, then naming, then tests. Flag anything that changes behaviour.", tags: ["coding", "review"] },
+    { id: "p2", title: "", content: "You are my writing editor. Cut every sentence that does not earn its place and keep my voice.", tags: ["writing"] },
+    { id: "p3", title: "Explain like a teacher", content: "Explain the concept step by step with one concrete example, then a common misconception.", tags: [] },
+    { id: "p4", title: "Bug report triage", content: "Given this bug report, list the likely root causes ranked by probability and the one log line that would confirm each.", tags: ["debug"] },
+    { id: "p5", title: "Product spec critic", content: "Read this spec and list the three decisions it leaves unmade.", tags: ["product"] },
+  ],
+  history: [
+    { original: "hw do i sort a list of dicts by a key in python", enhanced: "Show me how to sort a list of dictionaries in Python by a specific key, handling dictionaries that lack it.", mode: "deep", latency: 1.2, timestamp: new Date(Date.now() - 3e5).toISOString(), log_id: "h1" },
+    { original: "write email to landlord about leak", enhanced: "Draft a polite but firm email to my landlord reporting a ceiling leak, asking for a repair date this week.", mode: "quick", latency: 0.8, timestamp: new Date(Date.now() - 7e6).toISOString(), log_id: "h2" },
+  ],
+};
+(() => {
+  const real = window.fetch.bind(window);
+  const API = "https://siddhm11-prompt-engine.hf.space";
+  const json = (body, status = 200) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+  window.fetch = (url, opts = {}) => {
+    if (typeof url !== "string" || !url.startsWith(API)) return real(url, opts);
+    const A = window.FAKE_API, path = url.slice(API.length).split("?")[0], method = (opts.method || "GET").toUpperCase();
+    const body = opts.body ? JSON.parse(opts.body) : null;
+    A.calls.push({ method, path, body });
+    if (path === "/saved-prompts" && method === "GET") return json({ prompts: A.prompts });
+    if (path === "/saved-prompts" && method === "POST") {
+      if (A.prompts.some((p) => p.content === body.content)) return json({ duplicate: true });
+      A.prompts.unshift({ id: "p" + A.nextId++, title: body.title || "", content: body.content, tags: body.tags || [] });
+      return json({ ok: true });
+    }
+    const one = path.match(/^\/saved-prompts\/(.+)$/);
+    if (one && method === "DELETE") { A.prompts = A.prompts.filter((p) => p.id !== one[1]); return json({ ok: true }); }
+    if (one && method === "PUT") { const p = A.prompts.find((x) => x.id === one[1]); Object.assign(p || {}, body); return json({ ok: true }); }
+    if (path === "/enhance/history") return json({ history: A.history });
+    if (path === "/enhance/usage") return json(A.usage);
+    if (path === "/feedback/mine") return json({ feedback: [] });
+    return json({});
+  };
+})();
 window.FAKE = {
   calls: [], delay: 25, failNext: false,
   text: {
@@ -138,6 +180,8 @@ window.H = {
   done(log = true) { finalizeStreamingModal({ enhanced: this.DRAFT, original: this.ORIG, log_id: log ? "log_1" : undefined, latency: 1.05 }); },
   fail() { failStreamingModal("Rate limited — try again in 20 s"); },
   rect(id) { const e = document.getElementById(id) || document.querySelector(id); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; },
+  // Sign in with a token that does not expire until 2100; reload to take effect.
+  signIn() { chrome.storage.local.set({ token: "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6InUxIn0.x", user_id: "u1", email: "u@example.com" }); },
   key(k, opts = {}) { document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: opts.code || "", bubbles: true, cancelable: true, ...opts })); },
 };
 </script>
