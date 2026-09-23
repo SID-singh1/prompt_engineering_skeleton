@@ -483,15 +483,18 @@ def test_switching_theme_repaints_the_card_and_the_toasts():
 
 
 def test_lazy_created_modal_inherits_the_current_theme():
-    """A modal created after theme setup must not fall back to dark :root tokens."""
+    """A modal created after theme setup must not fall back to dark :root tokens.
+    It read the theme off the old panel; the panel is gone, so the theme is
+    held in uiTheme, which applyTheme() and the stored setting both write."""
     body = _function_bodies(CONTENT_JS, r"getOrCreateModalOverlay")["getOrCreateModalOverlay"]
-    assert "data-pm-theme" in body and "pm-panel" in body
+    assert "data-pm-theme" in body and "uiTheme" in body
+    assert "uiTheme = theme" in _function_bodies(CONTENT_JS, r"applyTheme")["applyTheme"]
 
 
 def test_lazy_created_voice_overlay_inherits_the_current_theme():
-    """The on-demand voice overlay must use the panel's active theme."""
+    """The on-demand voice overlay must use the active theme."""
     body = _function_bodies(CONTENT_JS, r"showVoiceOverlay")["showVoiceOverlay"]
-    assert "data-pm-theme" in body and "pm-panel" in body
+    assert "data-pm-theme" in body and "uiTheme" in body
 
 
 def test_voice_flow_requires_review_before_it_can_enhance():
@@ -618,7 +621,7 @@ def test_the_origin_tab_is_read_without_needing_the_tabs_permission():
 # — toasts behind the card, the card over the panel, the card punching through
 # the full-screen voice and modal backdrops. One declared scale replaces them.
 
-Z_TOKENS = ("--pm-z-panel", "--pm-z-trigger", "--pm-z-card", "--pm-z-overlay", "--pm-z-toast")
+Z_TOKENS = ("--pm-z-trigger", "--pm-z-card", "--pm-z-library", "--pm-z-overlay", "--pm-z-toast")
 
 
 def _z_scale() -> dict:
@@ -644,12 +647,16 @@ def test_the_stacking_order_is_declared_not_inferred():
 
 def test_nothing_covers_the_card_that_does_not_also_take_its_keys():
     """
-    Tab accepts what the card shows. Anything painted over it while its keymap
-    is live means accepting something you cannot see — so the panel sits below
-    the card, and the overlays that sit above it disable the keymap instead.
+    The card's keys act on what it shows. Anything painted over it while its
+    keymap is live means acting on something you cannot see. The library sits
+    above the card, and takes the keyboard when it opens: the card's keymap
+    only answers with focus in the card, the pill or the chat box. The full-
+    screen overlays above it disable the keymap outright.
     """
     z = _z_scale()
-    assert z["--pm-z-card"] > z["--pm-z-panel"], "the panel can cover a live card"
+    assert z["--pm-z-library"] > z["--pm-z-card"]
+    assert "focusLibrarySearch()" in _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"], \
+        "the library covers the card without taking its keys"
     assert z["--pm-z-overlay"] > z["--pm-z-card"], \
         "the card punches through the full-screen modal and voice backdrops"
     body = _function_bodies(CONTENT_JS, r"overlayHasInput")["overlayHasInput"]
@@ -669,12 +676,13 @@ def test_toasts_sit_above_everything():
 
 def test_no_page_level_surface_hardcodes_its_own_level():
     """
-    The two remaining literals are local: .pm-resize-handle and .pm-onboarding
-    are `position: absolute` inside the panel, so their z-index is scoped to
-    that stacking context and says nothing about page-level order.
+    The remaining literals are local. .pm-resize-handle and .pm-onboarding are
+    `position: absolute` inside the old panel, and the library's ⋯ menu inside
+    the sheet, which is fixed and z-indexed and so its own stacking context.
     """
     literals = re.findall(r"z-index:\s*(\d+);", STYLES_CSS)
-    assert sorted(literals) == ["10", "100"], f"unscaled page-level z-index: {literals}"
+    assert sorted(literals) == ["1", "10", "100"], f"unscaled page-level z-index: {literals}"
+    assert "z-index: 1;" in _css_block(".pm-lib .pm-lib-menu")
 
 
 def test_the_scale_clears_host_page_overlays():
@@ -683,38 +691,44 @@ def test_the_scale_clears_host_page_overlays():
     assert min(_z_scale().values()) > 1_000_000
 
 
-# ── the card keeps clear of the panel ─────────────────────────────────────
+# ── the card and the library ──────────────────────────────────────────────
+# The old panel took a column of the page and the card had to keep out of it.
+# The library is a sheet on the pill, opened on purpose and closed by the next
+# click elsewhere, so while it is up it sits above the card instead.
 
-def test_the_card_treats_an_open_panel_as_a_boundary():
-    """
-    Ordering decides who wins a collision; this is what stops there being one.
-    The card outranks the panel deliberately, so an overlap hides the panel's
-    own controls — it hid the mode toggle and the edge of the enhance button.
-    """
+def test_the_library_sits_above_the_card_while_open():
+    z = _z_scale()
+    assert z["--pm-z-card"] < z["--pm-z-library"] < z["--pm-z-overlay"], \
+        "the library must cover the card, and modals it raises must cover it"
     body = _function_bodies(CONTENT_JS, r"positionCard")["positionCard"]
-    assert "#pm-panel.pm-open" in body, "the card ignores the panel entirely"
-    assert "rightBound" in body
+    assert "#pm-panel" not in body, "the card still reserves a column for a panel that no longer exists"
     assert "Math.min(left, rightBound - width)" in body, \
         "the card is not held inside the boundary it computed"
 
 
-def test_the_card_relayouts_when_the_panel_moves():
-    """Opening, closing and resizing the panel fire neither resize nor scroll,
-    which are the only events the card watches."""
+def test_the_library_closes_on_a_click_elsewhere():
+    create = _function_bodies(CONTENT_JS, r"createLibrary")["createLibrary"]
+    assert 'addEventListener("pointerdown"' in create and "togglePanel(false)" in create
+
+
+def test_the_card_relayouts_when_the_library_opens():
+    """Opening and closing the library fire neither resize nor scroll, which
+    are the only events the card watches; placePill() re-runs positionCard()."""
     toggle = _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"]
-    assert "positionCard()" in toggle, "opening the panel leaves the card where it was"
-    assert CONTENT_JS.count("// Dragging the panel wider walks its left edge across the card.") == 1
+    assert "placePill()" in toggle, "opening the library leaves the pill and card where they were"
+    assert "positionCard()" in _function_bodies(CONTENT_JS, r"placePill")["placePill"]
 
 
 # ── readability ───────────────────────────────────────────────────────────
 
-def test_the_quota_number_carries_the_state_the_bar_carries():
-    """It was --pm-text-muted at every level, so at 15/15 the count was the
-    dimmest text in the panel next to an alarm-red bar."""
-    body = _function_bodies(CONTENT_JS, r"updateUsageBar")["updateUsageBar"]
-    assert "pm-usage-label-spent" in body and "pm-usage-label-warn" in body
-    assert ".pm-usage-label.pm-usage-label-spent" in STYLES_CSS
-    assert "var(--pm-danger)" in _css_block(".pm-usage-label.pm-usage-label-spent")
+def test_the_daily_count_speaks_up_only_when_it_decides_something():
+    """The count used to be a bar at every level, and at 15/15 its number was
+    the dimmest text in the panel. It is now a coloured line in the library's
+    foot at three or fewer left, and a plain line in ⋯."""
+    foot = _function_bodies(CONTENT_JS, r"libFootHtml")["libFootHtml"]
+    assert "left <= 3" in foot and "pm-lib-low" in foot and "No rewrites left today" in foot
+    assert "color" in _css_block(".pm-lib .pm-lib-low")
+    assert "rewrites used today" in _function_bodies(CONTENT_JS, r"libMenuHtml")["libMenuHtml"]
 
 
 def test_a_scroller_with_more_below_says_so():
@@ -733,21 +747,23 @@ def test_the_fade_is_removed_at_the_bottom():
 
 
 def test_both_clipped_scrollers_are_wired_up():
-    for fn in ("showDiffModal", "renderTabContent"):
+    for fn in ("showDiffModal", "afterListRender"):
         body = _function_bodies(CONTENT_JS, fn)[fn]
         assert "markScrollable" in body, f"{fn} never marks its scroller"
 
 
 def test_async_history_render_refreshes_the_scroll_marker():
-    """History arrives after the first measurement and must re-mark its parent."""
-    body = _function_bodies(CONTENT_JS, r"renderHistoryTab")["renderHistoryTab"]
-    assert body.count("markScrollable(container)") >= 2
+    """History arrives after the first measurement and must re-mark its list:
+    Recent redraws through renderLibrary(), which ends in afterListRender()."""
+    click = _function_bodies(CONTENT_JS, r"onLibraryClick")["onLibraryClick"]
+    assert re.search(r"fetchEnhanceHistory\(\)\.then\([^\n]*renderLibrary\(\)", click)
+    assert "afterListRender(lib)" in _function_bodies(CONTENT_JS, r"renderLibrary")["renderLibrary"]
 
 
 def test_async_feedback_render_refreshes_the_scroll_marker():
-    """Recent feedback arrives asynchronously and can make the tab scrollable."""
+    """Recent feedback arrives asynchronously and can make the page scrollable."""
     body = _function_bodies(CONTENT_JS, r"loadRecentFeedback")["loadRecentFeedback"]
-    assert "markScrollable(document.getElementById(\"pm-tab-body\"))" in body
+    assert "markScrollable(page)" in body
 
 
 # ── the library is reachable without knowing about shift ──────────────────
@@ -819,13 +835,14 @@ def test_a_duplicate_save_is_not_reported_as_a_save():
         "the duplicate case falls through to the success message"
 
 
-def test_the_save_form_keeps_its_text_on_a_duplicate():
-    """Emptying the form is the gesture that means the text was written."""
-    start = CONTENT_JS.index('} else if (outcome === "duplicate") {')
-    branch = CONTENT_JS[start:CONTENT_JS.index("} else {", start)]
-    assert "already in your library" in branch, "wrong branch extracted"
-    assert '.value = ""' not in branch, "the duplicate branch clears the form"
-    assert "fetchSavedPrompts" not in branch, "it refetches as though something changed"
+def test_a_duplicate_save_from_the_library_is_not_reported_as_a_save():
+    """The Save tab's form is now the library's Save row. A duplicate must say
+    so, and must not refetch as though something had been written."""
+    body = _function_bodies(CONTENT_JS, r"libSaveText")["libSaveText"]
+    saved = body[body.index('if (outcome === "saved")'):body.index("} else {")]
+    assert "fetchSavedPrompts" in saved
+    rest = body[body.index("} else {"):]
+    assert "Already in your library" in rest and "fetchSavedPrompts" not in rest
 
 
 # ── the pill: the draft outlives the composer ─────────────────────────────
@@ -1023,7 +1040,8 @@ def test_every_pill_state_carries_one_verb():
     unstuck."""
     body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
     assert 'verb = "Retry"' in body and 'verb = "Redo"' in body
-    assert '"Apply" : "Insert"' in body
+    # "Apply" said nothing about what would happen to the text already there.
+    assert '"Replace" : "Insert"' in body
     dispatch = _function_bodies(CONTENT_JS, r"pillVerb")["pillVerb"]
     assert "insertDraft()" in dispatch and "redoCard()" in dispatch and "handleEnhance()" in dispatch
     for state in ("stale", "error"):
