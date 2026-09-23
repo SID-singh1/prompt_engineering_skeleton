@@ -2086,6 +2086,14 @@ function renderSlash() {
       if (e.target.closest("[data-act='attach']")) slashAttach(); else slashInsert();
     });
     document.body.appendChild(menu);
+    // The rewrite card sits on the chat box, which is exactly where this menu
+    // opens, and typing // has just made its draft stale: the text no longer
+    // matches what was rewritten. It folds into the pill, as esc would fold
+    // it, rather than have a menu drawn across its text and buttons. The pill
+    // keeps the draft and offers Redo (or Insert again, if the // is deleted
+    // and the text matches once more). It does not spring back when the menu
+    // closes: the user is mid-sentence.
+    if (cardExpanded) hideCard();
   }
   const items = slashItems();
   slashSel = Math.max(0, Math.min(slashSel, items.length - 1));
