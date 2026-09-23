@@ -2115,6 +2115,19 @@ function renderSlash() {
   }
 }
 
+/**
+ * Where the //query is now. The position noted when the menu opened can be
+ * stale by the time a prompt is chosen: an editor that re-renders on every
+ * transaction may have replaced the text node it pointed into. The caret has
+ * not moved (the menu keeps focus in the chat box), so it is read again.
+ */
+function refreshSlashToken(s) {
+  const ctx = slashContext(s.el);
+  const m = ctx && ctx.text.match(SLASH_TOKEN);
+  if (!m || m[2] !== s.q) return s;
+  return { ...s, node: ctx.node, start: ctx.offset - s.q.length - 2, end: ctx.offset };
+}
+
 /** Select the //query token in the composer, so the next edit replaces it. */
 function selectSlashToken(s) {
   s.el.focus({ preventScroll: true });
@@ -2141,7 +2154,8 @@ function typeIntoSelection(el, text) {
 }
 
 async function slashInsert() {
-  const s = slash, p = slashItems()[slashSel];
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
   if (!s || !p) return;
   closeSlash();
   const before = composerText(s.el);
@@ -2159,7 +2173,8 @@ async function slashInsert() {
 }
 
 function slashAttach() {
-  const s = slash, p = slashItems()[slashSel];
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
   if (!s || !p) return;
   closeSlash();
   if (!selectedIds.has(p.id)) toggleAttachment(p);
