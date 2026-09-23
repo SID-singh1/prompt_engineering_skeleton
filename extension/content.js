@@ -1162,6 +1162,7 @@ function onNavigated() {
   // The new composer mounts a beat after the URL changes; look twice.
   for (const delay of [300, 1200]) {
     setTimeout(() => {
+      watchComposer();
       refreshCardStaleness();
       renderPill();
       placePill();
@@ -2194,6 +2195,45 @@ function handleSlashKeydown(e) {
   e.stopImmediatePropagation();
 }
 
+// ── Watching the chat box ──
+//
+// Most editors fire `input` as the user types. ProseMirror, the editor ChatGPT
+// and Claude are built on, does not: it takes each keypress itself and writes
+// the text through its own transaction, so no input event ever reaches the
+// page. Everything here that reacted to typing listened for `input` — the //
+// menu, the rail following the box as it grows, a draft turning stale — and on
+// those two sites heard nothing: // never opened, and the Enter meant to pick
+// a prompt sent the message instead. A MutationObserver on the composer sees
+// every change to its text whoever makes it, and selectionchange sees the
+// caret move; `input` stays as the fast path where it does fire.
+
+let watchedComposer = null;
+let composerObserver = null;
+let composerChangeQueued = false;
+
+/** Observe whatever the composer is now. Cheap to call often. */
+function watchComposer() {
+  const el = findComposer();
+  if (el === watchedComposer) return;
+  composerObserver?.disconnect();
+  watchedComposer = el;
+  if (!el) return;
+  composerObserver = new MutationObserver(onComposerChanged);
+  composerObserver.observe(el, { subtree: true, childList: true, characterData: true });
+}
+
+/** The chat box's text changed. Batched: one keystroke can be many mutations. */
+function onComposerChanged() {
+  if (composerChangeQueued) return;
+  composerChangeQueued = true;
+  Promise.resolve().then(() => {
+    composerChangeQueued = false;
+    checkSlash();
+    refreshCardStaleness();
+    positionRail();
+  });
+}
+
 function setupLibraryListeners() {
   window.addEventListener("keydown", handleSlashKeydown, true);
   document.addEventListener("input", (e) => {
@@ -2203,6 +2243,13 @@ function setupLibraryListeners() {
       requestAnimationFrame(positionRail);
     }
   }, true);
+  // The caret moving (a click, an arrow key) opens or closes // too, and it is
+  // the one signal every editor gives.
+  document.addEventListener("selectionchange", () => {
+    if (slash || composerHasFocus()) checkSlash();
+  });
+  document.addEventListener("focusin", watchComposer, true);
+  watchComposer();
   document.addEventListener("focusout", (e) => {
     if (slash && (e.target === slash.el || slash.el.contains(e.target))) setTimeout(() => {
       if (slash && !slash.el.contains(document.activeElement) && document.activeElement !== slash.el) closeSlash();
