@@ -154,6 +154,8 @@ def main():
         check(page.inner_text("#pm-library .pm-lib-row.pm-sel .pm-lib-verb").strip() == "Insert", "empty box: Insert")
         page.keyboard.press("Enter")
         page.wait_for_selector("#pm-library", state="hidden")
+        # Insert gives the editor a frame to see the selection before clearing.
+        page.wait_for_function("document.getElementById('composer').textContent.length > 0", timeout=3000)
         check(composer().startswith("Explain the concept step by step"), f"inserted, got {composer()!r}")
         page.wait_for_function("document.getElementById('pm-trigger').dataset.state === 'applied'", timeout=3000)
         check(True, "the pill says Inserted once the write is verified")
@@ -197,6 +199,7 @@ def main():
         check("from “hw do i sort" in page.inner_text("#pm-library .pm-lib-row .pm-lib-preview"), "with what they came from")
         page.keyboard.press("Enter")
         page.wait_for_selector("#pm-library", state="hidden")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how to sort')", timeout=3000)
         check(composer().startswith("Show me how to sort"), "a recent rewrite inserts")
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
