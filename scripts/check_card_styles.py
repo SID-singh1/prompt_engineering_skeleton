@@ -207,6 +207,20 @@ def main():
         check("No rewrites left" in " ".join(page.locator(".pm-toast").all_inner_texts()), "and says so")
         ev("usageData = { count: 0, limit: 15 }; cardResult.direct = true; showDiffModal(cardResult)")
 
+        # ── a voice draft: its baseline is the chat box, not the transcript ──
+        ev("closeCard(); FAKE.calls = []; H.type('half written message')")
+        ev("""showStreamingDiffModal('spoken transcript here'); cardBasedOn = norm('half written message');
+              cardHasBaseline = true; finalizeStreamingModal({ enhanced: 'Voice rewrite', original: 'spoken transcript here',
+              mode: 'deep', direct: true })""")
+        wait_title("Rewrite · Deep")
+        check(not ev("cardStale"), "a voice draft over a half-written message starts fresh")
+        page.click("#pm-card-style-quick")
+        wait_title("Rewrite · Quick")
+        check(not ev("cardStale") and page.locator("#pm-card-accept").count() == 1,
+              "trying a style on a voice draft keeps it insertable")
+        check(ev("cardBasedOn") == "half written message", "the voice draft's baseline survives the rerun")
+        ev("closeCard()")
+
         # ── a draft saved before versions existed ──
         ev("""draftStore.save({ result: { enhanced: 'Old draft text', original: 'old', mode: 'deep' },
                 basedOn: 'old', createdAt: Date.now(), source: 'x', expanded: true })""")

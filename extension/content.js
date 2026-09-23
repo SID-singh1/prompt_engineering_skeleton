@@ -3087,8 +3087,16 @@ async function rerunInStyle(style) {
   if (!route || cardState !== "ready" || isStaleAgainstComposer()) return;
 
   cardRerunFrom = { versions: cardVersions.slice(), index: cardVersionIndex };
+  // Staleness is judged against what the draft was built from, which is not
+  // always the text being rewritten: a voice draft's baseline is the chat box
+  // as it was when recording started, and its original is the transcript.
+  // showStreamingDiffModal() rebases on the text it is given, so the rerun
+  // puts the draft's own baseline back. Without this, a voice draft taken over
+  // a half-written message turned stale the moment a style was tried.
+  const basedOn = cardBasedOn;
   enhanceInFlight = true;
   showStreamingDiffModal(original, style);
+  cardBasedOn = basedOn;
   try {
     if (route.route === "direct") await runDirectEnhance(original, route, style);
     else await runBackendEnhance(original, {}, style);
