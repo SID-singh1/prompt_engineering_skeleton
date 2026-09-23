@@ -1257,3 +1257,45 @@ def test_the_popup_shows_the_manifest_version():
     assert 'chrome.runtime.getManifest().version' in popup_js
     version = json.loads(MANIFEST)["version"]
     assert f'id="popup-version">v{version}<' in popup_html, "the fallback label disagrees with the manifest"
+
+
+# ── typing is watched, not listened for ───────────────────────────────────
+# ProseMirror (ChatGPT, Claude) inserts typed characters itself when the box
+# was focused from code, as those sites do on load and as Insert does, and
+# then no input event fires. // never opened there, and its Enter sent the
+# message. scripts/check_editors.py exercises the real editors.
+
+def test_the_chat_box_is_watched_by_a_mutation_observer():
+    watch = _function_bodies(CONTENT_JS, r"watchComposer")["watchComposer"]
+    assert "new MutationObserver(onComposerChanged)" in watch
+    assert "characterData: true" in watch and "subtree: true" in watch
+    changed = _function_bodies(CONTENT_JS, r"onComposerChanged")["onComposerChanged"]
+    for reaction in ("checkSlash()", "refreshCardStaleness()", "positionRail()"):
+        assert reaction in changed, f"a text change no longer reaches {reaction}"
+
+
+def test_the_caret_moving_is_watched_too():
+    setup = _function_bodies(CONTENT_JS, r"setupLibraryListeners")["setupLibraryListeners"]
+    assert 'addEventListener("selectionchange"' in setup
+    assert 'addEventListener("focusin", watchComposer, true)' in setup
+    assert "watchComposer()" in _function_bodies(CONTENT_JS, r"onNavigated")["onNavigated"]
+
+
+def test_a_slash_choice_reads_the_caret_again():
+    for fn in ("slashInsert", "slashAttach"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert "refreshSlashToken(slash)" in body, f"{fn} trusts a text node noted when the menu opened"
+
+
+def test_the_card_folds_when_the_slash_menu_opens():
+    body = _function_bodies(CONTENT_JS, r"renderSlash")["renderSlash"]
+    assert "if (cardExpanded) hideCard();" in body
+
+
+def test_the_chat_box_is_cleared_through_the_editor():
+    """Lexical reverted execCommand's delete and the insert appended after
+    the old text; the editor is now asked first, after it has seen the
+    selection."""
+    body = _function_bodies(CONTENT_JS, r"clearComposer")["clearComposer"]
+    assert body.index("await nextFrame()") < body.index('inputType: "deleteContentBackward"') < body.index('execCommand("delete"')
+    assert "await clearComposer(el)" in _function_bodies(CONTENT_JS, r"applyToInput")["applyToInput"]
