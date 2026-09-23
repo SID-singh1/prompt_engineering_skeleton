@@ -10,6 +10,9 @@ Two things are faked at the network edge:
                           records every request, so the checks can assert
                           which style instructions and temperature the
                           extension actually sent.
+  the Prompt Memory API   answering the signed-in route: /enhance/stream
+                          with per-request log ids and a running daily
+                          count, /enhance/accept, and empty lists elsewhere.
 
 Needs Playwright's bundled Chromium (branded Chrome ignores --load-extension):
     pip install playwright && python -m playwright install chromium
@@ -97,7 +100,9 @@ def main():
 
         page = ctx.new_page()
         errors = []
-        page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "Prompt Memory" in m.text else None)
+        # The stream's own "stream error" log is expected when a failure is simulated.
+        page.on("console", lambda m: errors.append(m.text) if m.type == "error" and "Prompt Memory" in m.text
+                and "stream error" not in m.text else None)
         page.on("pageerror", lambda e: errors.append(str(e)))
 
         def open_chat():
@@ -205,8 +210,97 @@ def main():
               "a Quick first rewrite offers More detail and Open-ended")
 
         check(not errors, f"console errors: {errors}")
+        page.click("#pm-card-discard")   # start the next phase with no draft pending
+
+        # ── Signed in: the same flow through the server ──────────────────
+        server = {"stream": [], "accept": [], "used": 12, "limit": 15, "fail_next": False}
+
+        def api(route):
+            req, path = route.request, route.request.url.split(".hf.space", 1)[1]
+            if req.method == "POST" and path.startswith("/enhance/stream"):
+                body = json.loads(req.post_data or "{}")
+                server["stream"].append(body)
+                if server["fail_next"]:
+                    server["fail_next"] = False
+                    events = [{"error": "provider_error", "detail": "The model is overloaded."},
+                              {"done": True, "failed": True, "mode": body["mode"]}]
+                else:
+                    server["used"] += 1
+                    text = REPLY[body["mode"]]
+                    events = [{"token": text[i:i + 12]} for i in range(0, len(text), 12)]
+                    events.append({"done": True, "failed": False, "log_id": f"log-{len(server['stream'])}",
+                                   "latency": 0.4, "mode": body["mode"], "model": "fake",
+                                   "usage_today": {"used": server["used"], "limit": server["limit"], "tier": "free"},
+                                   "context_used": {"selected": 0, "auto_matched": 0, "passive_matched": 0}})
+                route.fulfill(status=200, content_type="text/event-stream",
+                              body="".join(f"data: {json.dumps(e)}\n\n" for e in events))
+            elif req.method == "POST" and path.startswith("/enhance/accept"):
+                server["accept"].append(json.loads(req.post_data or "{}"))
+                route.fulfill(status=200, content_type="application/json", body="{}")
+            else:
+                route.fulfill(status=200, content_type="application/json", body="[]" if req.method == "GET" else "{}")
+
+        ctx.route("https://siddhm11-prompt-engine.hf.space/**", api)
+        # A token that does not expire until 2100, and no key of their own.
+        jwt = "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6InUxIn0.x"
+        sw.evaluate(f"""chrome.storage.local.remove(['byok_key']).then(() =>
+            chrome.storage.local.set({{ token: '{jwt}', user_id: 'u1', email: 'u@example.com', pm_mode: 'deep' }}))""")
+        check(sw.evaluate("chrome.storage.local.get(['token']).then(r => !!r.token)"), "signed in")
+        n_provider = len(requests)
+
+        open_chat()
+        type_prompt(ORIG)
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        check(len(server["stream"]) == 1 and server["stream"][0]["mode"] == "deep", "the server got a Deep request")
+        check(server["stream"][0]["prompt"] == ORIG, "the server got the typed prompt")
+        check("byok_key" not in server["stream"][0], "no key rides along when the user has none")
+        check(len(requests) == n_provider, "the signed-in route never calls the provider directly")
+        check([b.strip() for b in page.locator("#pm-card .pm-card-style").all_inner_texts()]
+              == ["Shorter · 2 left", "Open-ended · 2 left"],
+              f"the server's daily count shows on the buttons, got {page.locator('#pm-card .pm-card-style').all_inner_texts()}")
+
+        # A rerun the server fails keeps the draft and spends nothing.
+        server["fail_next"] = True
+        page.click("#pm-card-style-quick")
+        page.wait_for_selector(".pm-toast:has-text('Quick version')", timeout=8000)
+        wait_title("Rewrite · Deep")
+        check("overloaded" in " ".join(page.locator(".pm-toast").all_inner_texts()), "the server's reason is shown")
+
+        page.click("#pm-card-style-quick")
+        wait_title("Rewrite · Quick")
+        last_req = server["stream"][-1]
+        check(last_req["mode"] == "quick" and last_req["prompt"] == ORIG, "Shorter asked the server for Quick, same prompt")
+        check([b.strip() for b in page.locator("#pm-card .pm-card-style").all_inner_texts()]
+              == ["More detail", "Open-ended · 1 left"], "the made style is free; the other shows 1 left")
+
+        # Insert approves the version shown, not the first one.
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('prompt-textarea').textContent.trim().length > 0")
+        page.wait_for_timeout(500)
+        check(page.text_content("#prompt-textarea").strip() == REPLY["quick"], "Insert wrote the Quick version")
+        check([a.get("log_id") for a in server["accept"]] == [f"log-{len(server['stream'])}"],
+              f"only the inserted version is approved, got {server['accept']}")
+
+        # The last rewrite of the day: the buttons stop, and no request is sent.
+        server["used"] = 14
+        type_prompt(ORIG + " again")
+        # For six seconds after an Insert the pill is an "Inserted" receipt, and
+        # a click on it only dismisses that (by design); then it enhances.
+        if page.get_attribute("#pm-trigger", "data-state") == "applied":
+            page.click("#pm-trigger")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        check(page.get_attribute("#pm-card-style-quick", "aria-disabled") == "true", "no rewrites left: disabled")
+        before = len(server["stream"])
+        page.click("#pm-card-style-quick", force=True)
+        page.wait_for_selector(".pm-toast:has-text('No rewrites left')", timeout=5000)
+        check(len(server["stream"]) == before, "a spent allowance sends nothing")
+
+        check(not errors, f"console errors: {errors}")
         ctx.close()
-    print(f"{checks} end-to-end checks PASS ({len(requests)} provider requests)")
+    print(f"{checks} end-to-end checks PASS ({len(requests)} provider requests, "
+          f"{len(server['stream'])} server requests)")
 
 
 if __name__ == "__main__":
