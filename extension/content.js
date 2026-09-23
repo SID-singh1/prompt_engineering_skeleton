@@ -2196,6 +2196,17 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
         );
         return;
       }
+      // The count first: the card that finalize draws labels its style
+      // buttons with how many rewrites are left, and drawn before this it
+      // was always one rewrite behind — blank on the first of the day.
+      if (metadata.usage_today) {
+        usageData.count = metadata.usage_today.used;
+        usageData.limit = metadata.usage_today.limit;
+      } else {
+        usageData.count++;
+      }
+      updateUsageBar();
+
       lastEnhanceResult = {
         original: inputText,
         enhanced: parts.join(""),
@@ -2206,14 +2217,6 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
         context_used: metadata.context_used,
       };
       finalizeStreamingModal(lastEnhanceResult);
-
-      if (metadata.usage_today) {
-        usageData.count = metadata.usage_today.used;
-        usageData.limit = metadata.usage_today.limit;
-      } else {
-        usageData.count++;
-      }
-      updateUsageBar();
     },
     inputMetadata,
     style
