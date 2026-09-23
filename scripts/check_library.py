@@ -345,9 +345,80 @@ def main():
         check(stack in ("path", "svg", "SPAN", "pm-trigger"), f"⊕ stays clickable, top element {stack}")
 
         check(not errors, f"page errors: {errors}")
+        page.close()
+        reach_the_chip_from_anywhere(browser, url)
         browser.close()
     httpd.shutdown()
     print(f"{checks} library checks PASS")
+
+
+def reach_the_chip_from_anywhere(browser, url):
+    """Hover ⊕, drift to the Library chip the way a hand does, click: the
+    library must open wherever the pill is. The chip used to be revealed by a
+    CSS :hover on ⊕, lost in the gap on the way over; this walks the pill
+    through every dock, height, layout and width the chip's placement varies
+    with, and approaches along a curved path that overshoots and comes back."""
+    cases = 0
+    for vw, vh in [(1440, 900), (1280, 720), (800, 600)]:
+        page = browser.new_page(viewport={"width": vw, "height": vh})
+        page.goto(url)
+        page.wait_for_timeout(400)
+        page.evaluate("localStorage.clear(); sessionStorage.clear(); H.signIn()")
+        page.goto(url)
+        page.wait_for_function("document.getElementById('pm-library')")
+        page.wait_for_timeout(400)
+        for layout in ("chat", "new-chat"):
+            for draft in (False, True):
+                for dock in ("right", "left"):
+                    for bottom in (24, vh // 2 - 40, vh - 90):
+                        page.mouse.move(5, 5)
+                        page.evaluate("""([layout, draft, dock, bottom]) => {
+                            togglePanel(false); closeCard();
+                            document.body.classList.toggle('center', layout === 'new-chat');
+                            if (draft) { H.type(H.ORIG); H.stream(); H.done(); hideCard(); } else { H.type(''); }
+                            pillDock = dock; pillBottom = bottom; placePill();
+                        }""", [layout, draft, dock, bottom])
+                        page.wait_for_timeout(450)          # the chip's grace period runs out
+                        where = f"{vw}x{vh} {layout} {'draft' if draft else 'idle'} dock-{dock} bottom-{bottom}"
+                        box = lambda sel: page.evaluate(
+                            f"(() => {{ const r = document.querySelector('{sel}').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }})()")
+                        px, py = box("#pm-trigger")
+                        page.mouse.move(px, py)
+                        page.wait_for_timeout(200)
+                        if page.evaluate("document.getElementById('pm-library-btn').hidden"):
+                            continue                         # nowhere clear of the chat box: ⇧-click and ⌘⇧L remain
+                        cx, cy = box("#pm-library-btn")
+                        # A curved path that overshoots the chip and comes back, ~30 ms a step.
+                        for i in range(1, 15):
+                            f = i / 12
+                            page.mouse.move(px + (cx - px) * f, py + (cy - py) * f + 14 * (f - f * f))
+                            page.wait_for_timeout(30)
+                        page.mouse.move(cx, cy)
+                        page.wait_for_timeout(60)
+                        page.mouse.down()
+                        page.mouse.up()
+                        page.wait_for_timeout(150)
+                        check(page.evaluate("!document.getElementById('pm-library').hidden"),
+                              f"{where}: hovering ⊕ then clicking the chip opens the library")
+                        # It stays open with the pointer gone, and clicks inside it keep it open.
+                        page.mouse.move(vw // 2, 30)
+                        page.wait_for_timeout(500)
+                        check(page.evaluate("!document.getElementById('pm-library').hidden"),
+                              f"{where}: the library stays open when the pointer leaves")
+                        head = page.evaluate("(() => { const r = document.querySelector('#pm-library .pm-lib-head').getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; })()")
+                        page.mouse.click(*head)
+                        page.wait_for_timeout(100)
+                        check(page.evaluate("!document.getElementById('pm-library').hidden"),
+                              f"{where}: a click inside the library keeps it open")
+                        page.keyboard.press("Escape")
+                        page.mouse.move(5, vh // 2)
+                        page.wait_for_timeout(700)
+                        check(page.evaluate("getComputedStyle(document.getElementById('pm-library-btn')).opacity") == "0",
+                              f"{where}: the chip goes away once the pointer has left both")
+                        cases += 1
+        page.close()
+    check(cases >= 60, f"only {cases} placements were reachable to test")
+    print(f"chip reached from {cases} pill placements")
 
 
 if __name__ == "__main__":

@@ -318,8 +318,21 @@ def main():
         # ── The library, signed in, in the real extension ────────────────
         server["used"] = 3
         open_chat()
-        page.keyboard.press("Meta+Shift+L")
+        # Opened the way a person does: hover ⊕, drift across the gap to the
+        # Library chip, click. The chip used to fade from under the pointer.
+        pbox = page.locator("#pm-trigger").bounding_box()
+        px, py = pbox["x"] + pbox["width"] / 2, pbox["y"] + pbox["height"] / 2
+        page.mouse.move(px, py)
+        page.wait_for_timeout(250)
+        cbox = page.locator("#pm-library-btn").bounding_box()
+        cx, cy = cbox["x"] + cbox["width"] / 2, cbox["y"] + cbox["height"] / 2
+        for i in range(1, 13):
+            page.mouse.move(px + (cx - px) * i / 12, py + (cy - py) * i / 12)
+            page.wait_for_timeout(30)
+        page.mouse.down()
+        page.mouse.up()
         page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
+        check(True, "hover ⊕, move to the chip, click: the library opens")
         titles = [x.strip() for x in page.locator("#pm-library .pm-lib-row .pm-lib-title").all_inner_texts()]
         check(titles == ["Code review template", "Bug report triage"], f"saved prompts from the server, got {titles}")
         page.keyboard.press("ArrowDown")
