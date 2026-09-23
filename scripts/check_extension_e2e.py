@@ -38,6 +38,12 @@ EXT = ROOT / "extension"
 checks = 0
 
 ORIG = "hw do i sort a list of dicts by a key in python, some dont have the key"
+SAVED = [
+    {"id": "s1", "title": "Code review template", "tags": ["coding"],
+     "content": "Review this diff like a senior engineer: correctness first, then naming, then tests."},
+    {"id": "s2", "title": "Bug report triage", "tags": ["debug"],
+     "content": "List the likely root causes ranked by probability and the log line that would confirm each."},
+]
 REPLY = {
     "deep": "Show me how to sort a list of dictionaries in Python by a specific key when some dictionaries lack it.",
     "quick": "How do I sort Python dicts by a key some of them lack?",
@@ -194,13 +200,19 @@ def main():
         page.wait_for_timeout(1500)
         check(page.locator("#pm-card").count() == 0, "a discarded draft does not come back on reload")
 
-        # The default style, chosen in the panel, is stored and used after a reload.
+        # Signed out, the library says where it lives; its ⋯ still sets the
+        # default style, which is stored and used after a reload.
         page.keyboard.press("Meta+Shift+L")
-        page.wait_for_selector("#pm-panel.pm-open", timeout=5000)
-        page.click("#pm-panel .pm-mode-pill[data-mode='quick']")
+        page.wait_for_selector("#pm-library:not([hidden])", timeout=5000)
+        page.wait_for_selector("#pm-lib-signin", timeout=5000)
+        check(True, "signed out: the library offers sign-in")
+        page.click("#pm-lib-more")
+        page.click("#pm-library [data-style='quick']")
         page.wait_for_timeout(200)
         check(sw.evaluate("chrome.storage.local.get('pm_mode').then(r => r.pm_mode)") == "quick", "default stored")
-        check(page.get_attribute("#pm-panel .pm-mode-pill[data-mode='quick']", "aria-pressed") == "true", "panel shows it")
+        check(page.get_attribute("#pm-library [data-style='quick']", "aria-pressed") == "true", "⋯ shows it")
+        page.keyboard.press("Escape")
+        page.keyboard.press("Escape")
         open_chat()
         type_prompt(ORIG)
         page.click("#pm-trigger")
@@ -237,6 +249,11 @@ def main():
             elif req.method == "POST" and path.startswith("/enhance/accept"):
                 server["accept"].append(json.loads(req.post_data or "{}"))
                 route.fulfill(status=200, content_type="application/json", body="{}")
+            elif req.method == "GET" and path.startswith("/saved-prompts"):
+                route.fulfill(status=200, content_type="application/json", body=json.dumps({"prompts": SAVED}))
+            elif req.method == "GET" and path.startswith("/enhance/usage"):
+                route.fulfill(status=200, content_type="application/json",
+                              body=json.dumps({"count": server["used"], "limit": server["limit"]}))
             else:
                 route.fulfill(status=200, content_type="application/json", body="[]" if req.method == "GET" else "{}")
 
@@ -296,6 +313,72 @@ def main():
         page.click("#pm-card-style-quick", force=True)
         page.wait_for_selector(".pm-toast:has-text('No rewrites left')", timeout=5000)
         check(len(server["stream"]) == before, "a spent allowance sends nothing")
+        page.click("#pm-card-discard")
+
+        # ── The library, signed in, in the real extension ────────────────
+        server["used"] = 3
+        open_chat()
+        page.keyboard.press("Meta+Shift+L")
+        page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
+        titles = [x.strip() for x in page.locator("#pm-library .pm-lib-row .pm-lib-title").all_inner_texts()]
+        check(titles == ["Code review template", "Bug report triage"], f"saved prompts from the server, got {titles}")
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Meta+Enter")
+        page.wait_for_selector("#pm-rail .pm-rail-chip", timeout=5000)
+        check("Bug report triage" in page.text_content("#pm-rail"), "attached: named on the rail")
+        page.keyboard.press("Escape")
+
+        # The attachment survives a reload (real chrome.storage.session) and rides with the rewrite.
+        open_chat()
+        page.wait_for_selector("#pm-rail .pm-rail-chip", timeout=5000)
+        check("Bug report triage" in page.text_content("#pm-rail"), "the rail survives a reload")
+        type_prompt(ORIG)
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        check(server["stream"][-1].get("selected_prompt_ids") == ["s2"],
+              f"the rewrite carries the attached prompt, got {server['stream'][-1].get('selected_prompt_ids')}")
+        page.click("#pm-card-discard")
+
+        # // in a ChatGPT-style editor: insert at the caret; Enter must not reach the host.
+        page.evaluate("window.__sent = 0; document.getElementById('prompt-textarea').addEventListener('keydown', "
+                      "e => { if (e.key === 'Enter' && !e.defaultPrevented) window.__sent++; })")
+        type_prompt("Before I merge, can you ")
+        page.keyboard.type("//rev")
+        page.wait_for_selector("#pm-caret .pm-caret-row", timeout=5000)
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(400)
+        box = page.text_content("#prompt-textarea")
+        check(box.startswith("Before I merge, can you Review this diff") and "//rev" not in box,
+              f"// inserts at the caret in the real extension, got {box!r}")
+        check(page.evaluate("window.__sent") == 0, "the Enter that picked the prompt never reached the host")
+        # Tab attaches from // and removes the query.
+        type_prompt("Look at ")
+        page.keyboard.type("//code")
+        page.wait_for_selector("#pm-caret .pm-caret-row", timeout=5000)
+        page.keyboard.press("Tab")
+        page.wait_for_timeout(300)
+        check("//code" not in page.text_content("#prompt-textarea"), "⇥ removes the //query")
+        check(page.locator("#pm-rail .pm-rail-chip").count() == 2, "and attaches: two on the rail")
+        # The token refreshes itself every few days for the same user: that must not touch them.
+        sw.evaluate("chrome.storage.local.set({ token: 'eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDEsInN1YiI6InUxIn0.y', user_id: 'u1' })")
+        page.wait_for_timeout(400)
+        check(page.locator("#pm-rail .pm-rail-chip").count() == 2, "a token refresh keeps the attachments")
+        # Clear from the sheet.
+        page.keyboard.press("Meta+Shift+L")
+        page.wait_for_selector("#pm-library .pm-lib-link", timeout=5000)
+        page.click("#pm-library .pm-lib-link")
+        page.wait_for_timeout(200)
+        check(page.locator("#pm-rail").count() == 0, "Clear detaches everything")
+        page.keyboard.press("Escape")
+        # Signing out forgets them.
+        type_prompt("x ")
+        page.keyboard.type("//bug")
+        page.wait_for_selector("#pm-caret .pm-caret-row", timeout=5000)
+        page.keyboard.press("Tab")
+        page.wait_for_selector("#pm-rail .pm-rail-chip", timeout=5000)
+        sw.evaluate("chrome.storage.local.remove(['token', 'user_id', 'email'])")
+        page.wait_for_timeout(400)
+        check(page.locator("#pm-rail").count() == 0, "signing out clears the attachments")
 
         check(not errors, f"console errors: {errors}")
         ctx.close()
