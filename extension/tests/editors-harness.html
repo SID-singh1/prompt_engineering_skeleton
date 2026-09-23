@@ -56,13 +56,14 @@ if (kind === "prosemirror") {
   const send = keymap({ Enter: () => { window.SENT++; return true; } });
   const view = new EditorView(mount, { state: EditorState.create({ schema, plugins: [send, keymap(baseKeymap)] }) });
   view.dom.id = "prompt-textarea";                  // ChatGPT's id
-  window.EDITOR = { el: view.dom, text: () => view.state.doc.textContent };
+  window.EDITOR = { el: view.dom, text: () => view.state.doc.textContent,
+    clear: () => view.dispatch(view.state.tr.delete(0, view.state.doc.content.size)) };
 } else if (kind === "quill") {
   await import("https://cdn.jsdelivr.net/npm/quill@2.0.2/dist/quill.js");
   const q = new window.Quill(mount, { modules: { toolbar: false, keyboard: { bindings: {
     send: { key: "Enter", handler: () => { window.SENT++; return false; } } } } } });
   q.root.setAttribute("role", "textbox");
-  window.EDITOR = { el: q.root, text: () => q.getText().replace(/\n$/, "") };
+  window.EDITOR = { el: q.root, text: () => q.getText().replace(/\n$/, ""), clear: () => q.setText("") };
 } else if (kind === "lexical") {
   const L = await import("https://cdn.jsdelivr.net/npm/lexical@0.17.1/+esm");
   const P = await import("https://cdn.jsdelivr.net/npm/@lexical/plain-text@0.17.1/+esm");
@@ -72,12 +73,13 @@ if (kind === "prosemirror") {
   ed.setRootElement(mount);
   P.registerPlainText(ed);
   ed.registerCommand(L.KEY_ENTER_COMMAND, (e) => { e?.preventDefault(); window.SENT++; return true; }, L.COMMAND_PRIORITY_HIGH);
-  window.EDITOR = { el: mount, text: () => ed.getEditorState().read(() => L.$getRoot().getTextContent()) };
+  window.EDITOR = { el: mount, text: () => ed.getEditorState().read(() => L.$getRoot().getTextContent()),
+    clear: () => ed.update(() => { L.$getRoot().clear(); L.$getRoot().append(L.$createParagraphNode()); }, { discrete: true }) };
 } else {
   mount.outerHTML = '<textarea id="prompt-textarea" rows="1" placeholder="Message"></textarea>';
   const ta = document.getElementById("prompt-textarea");
   ta.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); window.SENT++; } });
-  window.EDITOR = { el: ta, text: () => ta.value };
+  window.EDITOR = { el: ta, text: () => ta.value, clear: () => { ta.value = ""; ta.dispatchEvent(new Event("input", { bubbles: true })); } };
 }
 
 window.E = {
