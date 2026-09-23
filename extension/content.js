@@ -4136,15 +4136,25 @@ function selectAllIn(el) {
  * every editor tested, and costs nothing where the selection would have been
  * replaced anyway.
  */
-function clearComposer(el) {
+async function clearComposer(el) {
   el.focus();
   selectAllIn(el);
+  // Editors that keep their own model of the selection (Lexical) learn of a
+  // programmatic one from selectionchange, a beat later. Deleting at once
+  // deleted nothing in their model, execCommand's DOM edit was then reverted,
+  // and the insert that followed landed after the old text: the chat box
+  // ended up holding its text and the rewrite twice.
+  await nextFrame();
+  // Ask the way a real delete key does. An editor that handles it cancels the
+  // event and deletes through its own state; one that does not leaves it to
+  // execCommand, as before.
+  const handled = !el.dispatchEvent(new InputEvent("beforeinput", {
+    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
+  }));
+  if (handled) { await nextFrame(); return; }
   try {
     if (document.execCommand("delete", false)) return;
   } catch { /* fall through */ }
-  el.dispatchEvent(new InputEvent("beforeinput", {
-    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
-  }));
   if (norm(composerText(el))) el.textContent = "";
 }
 
@@ -4251,8 +4261,9 @@ async function applyToInput(text) {
     }
 
     for (const strategy of INSERT_STRATEGIES) {
-      clearComposer(el);
+      await clearComposer(el);
       selectAllIn(el);
+      await nextFrame();   // the same beat, for the insert's selection
       try {
         strategy(el, text);
       } catch {
