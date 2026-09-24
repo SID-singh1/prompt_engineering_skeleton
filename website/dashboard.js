@@ -77,6 +77,12 @@ const closePromptModalBtn = document.getElementById('close-prompt-modal-btn');
 const cancelPromptBtn = document.getElementById('cancel-prompt-btn');
 const savePromptSubmitBtn = document.getElementById('save-prompt-submit-btn');
 
+// Delete Prompt Modal
+const deleteModal = document.getElementById('delete-modal');
+const closeDeleteModalBtn = document.getElementById('close-delete-modal-btn');
+const cancelDeleteBtn = document.getElementById('cancel-delete-btn');
+const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
+
 // --- AUTH CHECK ---
 if (!token && !isGuest) {
     window.location.href = 'login.html';
@@ -101,6 +107,79 @@ function showToast(message, duration = 3000) {
         toast.style.opacity = '0';
         setTimeout(() => toast.remove(), 250);
     }, duration);
+}
+
+// --- PLATFORM NORMALIZER ---
+function normalizePlatform(raw) {
+    if (!raw) return 'ChatGPT';
+    const s = String(raw).toLowerCase().trim();
+    if (s.includes('chatgpt') || s.includes('openai')) return 'ChatGPT';
+    if (s.includes('claude') || s.includes('anthropic')) return 'Claude';
+    if (s.includes('gemini') || s.includes('google')) return 'Gemini';
+    if (s.includes('perplexity')) return 'Perplexity';
+    if (s.includes('deepseek')) return 'DeepSeek';
+    if (s.includes('v0')) return 'v0.dev';
+    return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+// --- BUTTON FEEDBACK HELPER ---
+function setButtonCopiedState(button, originalHtml, copiedText = '✓ Copied!') {
+    if (!button) return;
+    button.innerHTML = copiedText;
+    button.classList.add('btn-copied');
+    setTimeout(() => {
+        button.innerHTML = originalHtml;
+        button.classList.remove('btn-copied');
+    }, 2000);
+}
+
+// --- METRIC DEFINITIONS & DIMENSION CARDS ---
+const METRIC_DEFINITIONS = {
+    clarity_structure: {
+        title: 'Clarity & Structure',
+        desc: 'Measures logical organization, numbered execution steps, markdown hierarchy, and reading ease that make instructions instantly unambiguous to models.'
+    },
+    specificity_constraints: {
+        title: 'Specificity & Constraints',
+        desc: 'Measures boundary conditions, negative rules ("avoid", "do not"), audience definition, and exact output format requirements.'
+    },
+    context_grounding: {
+        title: 'Context Grounding',
+        desc: 'Measures how effectively relevant background, active tech stack, and user rules from vector memory are grounded into the prompt without fluff.'
+    },
+    actionability_precision: {
+        title: 'Actionability & Precision',
+        desc: 'Measures first-turn execution readiness—ensures the model produces direct solutions and clean deliverables without requiring clarification turns.'
+    }
+};
+
+function renderDimensionCardHtml(key, orig, enh) {
+    const meta = METRIC_DEFINITIONS[key] || {
+        title: key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        desc: 'Scored out of 25 points based on prompt engineering standards.'
+    };
+    const pct = Math.min(100, Math.round((enh / 25) * 100));
+    return `
+        <div class="dimension-card">
+            <div class="dim-header-row">
+                <div class="dim-title">${meta.title}</div>
+                <div class="dim-info-tooltip" tabindex="0" role="button" aria-label="Info about ${meta.title}">
+                    <span class="info-icon">ℹ</span>
+                    <div class="tooltip-popup">
+                        <strong>${meta.title} (0–25 pts)</strong>
+                        <p>${meta.desc}</p>
+                    </div>
+                </div>
+            </div>
+            <div class="dim-scores">
+                <span class="dim-orig">${orig}</span>
+                <span class="dim-arrow">→</span>
+                <span class="dim-enh">${enh}</span>
+                <span class="dim-max">/25</span>
+            </div>
+            <div class="dim-bar"><div class="dim-fill fill-accent" style="width: ${pct}%;"></div></div>
+        </div>
+    `;
 }
 
 // --- NUMBER COUNTER ANIMATION ---
@@ -370,7 +449,14 @@ function renderPlatformDistribution(platforms) {
     const list = document.getElementById('platform-distribution-list');
     if (!list) return;
 
-    const entries = Object.entries(platforms);
+    // Normalize and aggregate counts (e.g. merge chatgpt.com into ChatGPT)
+    const merged = {};
+    for (const [raw, count] of Object.entries(platforms)) {
+        const norm = normalizePlatform(raw);
+        merged[norm] = (merged[norm] || 0) + count;
+    }
+
+    const entries = Object.entries(merged);
     if (!entries.length) {
         list.innerHTML = '<p style="color:#646573;font-size:13px;">No platform runs recorded yet.</p>';
         return;
@@ -394,6 +480,45 @@ function renderPlatformDistribution(platforms) {
     }).join('');
 }
 
+// --- UNIFIED SEARCH & PLATFORM FILTERS ---
+function applyFilters() {
+    const searchVal = (document.getElementById('history-search-input')?.value || '').trim().toLowerCase();
+    const platformVal = (document.getElementById('history-platform-filter')?.value || 'all').toLowerCase();
+    const rows = document.querySelectorAll('#history-table-body tr');
+
+    rows.forEach(row => {
+        if (row.querySelector('td[colspan]')) return;
+        const rowPlatform = (row.getAttribute('data-platform') || '').toLowerCase();
+        const rowText = row.textContent.toLowerCase();
+
+        const matchesPlatform = (platformVal === 'all') || (rowPlatform === platformVal);
+        const matchesSearch = !searchVal || rowText.includes(searchVal);
+
+        row.style.display = (matchesPlatform && matchesSearch) ? '' : 'none';
+    });
+}
+
+function updatePlatformFilterOptions(items) {
+    const select = document.getElementById('history-platform-filter');
+    if (!select) return;
+    const currentVal = select.value;
+    const platforms = new Set(['ChatGPT', 'Claude', 'Gemini', 'Perplexity']);
+    items.forEach(item => {
+        if (item.platform) {
+            platforms.add(normalizePlatform(item.platform));
+        }
+    });
+
+    select.innerHTML = '<option value="all">All Platforms</option>' +
+        Array.from(platforms).map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+
+    if (platforms.has(currentVal)) {
+        select.value = currentVal;
+    } else {
+        select.value = 'all';
+    }
+}
+
 // --- TAB 1: RENDER RUNS & TRACES TABLE ---
 function renderHistoryTable(items) {
     const tbody = document.getElementById('history-table-body');
@@ -401,6 +526,7 @@ function renderHistoryTable(items) {
 
     if (!items.length) {
         tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#646573;padding:40px;">No prompt enhancements recorded yet. Use the Chrome extension or test live in the Playground!</td></tr>';
+        updatePlatformFilterOptions([]);
         return;
     }
 
@@ -408,14 +534,15 @@ function renderHistoryTable(items) {
         const score = item.score || 90;
         const delta = item.delta || 45;
         const scoreClass = score >= 90 ? 'high' : score >= 80 ? 'mid' : 'low';
+        const normPlatform = normalizePlatform(item.platform);
         const dateStr = item.timestamp
             ? new Date(item.timestamp).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
             : 'Recent';
 
         return `
-            <tr data-id="${item.id}" onclick="openInspectorById('${item.id}')">
+            <tr data-id="${item.id}" data-platform="${escapeHtml(normPlatform)}" onclick="openInspectorById('${item.id}')">
                 <td>
-                    <span class="platform-badge">${escapeHtml(item.platform || 'ChatGPT')}</span>
+                    <span class="platform-badge">${escapeHtml(normPlatform)}</span>
                 </td>
                 <td>
                     <div class="table-prompt-preview" title="${escapeHtml(item.original)}">${escapeHtml(item.original)}</div>
@@ -436,6 +563,9 @@ function renderHistoryTable(items) {
             </tr>
         `;
     }).join('');
+
+    updatePlatformFilterOptions(items);
+    applyFilters();
 }
 
 // --- SLIDE-OUT INSPECTOR DRAWER CONTROLLER ---
@@ -452,7 +582,7 @@ window.openInspectorById = function(id) {
     });
 
     // Header info
-    drawerPlatformBadge.textContent = item.platform || 'ChatGPT';
+    drawerPlatformBadge.textContent = normalizePlatform(item.platform);
     drawerModeBadge.textContent = (item.mode || 'deep').toUpperCase();
     drawerScoreBadge.textContent = `${item.score || 92}/100`;
     drawerTime.textContent = item.timestamp ? new Date(item.timestamp).toLocaleString() : 'Just now';
@@ -461,9 +591,14 @@ window.openInspectorById = function(id) {
     drawerOrigText.textContent = item.original || '';
     drawerEnhText.textContent = item.enhanced || '';
 
-    // Copy Handler
+    // Copy Handler with visual feedback
     drawerCopyBtn.onclick = () => {
-        navigator.clipboard.writeText(item.enhanced || '').then(() => showToast('Enhanced prompt copied!'));
+        const text = item.enhanced || '';
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            setButtonCopiedState(drawerCopyBtn, '📋 Copy Enhanced', '✓ Copied!');
+            showToast('Enhanced prompt copied!');
+        });
     };
 
     // Quality breakdown
@@ -479,22 +614,9 @@ window.openInspectorById = function(id) {
     };
 
     drawerDimensions.innerHTML = Object.entries(dims).map(([key, val]) => {
-        const title = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         const orig = val.original ?? 10;
         const enh = val.enhanced ?? 23;
-        const pct = Math.round((enh / 25) * 100);
-        return `
-            <div class="dimension-card">
-                <div class="dim-title">${title}</div>
-                <div class="dim-scores">
-                    <span class="dim-orig">${orig}</span>
-                    <span class="dim-arrow">→</span>
-                    <span class="dim-enh">${enh}</span>
-                    <span class="dim-max">/25</span>
-                </div>
-                <div class="dim-bar"><div class="dim-fill fill-accent" style="width: ${pct}%;"></div></div>
-            </div>
-        `;
+        return renderDimensionCardHtml(key, orig, enh);
     }).join('');
 
     // Key Improvements list
@@ -526,9 +648,19 @@ function closeInspector() {
 drawerCloseBtn?.addEventListener('click', closeInspector);
 drawerBackdrop?.addEventListener('click', closeInspector);
 
-document.getElementById('drawer-delete-btn')?.addEventListener('click', async () => {
+// Custom Modal Delete Trace Flow
+document.getElementById('drawer-delete-btn')?.addEventListener('click', () => {
     if (!activeInspectedId) return;
-    if (!confirm('Are you sure you want to permanently delete this prompt trace?')) return;
+    deleteModal?.classList.remove('hidden');
+});
+
+closeDeleteModalBtn?.addEventListener('click', () => deleteModal?.classList.add('hidden'));
+cancelDeleteBtn?.addEventListener('click', () => deleteModal?.classList.add('hidden'));
+
+confirmDeleteBtn?.addEventListener('click', async () => {
+    if (!activeInspectedId) return;
+    confirmDeleteBtn.disabled = true;
+    confirmDeleteBtn.textContent = 'Deleting...';
     try {
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -543,33 +675,21 @@ document.getElementById('drawer-delete-btn')?.addEventListener('click', async ()
             const countEl = document.getElementById('history-count');
             if (countEl) countEl.textContent = currentAnalyticsData.recent_enhancements.length;
         }
+        deleteModal?.classList.add('hidden');
         closeInspector();
+        showToast('Prompt trace deleted successfully!');
     } catch (err) {
-        alert(`Failed to delete trace: ${err.message}`);
+        deleteModal?.classList.add('hidden');
+        showToast(`Failed to delete trace: ${err.message}`);
+    } finally {
+        confirmDeleteBtn.disabled = false;
+        confirmDeleteBtn.textContent = 'Delete Trace';
     }
 });
 
-// Filter table
-document.getElementById('history-search-input')?.addEventListener('input', (e) => {
-    const query = e.target.value.toLowerCase();
-    const rows = document.querySelectorAll('#history-table-body tr');
-    rows.forEach(row => {
-        row.style.display = row.textContent.toLowerCase().includes(query) ? '' : 'none';
-    });
-});
-
-document.getElementById('history-platform-filter')?.addEventListener('change', (e) => {
-    const platform = e.target.value;
-    const rows = document.querySelectorAll('#history-table-body tr');
-    rows.forEach(row => {
-        if (platform === 'all') {
-            row.style.display = '';
-        } else {
-            const rowPlatform = row.querySelector('.platform-badge')?.textContent || '';
-            row.style.display = rowPlatform.includes(platform) ? '' : 'none';
-        }
-    });
-});
+// Filter table events
+document.getElementById('history-search-input')?.addEventListener('input', applyFilters);
+document.getElementById('history-platform-filter')?.addEventListener('change', applyFilters);
 
 // --- TAB 4: LIVE PLAYGROUND CONTROLLER ---
 playRunBenchmarkBtn?.addEventListener('click', async () => {
@@ -618,22 +738,9 @@ playRunBenchmarkBtn?.addEventListener('click', async () => {
         // Render Dimensions
         const dims = result.dimensions || {};
         playDimensions.innerHTML = Object.entries(dims).map(([key, val]) => {
-            const title = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
             const origS = val.original ?? 10;
             const enhS = val.enhanced ?? 23;
-            const pct = Math.round((enhS / 25) * 100);
-            return `
-                <div class="dimension-card">
-                    <div class="dim-title">${title}</div>
-                    <div class="dim-scores">
-                        <span class="dim-orig">${origS}</span>
-                        <span class="dim-arrow">→</span>
-                        <span class="dim-enh">${enhS}</span>
-                        <span class="dim-max">/25</span>
-                    </div>
-                    <div class="dim-bar"><div class="dim-fill fill-accent" style="width: ${pct}%;"></div></div>
-                </div>
-            `;
+            return renderDimensionCardHtml(key, origS, enhS);
         }).join('');
 
         // Render Output preview
@@ -651,8 +758,11 @@ playRunBenchmarkBtn?.addEventListener('click', async () => {
 
 playCopyBtn?.addEventListener('click', () => {
     const text = playEnhancedOutput.textContent.trim();
-    if (text) {
-        navigator.clipboard.writeText(text).then(() => showToast('Enhanced output copied!'));
+    if (text && text !== 'Run a benchmark to generate output.') {
+        navigator.clipboard.writeText(text).then(() => {
+            setButtonCopiedState(playCopyBtn, '📋 Copy', '✓ Copied!');
+            showToast('Enhanced output copied!');
+        });
     }
 });
 

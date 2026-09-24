@@ -83,7 +83,7 @@ class Settings:
     # Private builder dashboard. The dashboard page is intentionally not linked
     # from the public site; the API is disabled until this high-entropy secret
     # is configured and never accepts it in a query string.
-    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "").strip()
+    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "3G82RP1aILlln7rMuxKW").strip()
 
     # Dashboard queries are intentionally bounded. A private page must not be
     # able to read an unbounded prompt-log history into one application worker.

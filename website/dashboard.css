@@ -214,6 +214,26 @@ body.dashboard-body {
     color: var(--text-muted);
 }
 
+.nav-svg-icon {
+    width: 18px;
+    height: 18px;
+    stroke: currentColor;
+    opacity: 0.75;
+    flex-shrink: 0;
+    transition: all var(--transition);
+}
+
+.nav-item:hover .nav-svg-icon {
+    opacity: 1;
+    color: var(--text);
+    transform: translateX(1px);
+}
+
+.nav-item.active .nav-svg-icon {
+    opacity: 1;
+    color: var(--accent);
+}
+
 .sidebar-footer {
     padding: 16px;
     border-top: 1px solid var(--border);
@@ -953,6 +973,98 @@ body.dashboard-body {
     transition: width 1s ease-out;
 }
 
+.score-formula-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
+    background: rgba(80, 200, 168, 0.1);
+    color: var(--accent);
+    border: 1px solid var(--border-accent);
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+.dim-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.dim-info-tooltip {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    outline: none;
+}
+
+.info-icon {
+    width: 17px;
+    height: 17px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition);
+    border: 1px solid transparent;
+}
+
+.dim-info-tooltip:hover .info-icon,
+.dim-info-tooltip:focus .info-icon {
+    background: rgba(80, 200, 168, 0.18);
+    color: var(--accent);
+    border-color: var(--border-accent);
+    transform: scale(1.1);
+}
+
+.tooltip-popup {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: -8px;
+    width: 240px;
+    background: #141724;
+    border: 1px solid var(--border-accent);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.6), 0 0 15px rgba(80, 200, 168, 0.1);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition: all 180ms ease;
+    z-index: 100;
+    pointer-events: none;
+}
+
+.tooltip-popup strong {
+    display: block;
+    font-size: 12px;
+    color: var(--accent);
+    margin-bottom: 4px;
+}
+
+.tooltip-popup p {
+    font-size: 11.5px;
+    color: var(--text-secondary);
+    line-height: 1.45;
+    margin: 0;
+}
+
+.dim-info-tooltip:hover .tooltip-popup,
+.dim-info-tooltip:focus .tooltip-popup {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
 /* Verdict Box */
 .eval-verdict-box {
     background: rgba(255, 255, 255, 0.025);
@@ -1294,6 +1406,37 @@ body.dashboard-body {
     box-shadow: var(--shadow-card);
     overflow: hidden;
     animation: modalPop 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.modal-card-sm {
+    max-width: 440px;
+}
+
+.btn-danger {
+    background: #dc2626;
+    color: #ffffff;
+    border: none;
+    padding: 8px 16px;
+    border-radius: var(--radius-sm);
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition);
+}
+
+.btn-danger:hover {
+    background: #ef4444;
+    box-shadow: 0 2px 14px rgba(239, 68, 68, 0.4);
+    transform: translateY(-1px);
+}
+
+.btn-copied {
+    background: rgba(80, 200, 168, 0.2) !important;
+    color: #50c8a8 !important;
+    border-color: rgba(80, 200, 168, 0.5) !important;
+    box-shadow: 0 0 12px rgba(80, 200, 168, 0.25) !important;
+    transition: all 0.2s ease !important;
 }
 
 @keyframes modalPop {

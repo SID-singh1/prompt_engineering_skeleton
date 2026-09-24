@@ -48,9 +48,14 @@ async function loadDashboard() {
       headers: { "X-Builder-Key": state.key },
       cache: "no-store",
     });
-    if (response.status === 403 || response.status === 404) {
+    if (response.status === 404) {
       lockDashboard();
-      setAuthError("That dashboard key was rejected, or the dashboard is disabled.");
+      setAuthError("Builder dashboard is disabled on backend (BUILDER_DASHBOARD_KEY not configured).");
+      return;
+    }
+    if (response.status === 403) {
+      lockDashboard();
+      setAuthError("Dashboard key was rejected. Incorrect key entered.");
       return;
     }
     if (!response.ok) throw new Error(`Dashboard returned HTTP ${response.status}`);

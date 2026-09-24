@@ -60,27 +60,38 @@ def _calculate_heuristic_evaluation(original: str, enhanced: str, context_ext: s
     enh_constraints = sum(1 for c in constraint_words if c in enhanced.lower())
     orig_constraints = sum(1 for c in constraint_words if c in original.lower())
 
-    # Baseline scores (0-25 per dimension)
-    c_orig = min(20, max(5, int(orig_structure_hits * 3 + min(orig_words, 30) / 2.5)))
-    c_enh = min(25, max(18, int(16 + enh_structure_hits * 1.5 + min(enh_words, 100) / 20)))
+    # Dynamic Clarity & Structure (0-25)
+    c_orig = min(18, max(4, int(orig_structure_hits * 3 + min(orig_words, 25) / 2.5)))
+    c_enh = min(25, max(15, int(13 + min(enh_structure_hits * 2.2, 7) + min(enh_words, 80) / 18)))
 
-    s_orig = min(18, max(4, int(orig_constraints * 3 + (10 if orig_words > 10 else 4))))
-    s_enh = min(25, max(19, int(18 + enh_constraints * 1.4)))
+    # Dynamic Specificity & Constraints (0-25)
+    s_orig = min(16, max(3, int(orig_constraints * 2.5 + (8 if orig_words > 8 else 3))))
+    s_enh = min(25, max(14, int(13 + min(enh_constraints * 2.5, 9) + (3 if ("avoid" in enhanced.lower() or "do not" in enhanced.lower()) else 0))))
 
-    ctx_has_data = bool(context_ext or context_sel)
-    g_orig = 6 if not ctx_has_data else 8
-    g_enh = 24 if ctx_has_data else 20
+    # Dynamic Context Grounding (0-25)
+    ctx_len = len((context_ext + " " + context_sel).strip())
+    if ctx_len > 150:
+        g_orig = 8
+        g_enh = min(25, max(21, 20 + int(min(ctx_len, 500) / 100)))
+    elif ctx_len > 0:
+        g_orig = 6
+        g_enh = min(23, max(17, 16 + int(ctx_len / 40)))
+    else:
+        g_orig = 5
+        g_enh = min(20, max(14, 14 + int(min(enh_words, 60) / 15)))
 
-    a_orig = min(18, max(5, int(c_orig * 0.5 + s_orig * 0.5)))
-    a_enh = min(25, max(19, int(c_enh * 0.45 + s_enh * 0.45 + 2)))
+    # Dynamic Actionability & Precision (0-25)
+    action_words = ["create", "generate", "build", "write", "analyze", "synthesize", "design", "return", "output"]
+    enh_actions = sum(1 for a in action_words if a in enhanced.lower())
+    a_orig = min(17, max(4, int(c_orig * 0.45 + s_orig * 0.45)))
+    a_enh = min(25, max(15, int(c_enh * 0.4 + s_enh * 0.4 + min(enh_actions, 4) * 1.5)))
 
     orig_total = c_orig + s_orig + g_orig + a_orig
     enh_total = c_enh + s_enh + g_enh + a_enh
-    enh_total = max(enh_total, orig_total + 15)
-    enh_total = min(98, enh_total)
+    enh_total = min(100, max(enh_total, orig_total + 10))
     orig_total = min(orig_total, 65)
 
-    delta = enh_total - orig_total
+    delta = max(0, enh_total - orig_total)
 
     return {
         "original_score": orig_total,

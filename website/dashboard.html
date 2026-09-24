@@ -34,23 +34,36 @@
             <nav class="sidebar-nav">
                 <p class="nav-section-title">EXPLORE</p>
                 <button class="nav-item active" data-tab="prompts" id="nav-prompts">
-                    <span class="nav-icon">📜</span>
+                    <svg class="nav-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="4 17 10 11 4 5"></polyline>
+                        <line x1="12" y1="19" x2="20" y2="19"></line>
+                    </svg>
                     <span class="nav-label">Prompts & Traces</span>
                     <span class="nav-count" id="history-count">0</span>
                 </button>
                 <button class="nav-item" data-tab="benchmarks" id="nav-benchmarks">
-                    <span class="nav-icon">📊</span>
+                    <svg class="nav-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <line x1="18" y1="20" x2="18" y2="10"></line>
+                        <line x1="12" y1="20" x2="12" y2="4"></line>
+                        <line x1="6" y1="20" x2="6" y2="14"></line>
+                    </svg>
                     <span class="nav-label">Quality & Analytics</span>
                 </button>
 
                 <p class="nav-section-title">SYSTEM</p>
                 <button class="nav-item" data-tab="memory" id="nav-memory">
-                    <span class="nav-icon">🧠</span>
+                    <svg class="nav-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <ellipse cx="12" cy="5" rx="9" ry="3"></ellipse>
+                        <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path>
+                        <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path>
+                    </svg>
                     <span class="nav-label">Context & Memory</span>
                     <span class="nav-count" id="library-count">0</span>
                 </button>
                 <button class="nav-item" data-tab="playground" id="nav-playground">
-                    <span class="nav-icon">⚡</span>
+                    <svg class="nav-svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                    </svg>
                     <span class="nav-label">Live Playground</span>
                     <span class="nav-badge">0-100 AI</span>
                 </button>
@@ -248,13 +261,23 @@
                         <div class="panel-header">
                             <div>
                                 <h2 class="panel-title">AI Evaluation Benchmark Breakdown</h2>
-                                <p class="panel-subtitle">Scored across four 25-point dimensions by our LLM benchmark judge</p>
+                                <p class="panel-subtitle">Scored across four 25-point dimensions (summing to 100 max score) by our benchmark judge</p>
                             </div>
+                            <span class="score-formula-badge">4 Dimensions × 25 pts = 100 Max Score</span>
                         </div>
 
                         <div class="dimensions-matrix">
                             <div class="dimension-card">
-                                <div class="dim-title">Clarity & Structure</div>
+                                <div class="dim-header-row">
+                                    <div class="dim-title">Clarity & Structure</div>
+                                    <div class="dim-info-tooltip" tabindex="0" role="button" aria-label="Info about Clarity & Structure">
+                                        <span class="info-icon">ℹ</span>
+                                        <div class="tooltip-popup">
+                                            <strong>Clarity & Structure (0–25 pts)</strong>
+                                            <p>Measures logical organization, numbered execution steps, markdown hierarchy, and reading ease that make instructions instantly unambiguous to models.</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="dim-desc">Layout, reading ease, numbered steps</div>
                                 <div class="dim-scores">
                                     <span class="dim-orig">10</span>
@@ -266,7 +289,16 @@
                             </div>
 
                             <div class="dimension-card">
-                                <div class="dim-title">Specificity & Constraints</div>
+                                <div class="dim-header-row">
+                                    <div class="dim-title">Specificity & Constraints</div>
+                                    <div class="dim-info-tooltip" tabindex="0" role="button" aria-label="Info about Specificity & Constraints">
+                                        <span class="info-icon">ℹ</span>
+                                        <div class="tooltip-popup">
+                                            <strong>Specificity & Constraints (0–25 pts)</strong>
+                                            <p>Measures boundary conditions, negative rules ("avoid", "do not"), audience definition, and exact output format requirements.</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="dim-desc">Audience boundaries, positive/negative rules</div>
                                 <div class="dim-scores">
                                     <span class="dim-orig">9</span>
@@ -278,7 +310,16 @@
                             </div>
 
                             <div class="dimension-card">
-                                <div class="dim-title">Context Grounding</div>
+                                <div class="dim-header-row">
+                                    <div class="dim-title">Context Grounding</div>
+                                    <div class="dim-info-tooltip" tabindex="0" role="button" aria-label="Info about Context Grounding">
+                                        <span class="info-icon">ℹ</span>
+                                        <div class="tooltip-popup">
+                                            <strong>Context Grounding (0–25 pts)</strong>
+                                            <p>Measures how effectively relevant background, active tech stack, and user rules from vector memory are grounded into the prompt without fluff.</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="dim-desc">Vector memory, tech stack, and user rules</div>
                                 <div class="dim-scores">
                                     <span class="dim-orig">8</span>
@@ -290,7 +331,16 @@
                             </div>
 
                             <div class="dimension-card">
-                                <div class="dim-title">Actionability & Precision</div>
+                                <div class="dim-header-row">
+                                    <div class="dim-title">Actionability & Precision</div>
+                                    <div class="dim-info-tooltip" tabindex="0" role="button" aria-label="Info about Actionability & Precision">
+                                        <span class="info-icon">ℹ</span>
+                                        <div class="tooltip-popup">
+                                            <strong>Actionability & Precision (0–25 pts)</strong>
+                                            <p>Measures first-turn execution readiness—ensures the model produces direct solutions and clean deliverables without requiring clarification turns.</p>
+                                        </div>
+                                    </div>
+                                </div>
                                 <div class="dim-desc">First-turn output quality without re-prompting</div>
                                 <div class="dim-scores">
                                     <span class="dim-orig">11</span>
@@ -586,6 +636,28 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="cancel-prompt-btn">Cancel</button>
                 <button class="btn btn-primary" id="save-prompt-submit-btn">Save to Vector Store</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══ MODAL: CONFIRM DELETE TRACE ═══ -->
+    <div class="modal-overlay hidden" id="delete-modal">
+        <div class="modal-card modal-card-sm">
+            <div class="modal-header">
+                <div class="modal-title-group">
+                    <span class="modal-icon" style="color: #ef4444;">🗑</span>
+                    <h3 class="modal-title">Delete Prompt Trace</h3>
+                </div>
+                <button class="modal-close" id="close-delete-modal-btn">✕</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: #9c9da9; font-size: 13.5px; line-height: 1.6;">
+                    Are you sure you want to permanently delete this prompt trace from your history and observability analytics? This action cannot be undone.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="cancel-delete-btn">Cancel</button>
+                <button class="btn btn-danger" id="confirm-delete-btn" style="background: #dc2626; color: #ffffff;">Delete Trace</button>
             </div>
         </div>
     </div>
