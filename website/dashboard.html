@@ -266,6 +266,48 @@
                             <span class="score-formula-badge">4 Dimensions × 25 pts = 100 Max Score</span>
                         </div>
 
+                        <!-- Interactive Score Progression Hero -->
+                        <div class="score-transformation-hero" id="benchmark-score-hero" tabindex="0" role="button" aria-expanded="true" title="Click to toggle in-depth 4-dimension metric breakdown">
+                            <div class="score-stage-box">
+                                <span class="score-stage-tag">INITIAL DRAFT</span>
+                                <span class="score-stage-label">Original Prompt Score</span>
+                                <div class="score-stage-val">
+                                    <span class="score-num num-amber" id="hero-orig-score">41</span>
+                                    <span class="score-denom">/100</span>
+                                </div>
+                                <span class="score-stage-meta">Heuristic Baseline</span>
+                            </div>
+
+                            <div class="score-transformation-bridge">
+                                <div class="bridge-line"></div>
+                                <div class="bridge-badge">
+                                    <span class="bridge-icon">⚡</span>
+                                    <span class="bridge-delta" id="hero-lift-delta">+50.5 pts</span>
+                                    <span class="bridge-label">Quality Lift</span>
+                                </div>
+                                <div class="bridge-line"></div>
+                            </div>
+
+                            <div class="score-stage-box stage-enhanced">
+                                <span class="score-stage-tag tag-accent">AI JUDGED</span>
+                                <span class="score-stage-label">Enhanced Prompt Score</span>
+                                <div class="score-stage-val">
+                                    <span class="score-num num-accent" id="hero-enh-score">91.5</span>
+                                    <span class="score-denom">/100</span>
+                                </div>
+                                <span class="score-stage-meta">Production Ready</span>
+                            </div>
+
+                            <div class="score-hero-toggle-col">
+                                <button class="btn-breakdown-toggle" id="toggle-dimensions-btn" type="button">
+                                    <span id="hero-toggle-text">In-Depth 4-Metric Breakdown</span>
+                                    <span class="toggle-icon" id="hero-toggle-chevron">▼</span>
+                                </button>
+                                <span class="toggle-subnote">Hover or click to toggle details</span>
+                            </div>
+                        </div>
+
+                        <div class="dimensions-collapsible-wrap expanded" id="benchmark-dimensions-wrapper">
                         <div class="dimensions-matrix">
                             <div class="dimension-card">
                                 <div class="dim-header-row">
@@ -350,6 +392,7 @@
                                 </div>
                                 <div class="dim-bar"><div class="dim-fill fill-accent" style="width: 92%;"></div></div>
                             </div>
+                        </div>
                         </div>
                     </div>
                 </section>
@@ -543,10 +586,38 @@
                     <span class="lift-tag" id="drawer-lift-tag">+56 pts Quality Lift</span>
                 </div>
 
+                <!-- Interactive Score Progression Bar for Drawer -->
+                <div class="drawer-score-hero" id="drawer-score-hero" tabindex="0" role="button" aria-expanded="true" title="Click to toggle dimensional breakdown">
+                    <div class="dsh-stage">
+                        <span class="dsh-label">Original</span>
+                        <div class="dsh-score-row">
+                            <strong class="dsh-num text-amber" id="drawer-orig-num">38</strong>
+                            <span class="dsh-denom">/100</span>
+                        </div>
+                    </div>
+                    <div class="dsh-bridge">
+                        <span class="dsh-arrow">→</span>
+                        <span class="dsh-delta" id="drawer-delta-badge">+56 pts</span>
+                    </div>
+                    <div class="dsh-stage stage-enh">
+                        <span class="dsh-label">Enhanced</span>
+                        <div class="dsh-score-row">
+                            <strong class="dsh-num text-accent" id="drawer-enh-num">94</strong>
+                            <span class="dsh-denom">/100</span>
+                        </div>
+                    </div>
+                    <button class="dsh-toggle-btn" id="drawer-toggle-dims-btn" type="button">
+                        <span id="drawer-toggle-text">Detailed Metrics</span>
+                        <span class="dsh-toggle-chevron" id="drawer-toggle-chevron">▼</span>
+                    </button>
+                </div>
+
                 <div class="drawer-verdict" id="drawer-verdict"></div>
 
-                <div class="drawer-dimensions" id="drawer-dimensions">
-                    <!-- Populated dynamically -->
+                <div class="drawer-dims-wrapper expanded" id="drawer-dims-wrapper">
+                    <div class="drawer-dimensions" id="drawer-dimensions">
+                        <!-- Populated dynamically -->
+                    </div>
                 </div>
 
                 <div class="drawer-improvements">

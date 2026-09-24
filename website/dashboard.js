@@ -304,6 +304,17 @@ function renderDashboard(data) {
     renderTimelineChart(data.daily_activity || []);
     renderPlatformDistribution(data.platforms || {});
 
+    // Update Score Progression Hero in Tab 2
+    const enhAvg = metrics.avg_improvement_score || 91.5;
+    const deltaAvg = metrics.avg_improvement_delta || 49.2;
+    const origAvg = Math.max(10, Math.round(enhAvg - deltaAvg));
+    const heroOrigEl = document.getElementById('hero-orig-score');
+    const heroEnhEl = document.getElementById('hero-enh-score');
+    const heroDeltaEl = document.getElementById('hero-lift-delta');
+    if (heroOrigEl) heroOrigEl.textContent = origAvg;
+    if (heroEnhEl) heroEnhEl.textContent = enhAvg;
+    if (heroDeltaEl) heroDeltaEl.textContent = `+${deltaAvg} pts`;
+
     // 4. Tab 3: Fetch Saved Prompts
     fetchSavedPrompts();
 }
@@ -602,7 +613,18 @@ window.openInspectorById = function(id) {
     };
 
     // Quality breakdown
-    drawerLiftTag.textContent = `+${item.delta || 50} pts Quality Lift`;
+    const itemScore = item.score || 92;
+    const itemDelta = item.delta || 50;
+    const itemOrigScore = item.original_score ?? Math.max(10, itemScore - itemDelta);
+
+    const drawerOrigNum = document.getElementById('drawer-orig-num');
+    const drawerEnhNum = document.getElementById('drawer-enh-num');
+    const drawerDeltaBadge = document.getElementById('drawer-delta-badge');
+    if (drawerOrigNum) drawerOrigNum.textContent = itemOrigScore;
+    if (drawerEnhNum) drawerEnhNum.textContent = itemScore;
+    if (drawerDeltaBadge) drawerDeltaBadge.textContent = `+${itemDelta} pts`;
+
+    drawerLiftTag.textContent = `+${itemDelta} pts Quality Lift`;
     drawerVerdict.textContent = item.verdict || 'The enhanced prompt provides structured execution steps, concrete domain constraints, and high actionability.';
 
     // Dimensions
@@ -852,6 +874,51 @@ function escapeHtml(text) {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 }
+
+// --- INTERACTIVE DIMENSION BREAKDOWN ACCORDIONS ---
+function setupDimensionToggles() {
+    const heroCard = document.getElementById('benchmark-score-hero');
+    const heroBtn = document.getElementById('toggle-dimensions-btn');
+    const heroWrapper = document.getElementById('benchmark-dimensions-wrapper');
+    const heroChevron = document.getElementById('hero-toggle-chevron');
+    const heroText = document.getElementById('hero-toggle-text');
+
+    function toggleHeroDimensions() {
+        if (!heroWrapper) return;
+        const isCollapsed = heroWrapper.classList.toggle('collapsed');
+        if (heroChevron) heroChevron.classList.toggle('rotated', !isCollapsed);
+        if (heroText) heroText.textContent = isCollapsed ? 'View 4-Metric Breakdown' : 'In-Depth 4-Metric Breakdown';
+        heroCard?.setAttribute('aria-expanded', !isCollapsed);
+    }
+
+    heroBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleHeroDimensions();
+    });
+    heroCard?.addEventListener('click', toggleHeroDimensions);
+
+    const drawerHero = document.getElementById('drawer-score-hero');
+    const drawerBtn = document.getElementById('drawer-toggle-dims-btn');
+    const drawerWrapper = document.getElementById('drawer-dims-wrapper');
+    const drawerChevron = document.getElementById('drawer-toggle-chevron');
+    const drawerText = document.getElementById('drawer-toggle-text');
+
+    function toggleDrawerDimensions() {
+        if (!drawerWrapper) return;
+        const isCollapsed = drawerWrapper.classList.toggle('collapsed');
+        if (drawerChevron) drawerChevron.classList.toggle('rotated', !isCollapsed);
+        if (drawerText) drawerText.textContent = isCollapsed ? 'Show Details' : 'Hide Details';
+        drawerHero?.setAttribute('aria-expanded', !isCollapsed);
+    }
+
+    drawerBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleDrawerDimensions();
+    });
+    drawerHero?.addEventListener('click', toggleDrawerDimensions);
+}
+
+setupDimensionToggles();
 
 // Initial Kickoff
 fetchAnalytics();
