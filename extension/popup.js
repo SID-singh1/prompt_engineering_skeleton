@@ -6,6 +6,12 @@ const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← produ
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
 const API_URL = DEFAULT_API_URL;
 
+// The header shows the manifest's version rather than a number typed into the
+// HTML, which stayed at 4.4 while the extension itself moved on.
+try {
+    document.getElementById("popup-version").textContent = "v" + chrome.runtime.getManifest().version;
+} catch { /* the static label stands */ }
+
 const DATA_CONSENT_KEY = "pm_data_consent_v1";
 chrome.storage.local.get(DATA_CONSENT_KEY, (result) => {
     if (result[DATA_CONSENT_KEY] === true) {

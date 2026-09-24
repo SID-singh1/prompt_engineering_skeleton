@@ -7,6 +7,11 @@
   Every state the pill and card can be in is reachable from the console:
 
     H.type(H.ORIG); H.stream(); H.tokens(60); H.done()   -> streaming, then ready
+    H.type(H.ORIG); handleEnhance()                      -> the real flow, via the fake direct stream
+    card: Shorter / Open-ended, ‹ 1 of 2 ›, [ and ]      -> style reruns and versions (FAKE.calls logs them)
+    FAKE.failNext = true / FAKE.delay = 400              -> a failing or slow rerun
+    H.signIn(); location.reload()                        -> the library, against FAKE_API
+    hover ⊕ → Library, ⌘⇧L, or // in the chat box        -> the sheet, and the caret menu
     H.type("something else")                             -> stale
     H.fail()                                             -> error
     Tab in the composer                                  -> applied (rating in the pill)
@@ -42,32 +47,7 @@
   #ctl{position:fixed;left:12px;top:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;width:196px}
   #ctl button{font:12px system-ui;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:inherit;cursor:pointer}
 </style>
-<script>
-// chrome.* shim — enough of the API for content.js to boot and run the draft flow.
-(() => {
-  const mk = (backing) => ({
-    get(keys, cb) {
-      const store = JSON.parse(backing.getItem("pm") || "{}");
-      const ks = typeof keys === "string" ? [keys] : Array.isArray(keys) ? keys : keys == null ? Object.keys(store) : Object.keys(keys);
-      const out = {}; ks.forEach(k => { if (k in store) out[k] = store[k]; });
-      if (cb) cb(out); return Promise.resolve(out);
-    },
-    set(obj, cb) { const store = JSON.parse(backing.getItem("pm") || "{}"); Object.assign(store, obj); backing.setItem("pm", JSON.stringify(store)); if (cb) cb(); return Promise.resolve(); },
-    remove(k, cb) { const store = JSON.parse(backing.getItem("pm") || "{}"); (Array.isArray(k) ? k : [k]).forEach(x => delete store[x]); backing.setItem("pm", JSON.stringify(store)); if (cb) cb(); return Promise.resolve(); },
-  });
-  window.chrome = {
-    storage: { local: mk(localStorage), session: mk(sessionStorage), onChanged: { addListener() {} } },
-    runtime: {
-      id: "pill-harness",
-      lastError: null,
-      sendMessage(msg, cb) { if (cb) cb(undefined); return Promise.resolve(undefined); },
-      onMessage: { addListener() {} },
-      connect() { return { onMessage: { addListener() {} }, onDisconnect: { addListener() {} }, postMessage() {}, disconnect() {} }; },
-      getURL: (p) => p,
-    },
-  };
-})();
-</script>
+<script src="harness-shim.js"></script>
 <div class="side"></div>
 <div id="ctl">
   <button onclick="document.body.classList.toggle('light')">light</button>
@@ -94,6 +74,8 @@ window.H = {
   done(log = true) { finalizeStreamingModal({ enhanced: this.DRAFT, original: this.ORIG, log_id: log ? "log_1" : undefined, latency: 1.05 }); },
   fail() { failStreamingModal("Rate limited — try again in 20 s"); },
   rect(id) { const e = document.getElementById(id) || document.querySelector(id); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; },
+  // Sign in with a token that does not expire until 2100; reload to take effect.
+  signIn() { chrome.storage.local.set({ token: "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6InUxIn0.x", user_id: "u1", email: "u@example.com" }); },
   key(k, opts = {}) { document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: opts.code || "", bubbles: true, cancelable: true, ...opts })); },
 };
 </script>

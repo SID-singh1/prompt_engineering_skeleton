@@ -29,6 +29,9 @@ function closeCard() { actions.push('close'); }
 function redoCard() { actions.push('redo'); }
 function saveCard() { actions.push('save'); }
 function cancelVoice() { actions.push('cancelVoice'); }
+function cancelStreaming() { actions.push('cancel'); }
+function stepVersion(d) { actions.push('step' + d); }
+let cardVersions = [];
 function key(key, extra = {}) {
   actions = [];
   const e = {key, code:'', preventDefault() {actions.push('prevent');}, stopPropagation(){actions.push('stop');}, ...extra};
@@ -52,6 +55,16 @@ assert(key('s',{metaKey:true,defaultPrevented:true})==='','Handled events ignore
 blocked=true; assert(key('s',{metaKey:true})==='','Overlay blocks shortcut'); blocked=false;
 open=false;active='pill';assert(key('P',{metaKey:true,shiftKey:true,code:'KeyP'})==='prevent,stop,expand','Reopen minimized');
 voice=true;cardState='idle';assert(key('Escape')==='prevent,stop,cancelVoice','Voice escape retained');voice=false;
+// A streaming rewrite is cancelled through cancelStreaming(), which puts a
+// style rerun back to the version it started from instead of discarding it.
+open=true;active='card';cardState='streaming';assert(key('Escape')==='prevent,stop,cancel','Escape cancels a stream via cancelStreaming');
+cardState='error';assert(key('Escape')==='prevent,stop,close','Escape dismisses an error');
+// [ and ] step through versions, only inside the card and only when there is more than one.
+cardState='ready';cardVersions=[{},{}];
+assert(key('[')==='prevent,stop,step-1' && key(']')==='prevent,stop,step1','Brackets step versions');
+assert(key(']',{metaKey:true})==='','Modified bracket left alone');
+active='composer';composerFocused=true;assert(key(']')==='','Brackets in the chat box are typing');composerFocused=false;
+active='card';cardVersions=[{}];assert(key(']')==='','One version: nothing to step');
 for (const w of [200,320,768,1512]) for (const h of [120,300,805]) for (const x of [-100,0,5000,Infinity]) {
   const r=clampCardLayout({x,y:5000,width:900,height:900},w,h,w-12);
   assert([r.x,r.y,r.width,r.height].every(Number.isFinite),'Finite geometry');

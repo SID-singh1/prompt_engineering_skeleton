@@ -84,14 +84,35 @@ const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
 let savedPrompts = [];
 let selectedIds = new Set();
 let panelOpen = false;
-let currentTab = "context"; // "context" | "save" | "history" | "feedback"
-let currentMode = "deep";   // "quick" | "deep" | "creative"
+// The three rewrite styles. The default is what ⊕ runs; the card offers the
+// other two, since which style a prompt needed is usually only clear once
+// you have read a rewrite in the one it got.
+const STYLES = ["quick", "deep", "creative"];
+const DEFAULT_STYLE = "deep";
+let currentMode = DEFAULT_STYLE; // the default style ⊕ runs
+const STYLE_NAMES = { quick: "Quick", deep: "Deep", creative: "Creative" };
+const STYLE_HINTS = {
+  quick: "1\u20133 sentences, just the essentials",
+  deep: "structured, with the context and constraints spelled out",
+  creative: "open-ended, inviting other angles",
+};
+// The card names the other two styles by what they would change about the
+// version on screen. "Quick" means nothing next to a Quick rewrite you are
+// already reading; "Shorter" says what the click will do.
+const STYLE_VERBS = {
+  deep: { quick: "Shorter", creative: "Open-ended" },
+  quick: { deep: "More detail", creative: "Open-ended" },
+  creative: { quick: "Shorter", deep: "More focused" },
+};
 let lastEnhanceResult = null;
 let searchQuery = "";
 let isRecording = false;
 let voiceState = "idle"; // idle | recording | stopping | transcribing | reviewing | enhancing
 let enhanceHistory = [];
-let usageData = { count: 0, limit: 30 };
+let usageData = { count: 0, limit: 30 };  // .known once the server has said
+// The theme modals and the voice screen are drawn in. The pill, card and
+// library are always the console black; this only reaches the overlays.
+let uiTheme = "dark";
 let isLoadingTab = false;
 // Passive prompt tracking: records every prompt the user submits on these
 // sites, whether or not they ever press Enhance, and keeps it server-side.
@@ -105,10 +126,11 @@ let contextEnabled = true;
 let dataConsent = false;
 
 // Load privacy preferences
-storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1"], (result) => {
+storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1", "pm_mode"], (result) => {
   promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
   contextEnabled = result.pm_context !== false;          // default: on
   dataConsent = result.pm_data_consent_v1 === true;
+  setDefaultStyle(result.pm_mode, false);
 });
 try {
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -116,8 +138,30 @@ try {
     if (changes.pm_data_consent_v1) dataConsent = changes.pm_data_consent_v1.newValue === true;
     if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue !== false;
     if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
+    // Picked in another tab: this one's next ⊕ should agree with it.
+    if (changes.pm_mode) setDefaultStyle(changes.pm_mode.newValue, false);
   });
 } catch (error) { onOrphaned(error); }
+
+/**
+ * Make `style` the one ⊕ runs.
+ *
+ * Remembered. It used to live only in memory, so every page load quietly put
+ * a user who had chosen Quick back on Deep, and the panel went on showing
+ * whichever button was pressed last in a tab that no longer existed.
+ */
+function setDefaultStyle(style, persist = true) {
+  currentMode = STYLES.includes(style) ? style : DEFAULT_STYLE;
+  syncStylePills();
+  if (persist) storageSet({ pm_mode: currentMode });
+}
+
+/** Show the default style in the library's ⋯ menu, if it is open. */
+function syncStylePills() {
+  document.querySelectorAll("#pm-library [data-style]").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.style === currentMode));
+  });
+}
 
 // ══════════════════════════════════════════════════════════════
 // AUTH HELPERS (with auto-refresh)
@@ -221,6 +265,8 @@ async function fetchSavedPrompts() {
   if (res && res.ok) {
     const data = await res.json();
     savedPrompts = data.prompts || [];
+    promptsLoaded = true;
+    reconcileAttachments();
   }
   return savedPrompts;
 }
@@ -288,7 +334,7 @@ async function enhancePrompt(prompt, selectedPromptIds) {
   return null;
 }
 
-async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}) {
+async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}, style = currentMode) {
   const auth = await getAuth();
   if (!auth || isTokenExpired(auth.token)) return null;
 
@@ -296,7 +342,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   const body = {
     prompt,
     platform: window.location.hostname,
-    mode: currentMode,
+    mode: style,
     conversation_context: conversation,
     tracking_enabled: promptTrackingEnabled,
   };
@@ -510,6 +556,17 @@ const DRAFT_TTL_MS = 60 * 60 * 1000;
 
 const draftStore = {
   _area: null,
+  // Every operation waits for the one before it. setExpanded() is a read then
+  // a write, and closeCard() starts it (through hideCard) a moment before
+  // clear(). The read landed, then the clear, then the write put the draft
+  // straight back — so every Insert and every Discard reappeared as a draft
+  // on the next page load.
+  _queue: Promise.resolve(),
+  _serial(fn) {
+    const run = this._queue.then(fn);
+    this._queue = run.catch(() => {});
+    return run;
+  },
   async area() {
     if (this._area) return this._area;
     try {
@@ -522,39 +579,47 @@ const draftStore = {
     this._area = chrome.storage.local;
     return this._area;
   },
-  async load() {
-    try {
-      const area = await this.area();
-      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
-      if (!draft || !draft.result || !draft.result.enhanced) return null;
-      if (Date.now() - (draft.createdAt || 0) > DRAFT_TTL_MS) {
-        area.remove(DRAFT_KEY);
+  load() {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+        if (!draft || !draft.result || !draft.result.enhanced) return null;
+        if (Date.now() - (draft.createdAt || 0) > DRAFT_TTL_MS) {
+          await area.remove(DRAFT_KEY);
+          return null;
+        }
+        return draft;
+      } catch {
         return null;
       }
-      return draft;
-    } catch {
-      return null;
-    }
+    });
   },
-  async save(draft) {
-    try {
-      const area = await this.area();
-      await area.set({ [DRAFT_KEY]: draft });
-    } catch { /* storage is a convenience; the in-memory card still works */ }
+  save(draft) {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        await area.set({ [DRAFT_KEY]: draft });
+      } catch { /* storage is a convenience; the in-memory card still works */ }
+    });
   },
-  async clear() {
-    try {
-      const area = await this.area();
-      await area.remove(DRAFT_KEY);
-    } catch { /* nothing to clear */ }
+  clear() {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        await area.remove(DRAFT_KEY);
+      } catch { /* nothing to clear */ }
+    });
   },
   /** Record whether the card is open, so a reload brings it back the same way. */
-  async setExpanded(expanded) {
-    try {
-      const area = await this.area();
-      const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
-      if (draft && draft.expanded !== expanded) await area.set({ [DRAFT_KEY]: { ...draft, expanded } });
-    } catch { /* cosmetic */ }
+  setExpanded(expanded) {
+    return this._serial(async () => {
+      try {
+        const area = await this.area();
+        const { [DRAFT_KEY]: draft } = await area.get(DRAFT_KEY);
+        if (draft && draft.expanded !== expanded) await area.set({ [DRAFT_KEY]: { ...draft, expanded } });
+      } catch { /* cosmetic */ }
+    });
   },
 };
 
@@ -656,6 +721,7 @@ function createTrigger() {
   btn.querySelector(".pm-pill-x").addEventListener("click", (e) => {
     e.stopPropagation();
     const was = cardState;
+    if (was === "streaming" && cardRerunFrom) { cancelStreaming(); return; }
     closeCard();
     if (was === "streaming") showToast("Rewrite cancelled.", "info");
     else if (was === "ready") showToast("Draft discarded.", "info");
@@ -687,17 +753,43 @@ function createTrigger() {
   const lib = document.createElement("button");
   lib.id = "pm-library-btn";
   lib.className = "pm-library-btn";
-  lib.innerHTML = "\u2630 Library";
-  lib.title = "Your saved prompts and context (Shift-click \u2295)";
+  // Drawn, like ⊕: a typed ☰ rendered in whatever font the host fell back to.
+  lib.innerHTML = `${LIB_ICON.shelf}<span>Library</span><span class="pm-library-count" hidden></span>`;
+  lib.title = `Your saved prompts (${CMD_KEY}\u21e7L)`;
+  lib.setAttribute("aria-haspopup", "dialog");
+  lib.setAttribute("aria-expanded", "false");
   lib.addEventListener("click", (e) => {
     e.stopPropagation();
     togglePanel();
   });
   document.body.appendChild(lib);
 
+  // Shown by pointer intent, not by CSS :hover. A sibling :hover lasts only
+  // while the pointer is on ⊕ itself, so the gap between ⊕ and the chip was
+  // enough to lose it on the way over, and the chip faded out from under the
+  // click. An invisible bridge across the gap only ever pointed one way, and
+  // the chip is not always on that side: it sits right of the pill when the
+  // pill is docked left or has grown wide, and above it when beside would put
+  // it on the chat box. Entering either one shows the chip; leaving both
+  // hides it after a grace period long enough to cross any gap.
+  let libRevealTimer = null;
+  const revealChip = () => {
+    clearTimeout(libRevealTimer);
+    if (!panelOpen) lib.classList.add("pm-lib-reveal");
+  };
+  const concealChip = () => {
+    clearTimeout(libRevealTimer);
+    libRevealTimer = setTimeout(() => lib.classList.remove("pm-lib-reveal"), 350);
+  };
+  for (const el of [btn, lib]) {
+    el.addEventListener("pointerenter", revealChip);
+    el.addEventListener("pointerleave", concealChip);
+  }
+
   // Apply saved theme to both docked controls
   storageGet("pm_theme", (result) => {
     const theme = result.pm_theme || "dark";
+    uiTheme = theme;
     btn.setAttribute("data-pm-theme", theme);
     lib.setAttribute("data-pm-theme", theme);
   });
@@ -800,7 +892,7 @@ function renderPill() {
       // The moment this exists for: a fresh chat, an empty box, a draft that
       // followed the user here. The verb says what it will do.
       state = "ready";
-      verb = norm(getCurrentInputText()) ? "Apply" : "Insert";
+      verb = norm(getCurrentInputText()) ? "Replace" : "Insert";
     }
   } else if (pillApplied) {
     state = "applied";
@@ -822,7 +914,7 @@ function renderPill() {
     verbEl.textContent = verb;
     verbEl.title = {
       Insert: "Insert into the chat box",
-      Apply: "Replace the chat box text with the rewrite",
+      Replace: "Replace the chat box text with the rewrite",
       Redo: "Rewrite what is in the chat box now",
       Retry: "Try the rewrite again",
     }[verb];
@@ -987,6 +1079,8 @@ function placePill() {
   }
   positionCard();
   positionToasts();
+  positionLibrary();
+  positionRail();
 }
 
 function setupPillDrag(pill) {
@@ -1068,6 +1162,7 @@ function onNavigated() {
   // The new composer mounts a beat after the URL changes; look twice.
   for (const delay of [300, 1200]) {
     setTimeout(() => {
+      watchComposer();
       refreshCardStaleness();
       renderPill();
       placePill();
@@ -1079,9 +1174,14 @@ function onNavigated() {
 async function restoreDraft() {
   const draft = await draftStore.load();
   if (!draft || cardState !== "idle") return;
-  cardResult = draft.result;
-  lastEnhanceResult = draft.result;
-  cardOriginal = draft.result.original || "";
+  // Drafts saved before versions existed carry a single result.
+  const versions = Array.isArray(draft.versions) && draft.versions.every((v) => v?.enhanced)
+    && draft.versions.length ? draft.versions : [draft.result];
+  cardVersions = versions;
+  cardVersionIndex = Math.min(Math.max(0, draft.index | 0), versions.length - 1);
+  cardResult = versions[cardVersionIndex];
+  lastEnhanceResult = cardResult;
+  cardOriginal = cardResult.original || "";
   cardBasedOn = draft.basedOn || norm(cardOriginal);
   cardHasBaseline = true;
   cardState = "ready";
@@ -1144,398 +1244,1067 @@ function setupKeyboardShortcut() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// UI: PANEL (3 tabs: Context, Save, History)
+// UI: THE LIBRARY — a sheet on the pill, // in the chat box, a rail for context
 // ══════════════════════════════════════════════════════════════
+//
+// The library used to be a full-height side panel: its own blue-grey theme
+// and a theme toggle, four tabs, a second Enhance button, and a checkbox as
+// the only thing a saved prompt could do. A saved prompt could not be put
+// into the chat box at all, and prompts ticked as context went on shaping
+// every rewrite, invisibly, after the panel closed.
+//
+// It is now three small things in the pill's black:
+//   - a sheet that opens above the pill (the Library chip, ⇧-click on ⊕, or
+//     ⌘⇧L): search first, one list with Saved | Recent, Insert as the verb,
+//     attach as context on ⌘↵, everything else under ⋯;
+//   - a menu at the caret when the user types // in the chat box, which
+//     inserts right where they are, even mid-sentence;
+//   - a rail of chips on the chat box naming the prompts attached as context,
+//     so what shapes the next rewrite is visible on the thing being sent.
+//
+// All three read the same list and use the same keys: ↵ inserts, ⌘↵ (⇥ in
+// the chat box) attaches, esc closes.
 
-function createPanel() {
-  if (document.getElementById("pm-panel")) return;
+const LIB_ICON = {
+  search: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>',
+  more: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>',
+  clip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 5.5 6 10a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4L4 8a4.2 4.2 0 0 0 6 6l3.5-3.5"/></svg>',
+  back: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
+  shelf: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="4" rx="1.2"/><path d="M3.5 9.5h9M4.5 12.5h7"/></svg>',
+};
 
-  const panel = document.createElement("div");
-  panel.id = "pm-panel";
-  panel.className = "pm-panel";
+let libView = "saved";        // "saved" | "recent"
+let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
+let libSel = 0;               // the highlighted row
+let libMenu = false;          // the ⋯ menu is open
+let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
+let libConfirm = null;        // a saved prompt awaiting "Delete?"
+let libSignedIn = false;      // kept current from storage; // needs it synchronously
+let libHistoryLoaded = false;
+let slashEnabled = true;      // "Type // for saved prompts", in ⋯
+let promptsLoaded = false;
+// Titles of attached prompts, so the rail can name them on a page where the
+// library has not been opened yet.
+const attachTitles = new Map();
 
-  panel.innerHTML = `
-    <div class="pm-resize-handle" id="pm-resize-handle"></div>
-    <div class="pm-header">
-      <span class="pm-header-title">Prompt Memory</span>
-      <span class="pm-version-badge">v4</span>
-      <button class="pm-settings-toggle" id="pm-settings-toggle" title="Settings & Privacy">⚙</button>
-      <button class="pm-theme-toggle" id="pm-theme-toggle" title="Toggle light/dark mode">🌙</button>
-      <button class="pm-header-close" id="pm-close">×</button>
-    </div>
-    <div class="pm-tabs">
-      <button class="pm-tab pm-active" data-tab="context">Context</button>
-      <button class="pm-tab" data-tab="save">Save</button>
-      <button class="pm-tab" data-tab="history">History</button>
-      <button class="pm-tab" data-tab="feedback" title="Send Feedback">💬</button>
-    </div>
-    <div class="pm-tab-content" id="pm-tab-body"></div>
-    <div class="pm-enhance-section">
-      <div class="pm-usage-bar" id="pm-usage-bar" style="display:none">
-        <div class="pm-usage-track"><div class="pm-usage-fill" id="pm-usage-fill" style="width:0%"></div></div>
-        <span class="pm-usage-label" id="pm-usage-label"></span>
-      </div>
-      <div class="pm-mode-selector">
-        <button class="pm-mode-pill" data-mode="quick" title="Short & sharp">⚡ Quick</button>
-        <button class="pm-mode-pill pm-mode-pill-active" data-mode="deep" title="Full structured enhancement">🎯 Deep</button>
-        <button class="pm-mode-pill" data-mode="creative" title="Open-ended, exploratory">✨ Creative</button>
-      </div>
-      <div class="pm-enhance-row">
-        <button class="pm-enhance-btn" id="pm-enhance-btn">Enhance Current Prompt</button>
-        <button class="pm-voice-btn" id="pm-voice-btn" title="Voice to Prompt">🎤</button>
-      </div>
-      <div class="pm-enhance-hint" id="pm-enhance-hint">
-        <span class="pm-enhance-hint-btn" id="pm-hint-enhance"><kbd>${CMD_KEY}Shift+E</kbd> enhance</span>
-        <span class="pm-enhance-hint-btn" id="pm-hint-voice"><kbd>${CMD_KEY}Shift+V</kbd> speak</span>
-      </div>
-    </div>
-    <div class="pm-settings-overlay" id="pm-settings-panel" style="display:none">
-      <div class="pm-settings-sheet-header">
-        <div class="pm-settings-sheet-title-group">
-          <div class="pm-settings-sheet-title">Settings & Privacy</div>
-          <div class="pm-settings-sheet-subtitle">Configure tracking, context & privacy controls</div>
-        </div>
-        <button class="pm-header-close" id="pm-settings-close" title="Close">×</button>
-      </div>
-      <div class="pm-settings-sheet-body">
-        <div class="pm-settings-card">
-          <div class="pm-settings-card-top">
-            <div class="pm-settings-card-label">
-              <span class="pm-settings-icon">⚡</span>
-              <span>Prompt Tracking</span>
-            </div>
-            <label class="pm-toggle" title="Toggle prompt tracking">
-              <input type="checkbox" id="pm-tracking-toggle">
-              <span class="pm-toggle-slider"></span>
-            </label>
-          </div>
-          <div class="pm-settings-card-desc">
-            Logs original & enhanced prompts to your personal dashboard and runs background LLM quality evaluations.
-          </div>
-          <div class="pm-settings-card-badge" id="pm-tracking-status-badge">
-            <span class="pm-status-dot pm-dot-active"></span>
-            <span class="pm-status-text">Active · Prompts logged</span>
-          </div>
-        </div>
+// ── Words on a row ──
 
-        <div class="pm-settings-card">
-          <div class="pm-settings-card-top">
-            <div class="pm-settings-card-label">
-              <span class="pm-settings-icon">💬</span>
-              <span>Conversation Context</span>
-            </div>
-            <label class="pm-toggle" title="Toggle conversation context">
-              <input type="checkbox" id="pm-context-toggle">
-              <span class="pm-toggle-slider"></span>
-            </label>
-          </div>
-          <div class="pm-settings-card-desc">
-            Reads recent chat messages to ground prompt enhancements in active conversation context.
-          </div>
-          <div class="pm-settings-card-badge" id="pm-context-status-badge">
-            <span class="pm-status-dot pm-dot-active"></span>
-            <span class="pm-status-text">Active · Grounding enabled</span>
-          </div>
-        </div>
+function promptHeadLength(t) {
+  const m = t.match(/^.{0,60}?[.:!?](\s|$)/);
+  return m ? m[0].length : Math.min(48, t.length);
+}
 
-        <div class="pm-settings-privacy-card">
-          <div class="pm-privacy-header">🛡️ Privacy Guarantee</div>
-          <div class="pm-privacy-text">
-            When tracking is disabled, enhancements run with strictly zero database logging, zero history retention, and zero evaluations.
-          </div>
-        </div>
-      </div>
-      <div class="pm-settings-sheet-footer">
-        <div class="pm-popover-status" id="pm-settings-status">Tracking active</div>
-        <button class="pm-btn pm-btn-primary" id="pm-settings-done">Done</button>
-      </div>
-    </div>
-  `;
+/** An untitled prompt is named by its first sentence, which the preview then skips. */
+function promptTitle(p) {
+  const text = norm(p.content);
+  return p.title || text.slice(0, promptHeadLength(text)).trim().replace(/[.:]$/, "");
+}
 
-  document.body.appendChild(panel);
+function promptPreview(p) {
+  const text = norm(p.content);
+  return p.title ? text : text.slice(promptHeadLength(text)).trim() || text;
+}
 
-  // Restore saved width + theme
-  storageGet(["pm_panel_width", "pm_theme"], (result) => {
-    if (result.pm_panel_width) {
-      panel.style.width = result.pm_panel_width + "px";
-    }
-    applyTheme(result.pm_theme || "dark");
+// ── The sheet ──
+
+function createLibrary() {
+  if (document.getElementById("pm-library")) return;
+  const lib = document.createElement("div");
+  lib.id = "pm-library";
+  lib.className = "pm-lib";
+  lib.setAttribute("role", "dialog");
+  lib.setAttribute("aria-label", "Library");
+  lib.hidden = true;
+  document.body.appendChild(lib);
+
+  lib.addEventListener("click", onLibraryClick);
+  lib.addEventListener("input", onLibraryInput);
+  lib.addEventListener("change", onLibraryChange);
+  lib.addEventListener("keydown", onLibraryKeydown);
+  lib.addEventListener("mousemove", (e) => {
+    const row = e.target.closest?.(".pm-lib-row[data-i]");
+    if (!row || Number(row.dataset.i) === libSel) return;
+    libSel = Number(row.dataset.i);
+    lib.querySelectorAll(".pm-lib-row[data-i]").forEach((r) => r.classList.toggle("pm-sel", Number(r.dataset.i) === libSel));
+    syncActiveDescendant();
   });
 
-  // Close
-  document.getElementById("pm-close").addEventListener("click", () => togglePanel(false));
+  // Anywhere else closes it. Capture phase, so a host handler that stops the
+  // event cannot strand the sheet open. Modals and toasts the sheet itself
+  // raised (edit, delete, consent) do not count as "elsewhere".
+  document.addEventListener("pointerdown", (e) => {
+    if (!panelOpen) return;
+    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    togglePanel(false);
+  }, true);
 
-  // Settings overlay
-  const settingsBtn = document.getElementById("pm-settings-toggle");
-  const settingsPanel = document.getElementById("pm-settings-panel");
-  const settingsCloseBtn = document.getElementById("pm-settings-close");
-  const settingsDoneBtn = document.getElementById("pm-settings-done");
-  const settingsStatus = document.getElementById("pm-settings-status");
-  const trackingBadge = document.getElementById("pm-tracking-status-badge");
-  const contextBadge = document.getElementById("pm-context-status-badge");
-
-  const closeSettings = () => {
-    if (settingsPanel) settingsPanel.style.display = "none";
-    if (settingsBtn) settingsBtn.classList.remove("pm-active-btn");
-  };
-
-  const toggleSettings = (e) => {
-    e?.stopPropagation();
-    if (!settingsPanel) return;
-    const isVisible = settingsPanel.style.display !== "none";
-    if (isVisible) {
-      closeSettings();
-    } else {
-      settingsPanel.style.display = "flex";
-      settingsBtn?.classList.add("pm-active-btn");
-    }
-  };
-
-  settingsBtn?.addEventListener("click", toggleSettings);
-  settingsCloseBtn?.addEventListener("click", closeSettings);
-  settingsDoneBtn?.addEventListener("click", closeSettings);
-
-  document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && settingsPanel && settingsPanel.style.display !== "none") {
-      closeSettings();
-    }
-  });
-
-  const updateSettingsStatus = () => {
-    if (trackingBadge) {
-      if (promptTrackingEnabled) {
-        trackingBadge.innerHTML = `<span class="pm-status-dot pm-dot-active"></span><span class="pm-status-text">Active · Prompts logged</span>`;
-        trackingBadge.className = "pm-settings-card-badge pm-badge-active";
-      } else {
-        trackingBadge.innerHTML = `<span class="pm-status-dot pm-dot-paused"></span><span class="pm-status-text">Paused · Zero prompts logged</span>`;
-        trackingBadge.className = "pm-settings-card-badge pm-badge-paused";
-      }
-    }
-    if (contextBadge) {
-      if (contextEnabled) {
-        contextBadge.innerHTML = `<span class="pm-status-dot pm-dot-active"></span><span class="pm-status-text">Active · Grounding enabled</span>`;
-        contextBadge.className = "pm-settings-card-badge pm-badge-active";
-      } else {
-        contextBadge.innerHTML = `<span class="pm-status-dot pm-dot-paused"></span><span class="pm-status-text">Disabled · Chat context ignored</span>`;
-        contextBadge.className = "pm-settings-card-badge pm-badge-paused";
-      }
-    }
-    if (!settingsStatus) return;
-    if (promptTrackingEnabled && contextEnabled) {
-      settingsStatus.textContent = "✓ Tracking & context active";
-      settingsStatus.className = "pm-popover-status pm-status-active";
-    } else if (promptTrackingEnabled) {
-      settingsStatus.textContent = "✓ Prompt tracking active (context off)";
-      settingsStatus.className = "pm-popover-status pm-status-active";
-    } else {
-      settingsStatus.textContent = "⊘ Tracking off — 0 prompts logged to dashboard";
-      settingsStatus.className = "pm-popover-status pm-status-paused";
-    }
-  };
-
-  // Tracking toggle (ON by default)
-  const trackToggle = document.getElementById("pm-tracking-toggle");
-  const ctxToggle = document.getElementById("pm-context-toggle");
-  storageGet(["pm_tracking", "pm_context"], (result) => {
-    promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
-    contextEnabled = result.pm_context !== false;          // default: ON
-    if (trackToggle) trackToggle.checked = promptTrackingEnabled;
-    if (ctxToggle) ctxToggle.checked = contextEnabled;
-    updateSettingsStatus();
-  });
-  trackToggle?.addEventListener("change", () => {
-    promptTrackingEnabled = Boolean(trackToggle.checked);
-    storageSet({ pm_tracking: promptTrackingEnabled });
-    updateSettingsStatus();
-    showToast(`Prompt tracking ${promptTrackingEnabled ? "enabled" : "disabled"}.`, "info");
-  });
-  ctxToggle?.addEventListener("change", () => {
-    contextEnabled = Boolean(ctxToggle.checked);
-    storageSet({ pm_context: contextEnabled });
-    updateSettingsStatus();
-    showToast(`Conversation context ${contextEnabled ? "enabled" : "disabled"}.`, "info");
-  });
-
-  // Theme toggle
-  document.getElementById("pm-theme-toggle").addEventListener("click", () => {
-    const current = panel.getAttribute("data-pm-theme") || "dark";
-    const next = current === "dark" ? "light" : "dark";
-    applyTheme(next);
-    storageSet({ pm_theme: next });
-  });
-
-  // Tabs
-  panel.querySelectorAll(".pm-tab").forEach((tab) => {
-    tab.addEventListener("click", () => {
-      currentTab = tab.dataset.tab;
-      panel.querySelectorAll(".pm-tab").forEach((t) => t.classList.remove("pm-active"));
-      tab.classList.add("pm-active");
-      renderTabContent();
-    });
-  });
-
-  // Mode pills
-  panel.querySelectorAll(".pm-mode-pill").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      currentMode = btn.dataset.mode;
-      panel.querySelectorAll(".pm-mode-pill").forEach((b) => b.classList.remove("pm-mode-pill-active"));
-      btn.classList.add("pm-mode-pill-active");
-    });
-  });
-
-  // Enhance
-  document.getElementById("pm-enhance-btn").addEventListener("click", handleEnhance);
-
-  // Voice
-  document.getElementById("pm-voice-btn").addEventListener("click", toggleVoice);
-
-  // Resize handle — drag left edge
-  const handle = document.getElementById("pm-resize-handle");
-  let resizing = false, startX = 0, startWidth = 0;
-
-  handle.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    resizing = true;
-    startX = e.clientX;
-    startWidth = panel.offsetWidth;
-    handle.classList.add("pm-resizing");
-    document.body.style.cursor = "ew-resize";
-    document.body.style.userSelect = "none";
-  });
-
-  document.addEventListener("mousemove", (e) => {
-    if (!resizing) return;
-    const diff = startX - e.clientX;
-    const newWidth = Math.min(600, Math.max(320, startWidth + diff));
-    panel.style.width = newWidth + "px";
-    // Dragging the panel wider walks its left edge across the card.
-    positionCard();
-  });
-
-  document.addEventListener("mouseup", () => {
-    if (!resizing) return;
-    resizing = false;
-    handle.classList.remove("pm-resizing");
-    document.body.style.cursor = "";
-    document.body.style.userSelect = "";
-    storageSet({ pm_panel_width: panel.offsetWidth });
-  });
+  storageGet(["pm_slash"], (r) => { slashEnabled = r.pm_slash !== false; });
 }
 
 function togglePanel(force) {
-  const panel = document.getElementById("pm-panel");
-  if (!panel) return;
-  panelOpen = force !== undefined ? force : !panelOpen;
-  panel.classList.toggle("pm-open", panelOpen);
-  // The panel is the card's right-hand boundary, and opening or closing it
-  // fires neither resize nor scroll — the only two events the card watches.
-  // placePill() re-runs positionCard() and positionToasts() after settling
-  // the pill, which also has to make way for the panel.
-  placePill();
-  positionCard();
-  if (panelOpen) {
-    // If already logged in, skip onboarding and mark as onboarded
-    storageGet(["pm_onboarded", "token"], (result) => {
-      if ((result.token || result.pm_onboarded) && dataConsent) {
-        // Auto-mark as onboarded if logged in
-        if (!result.pm_onboarded) {
-          storageSet({ pm_onboarded: true });
-        }
-        // Remove any leftover onboarding overlays
-        panel.querySelectorAll(".pm-onboarding").forEach((el) => el.remove());
-        showSkeletonAndLoad();
-      } else {
-        showOnboarding(panel);
-      }
-    });
+  const lib = document.getElementById("pm-library");
+  if (!lib) return;
+  const open = force !== undefined ? Boolean(force) : !panelOpen;
+  if (open === panelOpen) {
+    if (open) focusLibrarySearch();
+    return;
   }
+  panelOpen = open;
+  lib.hidden = !open;
+  const chip = document.getElementById("pm-library-btn");
+  chip?.setAttribute("aria-expanded", String(open));
+  if (open) chip?.classList.remove("pm-lib-reveal");
+  if (open) {
+    closeSlash();
+    libPage = "list";
+    libView = "saved";
+    searchQuery = "";
+    libSel = 0;
+    libMenu = false;
+    libRowMenu = null;
+    libConfirm = null;
+    libHistoryLoaded = false;   // Recent is refetched per opening: new rewrites belong in it
+    renderLibrary();
+    focusLibrarySearch();
+    loadLibrary();
+  } else {
+    lib.innerHTML = "";
+  }
+  // The pill folds to ⊕ while the sheet is up, and the sheet hangs off it.
+  placePill();
 }
 
-function showSkeletonAndLoad() {
-  const body = document.getElementById("pm-tab-body");
-  if (body) {
-    body.innerHTML = renderSkeleton(3);
-    isLoadingTab = true;
-  }
-  fetchSavedPrompts().then(() => {
-    isLoadingTab = false;
-    renderTabContent();
-  });
+/** Close the sheet and hand the keyboard back to the chat box. */
+function closeLibrary() {
+  togglePanel(false);
+  findComposer()?.focus({ preventScroll: true });
+}
+
+async function loadLibrary() {
+  const auth = await getAuth();
+  libSignedIn = Boolean(auth && !isTokenExpired(auth.token));
+  if (!panelOpen) return;
+  if (!libSignedIn) { libPage = "signin"; renderLibrary(); return; }
+  if (!(await ensureDataConsent())) { togglePanel(false); return; }
+  isLoadingTab = !promptsLoaded;
+  renderLibrary();
+  await fetchSavedPrompts();
+  isLoadingTab = false;
+  if (panelOpen) renderLibrary();
   fetchUsage();
 }
 
-// ══════════════════════════════════════════════════════════════
-// ONBOARDING OVERLAY (first-time users)
-// ══════════════════════════════════════════════════════════════
+function focusLibrarySearch() {
+  const q = document.getElementById("pm-lib-q");
+  if (q && document.activeElement !== q) q.focus({ preventScroll: true });
+}
 
-function showOnboarding(panel) {
-  // Remove any existing onboarding overlay to prevent stacking
-  panel.querySelectorAll(".pm-onboarding").forEach((el) => el.remove());
+/** Where the sheet goes: on the pill's side, above it if there is room, else below. */
+function positionLibrary() {
+  const lib = document.getElementById("pm-library");
+  const pill = document.getElementById("pm-trigger");
+  if (!lib || lib.hidden || !pill) return;
+  const p = pill.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
+  const width = Math.min(368, vw - 2 * m);
+  lib.style.width = width + "px";
+  const onRight = p.left + p.width / 2 > vw / 2;
+  lib.style.left = onRight ? "auto" : Math.max(m, Math.min(p.left, vw - width - m)) + "px";
+  lib.style.right = onRight ? Math.max(m, Math.min(vw - p.right, vw - width - m)) + "px" : "auto";
+  // Opening upward, the sheet also clears the chat box when it would overlap
+  // it sideways: the host's send button lives on that box's edge, and a sheet
+  // resting on it is a sheet that swallows the click meant for Send.
+  const left = onRight ? vw - parseFloat(lib.style.right) - width : parseFloat(lib.style.left);
+  const frame = composerFrame(findComposer());
+  const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
+  const ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
+  const up = above >= 260 || above >= below;
+  lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
+  lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
+  lib.style.maxHeight = Math.max(160, up ? above : below) + "px";
+  lib.dataset.side = up ? "above" : "below";
+}
 
-  const overlay = document.createElement("div");
-  overlay.className = "pm-onboarding";
-  overlay.innerHTML = `
-    <div class="pm-onboarding-logo">✨</div>
-    <div class="pm-onboarding-title">Welcome to Prompt Memory</div>
-    <div class="pm-onboarding-subtitle">Your AI prompt engineering assistant</div>
-    <div class="pm-onboarding-steps">
-      <div class="pm-onboarding-step">
-        <div class="pm-onboarding-icon">✍️</div>
-        <div class="pm-onboarding-step-text">
-          <div class="pm-onboarding-step-title">Write your prompt</div>
-          <div class="pm-onboarding-step-desc">Type your prompt in any AI chat as usual</div>
-        </div>
-      </div>
-      <div class="pm-onboarding-step">
-        <div class="pm-onboarding-icon">🎯</div>
-        <div class="pm-onboarding-step-text">
-          <div class="pm-onboarding-step-title">Hit Enhance</div>
-          <div class="pm-onboarding-step-desc">Click Enhance — we'll rewrite it to get better AI responses</div>
-        </div>
-      </div>
-      <div class="pm-onboarding-step">
-        <div class="pm-onboarding-icon">💾</div>
-        <div class="pm-onboarding-step-text">
-          <div class="pm-onboarding-step-title">Save & reuse</div>
-          <div class="pm-onboarding-step-desc">Save great prompts to your library. Select them as context for future enhancements</div>
-        </div>
-      </div>
-    </div>
-    <p class="pm-onboarding-privacy">When you ask to enhance, your draft goes to an AI provider. Signed-in requests also go through our server and are saved in History; up to six recent chat messages are included by default. Prompt Tracking stays off until you enable it in settings.</p>
-    <button class="pm-onboarding-cta" id="pm-onboarding-start">See privacy choices &amp; continue</button>
-  `;
-  panel.appendChild(overlay);
+function libraryItems() {
+  const q = searchQuery.trim().toLowerCase();
+  if (libView === "recent") {
+    return enhanceHistory
+      .filter((h) => !q || `${h.enhanced} ${h.original}`.toLowerCase().includes(q))
+      .map((h) => ({ kind: "recent", h }));
+  }
+  const tag = q.startsWith("#") ? q.slice(1) : null;
+  const list = savedPrompts
+    .filter((p) => !q || (tag !== null
+      ? (p.tags || []).some((t) => t.toLowerCase().startsWith(tag))
+      : [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q)))
+    .map((p) => ({ kind: "saved", p }));
+  // What is in the chat box, offered as the first row when it is not already
+  // saved. This is the whole of the old Save tab: title and tags were optional
+  // there, and are one Edit away here.
+  const text = norm(getCurrentInputText());
+  if (!q && promptsLoaded && text.length >= 3 && !savedPrompts.some((p) => norm(p.content) === text)) {
+    list.unshift({ kind: "save", text });
+  }
+  return list;
+}
 
-  document.getElementById("pm-onboarding-start").addEventListener("click", async () => {
-    if (!(await ensureDataConsent())) return;
-    storageSet({ pm_onboarded: true });
-    overlay.style.animation = "pm-fadeIn 0.3s ease reverse";
-    setTimeout(() => {
-      overlay.remove();
-      showSkeletonAndLoad();
-    }, 280);
+function libVerb() {
+  return norm(getCurrentInputText()) ? "Replace" : "Insert";
+}
+
+function renderLibrary() {
+  const lib = document.getElementById("pm-library");
+  if (!lib || !panelOpen) return;
+  const active = document.activeElement;
+  const focusId = lib.contains(active) ? active.id : null;
+  const caret = active?.id === "pm-lib-q" ? active.selectionStart : null;
+
+  lib.dataset.page = libPage;
+  lib.innerHTML = libHeadHtml() + libBodyHtml() + (libPage === "list" ? `<div class="pm-lib-foot" id="pm-lib-foot">${libFootHtml()}</div>` : "") +
+    (libMenu ? libMenuHtml() : "");
+
+  const again = focusId && lib.querySelector(`[id="${focusId}"]`);
+  if (again) {
+    again.focus({ preventScroll: true });
+    if (caret !== null && again.setSelectionRange) again.setSelectionRange(caret, caret);
+  }
+  afterListRender(lib);
+  positionLibrary();
+}
+
+/** Typing in the search box redraws the rows only: rebuilding the input under
+ *  an IME composition would throw the composition away. */
+function renderLibraryList() {
+  const lib = document.getElementById("pm-library");
+  if (!lib || !panelOpen || libPage !== "list") return;
+  const list = lib.querySelector("#pm-lib-list");
+  if (list) list.innerHTML = libRowsHtml();
+  const foot = lib.querySelector("#pm-lib-foot");
+  if (foot) foot.innerHTML = libFootHtml();
+  afterListRender(lib);
+}
+
+function afterListRender(lib) {
+  const list = lib.querySelector("#pm-lib-list");
+  if (list) { watchScrollable(list); markScrollable(list); }
+  lib.querySelector(".pm-lib-row.pm-sel")?.scrollIntoView({ block: "nearest" });
+  syncActiveDescendant();
+}
+
+function syncActiveDescendant() {
+  const q = document.getElementById("pm-lib-q");
+  const row = document.querySelector("#pm-library .pm-lib-row.pm-sel");
+  if (!q) return;
+  if (row) q.setAttribute("aria-activedescendant", row.id);
+  else q.removeAttribute("aria-activedescendant");
+}
+
+function libHeadHtml() {
+  const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>`;
+  if (libPage === "privacy" || libPage === "feedback") {
+    return `<div class="pm-lib-head pm-lib-head-sub">` +
+      `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
+      `<span class="pm-lib-head-title">${libPage === "privacy" ? "Privacy" : "Send feedback"}</span>${more}</div>`;
+  }
+  if (libPage === "signin") {
+    return `<div class="pm-lib-head pm-lib-head-sub"><span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
+  }
+  const count = libView === "saved" ? savedPrompts.length : enhanceHistory.length;
+  const placeholder = libView === "saved"
+    ? (count ? `Search ${count} saved prompt${count === 1 ? "" : "s"}` : "Search saved prompts")
+    : "Search recent rewrites";
+  return `<div class="pm-lib-head">` +
+    `<label class="pm-lib-search">${LIB_ICON.search}` +
+    `<input id="pm-lib-q" type="text" autocomplete="off" spellcheck="false" placeholder="${placeholder}" value="${escHtml(searchQuery)}"` +
+    ` aria-label="Search the library" role="combobox" aria-expanded="true" aria-controls="pm-lib-list" aria-autocomplete="list"></label>` +
+    `<div class="pm-lib-views" role="group" aria-label="Show">` +
+    `<button type="button" id="pm-lib-view-saved" data-view="saved" aria-pressed="${libView === "saved"}">Saved</button>` +
+    `<button type="button" id="pm-lib-view-recent" data-view="recent" aria-pressed="${libView === "recent"}">Recent</button></div>` +
+    more + `</div>`;
+}
+
+function libBodyHtml() {
+  if (libPage === "signin") {
+    return `<div class="pm-lib-page">` +
+      `<p class="pm-lib-lead">Your library lives in your account.</p>` +
+      `<p class="pm-lib-note">Saved prompts, your recent rewrites and context you attach are kept there, so they follow you across sites. ⊕ still rewrites without one.</p>` +
+      `<button type="button" class="pm-lib-primary" id="pm-lib-signin" data-act="signin">Sign in</button></div>`;
+  }
+  if (libPage === "privacy") {
+    const row = (id, on, label, desc) =>
+      `<label class="pm-lib-setting"><span><span class="pm-lib-setting-label">${label}</span><span class="pm-lib-setting-desc">${desc}</span></span>` +
+      `<input type="checkbox" class="pm-lib-switch" id="${id}"${on ? " checked" : ""}></label>`;
+    return `<div class="pm-lib-page">` +
+      row("pm-tracking-toggle", promptTrackingEnabled, "Prompt tracking", "Logs the prompts you send on these sites to improve future suggestions.") +
+      row("pm-context-toggle", contextEnabled, "Conversation context", "Reads recent messages in this chat when you ask for a rewrite, for that request only.") +
+      row("pm-slash-toggle", slashEnabled, "Type // for saved prompts", "Opens your saved prompts at the cursor in the chat box.") +
+      `</div>`;
+  }
+  if (libPage === "feedback") {
+    return `<div class="pm-lib-page pm-lib-form">` +
+      `<label class="pm-lib-field"><span>Kind</span><select id="pm-feedback-type" class="pm-lib-input">` +
+      `<option value="bug">Something is broken</option><option value="feature">An idea</option><option value="general" selected>General</option></select></label>` +
+      `<label class="pm-lib-field"><span>Message</span><textarea id="pm-feedback-message" class="pm-lib-input" rows="4" placeholder="What happened, or what you would like"></textarea></label>` +
+      `<label class="pm-lib-field"><span>Email, for a reply</span><input id="pm-feedback-email" class="pm-lib-input" type="email" placeholder="you@example.com"></label>` +
+      `<div class="pm-lib-form-row"><button type="button" class="pm-lib-primary" id="pm-feedback-submit" data-act="sendfeedback">Send</button>` +
+      `<span class="pm-lib-status" id="pm-feedback-status" role="status"></span></div>` +
+      `<div class="pm-lib-recent-feedback" id="pm-feedback-recent"></div></div>`;
+  }
+  return `<div class="pm-lib-list" id="pm-lib-list" role="listbox" aria-label="${libView === "saved" ? "Saved prompts" : "Recent rewrites"}">${libRowsHtml()}</div>`;
+}
+
+function libRowsHtml() {
+  if (isLoadingTab || (libView === "recent" && !libHistoryLoaded)) {
+    return `<div class="pm-lib-skeleton" aria-label="Loading">${"<div><i></i><i></i></div>".repeat(3)}</div>`;
+  }
+  const list = libraryItems();
+  libSel = Math.max(0, Math.min(libSel, list.length - 1));
+  if (!list.length) {
+    const q = searchQuery.trim();
+    if (q) return `<div class="pm-lib-empty"><b>Nothing matches “${escHtml(q)}”</b>Search looks at titles, text and tags. Start with # to match a tag.</div>`;
+    if (libView === "recent") return `<div class="pm-lib-empty"><b>No rewrites yet</b>Press ⊕ on anything you type and it shows up here.</div>`;
+    return `<div class="pm-lib-empty"><b>Your library is empty</b>Type a prompt in the chat box and it appears here, ready to save. ${CMD_KEY}S saves a rewrite from its card.</div>`;
+  }
+  const verb = libVerb();
+  return list.map((it, i) => {
+    const sel = i === libSel ? " pm-sel" : "";
+    const id = `pm-lib-row-${i}`;
+    if (it.kind === "save") {
+      return `<div class="pm-lib-row pm-lib-row-save${sel}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
+        `<span class="pm-lib-dot" aria-hidden="true">+</span><div class="pm-lib-text"><div class="pm-lib-title">Save “${escHtml(it.text.slice(0, 44))}${it.text.length > 44 ? "…" : ""}”</div>` +
+        `<div class="pm-lib-preview">From the chat box · rename it any time</div></div>` +
+        `<div class="pm-lib-acts"><button type="button" class="pm-lib-verb" data-act="save">Save</button></div></div>`;
+    }
+    if (it.kind === "recent") {
+      const h = it.h;
+      const ago = h.timestamp ? getTimeAgo(h.timestamp) : "";
+      let row = `<div class="pm-lib-row${sel}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
+        `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text"><div class="pm-lib-title">${escHtml(norm(h.enhanced))}</div>` +
+        `<div class="pm-lib-preview">from “${escHtml(norm(h.original))}”${ago ? " · " + ago : ""}</div></div>` +
+        `<div class="pm-lib-acts"><button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === "r" + i}">${LIB_ICON.more}</button>` +
+        `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
+      if (libRowMenu === "r" + i) {
+        row += `<div class="pm-lib-rowmenu"><button type="button" data-act="keep" data-i="${i}">Save to library</button><button type="button" data-act="copy" data-i="${i}">Copy</button></div>`;
+      }
+      return row;
+    }
+    const p = it.p;
+    if (libConfirm === p.id) {
+      return `<div class="pm-lib-confirm" data-i="${i}" role="alertdialog" aria-label="Delete this prompt?"><span>Delete “${escHtml(promptTitle(p))}”?</span>` +
+        `<button type="button" data-act="keepit" data-i="${i}">Keep</button><button type="button" class="pm-lib-danger" data-act="del" data-i="${i}" id="pm-lib-del">Delete</button></div>`;
+    }
+    const att = selectedIds.has(p.id);
+    let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
+      `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text"><div class="pm-lib-title">${escHtml(promptTitle(p))}</div>` +
+      `<div class="pm-lib-preview">${escHtml(promptPreview(p))}</div></div>` +
+      `<div class="pm-lib-acts">` +
+      `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" aria-label="${att ? "Detach" : "Attach as context"}" title="${att ? "Attached as context" : "Attach as context"} (${CMD_KEY}↵)">${LIB_ICON.clip}</button>` +
+      `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
+      `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
+    if (libRowMenu === p.id) {
+      row += `<div class="pm-lib-rowmenu"><button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;
+    }
+    return row;
+  }).join("");
+}
+
+function libFootHtml() {
+  const parts = [];
+  const left = usageData.limit - usageData.count;
+  if (libSignedIn && usageData.known && left <= 3) {
+    parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : left === 1 ? "1 rewrite left today" : `${left} rewrites left today`}</span>`);
+  }
+  if (selectedIds.size) {
+    parts.push(`<span class="pm-lib-att-count">${selectedIds.size} attached as context</span>` +
+      `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
+  }
+  if (!parts.length) {
+    const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
+    parts.push(`<span class="pm-lib-hints">${k("↵", libVerb().toLowerCase())}${k(CMD_KEY + "↵", "attach")}${slashEnabled ? k("//", "in the chat box") : k("esc", "close")}</span>`);
+  }
+  return parts.join("");
+}
+
+function libMenuHtml() {
+  const style = (s) => `<button type="button" data-style="${s}" aria-pressed="${currentMode === s}">${STYLE_NAMES[s]}</button>`;
+  const left = usageData.limit - usageData.count;
+  return `<div class="pm-lib-menu" role="menu" aria-label="Library menu">` +
+    `<div class="pm-lib-menu-group"><div class="pm-lib-menu-cap">Rewrite style for ⊕</div>` +
+    `<div class="pm-lib-views pm-lib-views-wide" role="group" aria-label="Default rewrite style">${STYLES.map(style).join("")}</div></div>` +
+    `<hr>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${CMD_KEY}⇧V</span></button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
+    (libSignedIn && usageData.known
+      ? `<hr><div class="pm-lib-menu-meta">${Math.max(0, usageData.count)} of ${usageData.limit} rewrites used today${left <= 0 ? " — none left" : ""}</div>`
+      : "") +
+    `</div>`;
+}
+
+// ── What the sheet does ──
+
+async function libInsert(text, logId) {
+  closeLibrary();
+  const applied = await applyOrFallback(text, null);
+  if (applied) {
+    showApplied(null);
+    if (logId) approveEnhancement(logId);
+  }
+}
+
+async function libSaveText(text) {
+  const outcome = await createSavedPrompt(text, "", []);
+  if (outcome === "saved") {
+    await fetchSavedPrompts();
+    showToast("Saved to your library", "success");
+  } else {
+    showToast(outcome === "duplicate" ? "Already in your library" : "Could not save", outcome === "duplicate" ? "info" : "error");
+  }
+  renderLibrary();
+}
+
+function libAct(act, i) {
+  const list = libraryItems();
+  const it = list[i ?? libSel];
+  switch (act) {
+    case "insert":
+      if (!it) return;
+      if (it.kind === "save") { libSaveText(it.text); return; }
+      if (it.kind === "recent") { libInsert(it.h.enhanced, it.h.log_id); return; }
+      libInsert(it.p.content);
+      return;
+    case "save":
+      if (it?.kind === "save") libSaveText(it.text);
+      return;
+    case "attach":
+      if (it?.kind === "saved") toggleAttachment(it.p);
+      return;
+    case "more":
+      if (!it || it.kind === "save") return;
+      libRowMenu = it.kind === "recent" ? (libRowMenu === "r" + (i ?? libSel) ? null : "r" + (i ?? libSel)) : (libRowMenu === it.p.id ? null : it.p.id);
+      libSel = i ?? libSel;
+      renderLibraryList();
+      return;
+    case "edit":
+      if (it?.kind === "saved") { libRowMenu = null; showEditModal(it.p); }
+      return;
+    case "ask":
+      if (it?.kind === "saved") { libConfirm = it.p.id; libRowMenu = null; renderLibraryList(); document.getElementById("pm-lib-del")?.focus(); }
+      return;
+    case "keepit":
+      libConfirm = null; renderLibraryList(); focusLibrarySearch();
+      return;
+    case "del":
+      if (it?.kind === "saved") {
+        const id = it.p.id;
+        libConfirm = null;
+        deleteSavedPrompt(id).then(async (ok) => {
+          if (!ok) { showToast("Could not delete", "error"); renderLibraryList(); return; }
+          if (selectedIds.has(id)) toggleAttachment({ id });
+          await fetchSavedPrompts();
+          renderLibrary();
+          focusLibrarySearch();
+        });
+      }
+      return;
+    case "keep":
+      if (it?.kind === "recent") { libRowMenu = null; libSaveText(it.h.enhanced); }
+      return;
+    case "copy":
+      if (it?.kind === "recent") {
+        libRowMenu = null;
+        navigator.clipboard.writeText(it.h.enhanced).then(
+          () => showToast("Copied", "success"),
+          () => showToast("Could not copy", "error"));
+        renderLibraryList();
+      }
+      return;
+  }
+}
+
+function onLibraryClick(e) {
+  const b = e.target.closest("button");
+  if (b?.dataset.view) {
+    libView = b.dataset.view;
+    libSel = 0; libRowMenu = null; libConfirm = null;
+    renderLibrary();
+    focusLibrarySearch();
+    if (libView === "recent" && !libHistoryLoaded) {
+      fetchEnhanceHistory().then(() => { libHistoryLoaded = true; renderLibrary(); });
+    }
+    return;
+  }
+  if (b?.dataset.style) {
+    setDefaultStyle(b.dataset.style);
+    renderLibrary();
+    return;
+  }
+  const act = b?.dataset.act;
+  if (act === "menu") { libMenu = !libMenu; renderLibrary(); return; }
+  if (libMenu && !e.target.closest(".pm-lib-menu")) { libMenu = false; renderLibrary(); if (!act) return; }
+  switch (act) {
+    case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
+    case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
+    case "feedback":
+      libPage = "feedback"; libMenu = false; renderLibrary();
+      storageGet(["email"], (r) => { const el = document.getElementById("pm-feedback-email"); if (el && !el.value) el.value = r.email || ""; });
+      loadRecentFeedback();
+      return;
+    case "voice": closeLibrary(); toggleVoice(); return;
+    case "signin": openSettings(); return;
+    case "clear": clearAttachments(); return;
+    case "sendfeedback": sendLibraryFeedback(); return;
+  }
+  const rowEl = e.target.closest("[data-i]");
+  const i = rowEl ? Number(rowEl.dataset.i) : undefined;
+  if (act) { libAct(act, i); return; }
+  // A click on the row itself does the row's verb.
+  if (rowEl?.classList.contains("pm-lib-row")) { libSel = i; libAct("insert", i); }
+}
+
+function onLibraryInput(e) {
+  if (e.target.id !== "pm-lib-q") return;
+  searchQuery = e.target.value;
+  libSel = 0; libRowMenu = null; libConfirm = null;
+  renderLibraryList();
+}
+
+function onLibraryChange(e) {
+  const id = e.target.id;
+  if (id === "pm-tracking-toggle") { promptTrackingEnabled = e.target.checked; storageSet({ pm_tracking: promptTrackingEnabled }); }
+  if (id === "pm-context-toggle") { contextEnabled = e.target.checked; storageSet({ pm_context: contextEnabled }); }
+  if (id === "pm-slash-toggle") { slashEnabled = e.target.checked; storageSet({ pm_slash: slashEnabled }); }
+}
+
+function onLibraryKeydown(e) {
+  if (e.isComposing) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === "Escape") {
+    e.preventDefault(); e.stopPropagation();
+    if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
+    if (libPage === "privacy" || libPage === "feedback") { libPage = "list"; renderLibrary(); focusLibrarySearch(); return; }
+    closeLibrary();
+    return;
+  }
+  // The keys below drive the list from the search box, as in a combobox.
+  if (e.target.id !== "pm-lib-q" || libPage !== "list") return;
+  const n = libraryItems().length;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    if (!n) return;
+    libSel = (libSel + (e.key === "ArrowDown" ? 1 : -1) + n) % n;
+    libRowMenu = null;
+    renderLibraryList();
+    return;
+  }
+  if (e.key === "Enter") {
+    e.preventDefault(); e.stopPropagation();
+    if (!n) return;
+    libAct(mod ? "attach" : "insert");
+  }
+}
+
+// ── Feedback, now a page of the sheet ──
+
+async function sendLibraryFeedback() {
+  const type = document.getElementById("pm-feedback-type")?.value || "general";
+  const message = document.getElementById("pm-feedback-message")?.value.trim() || "";
+  const email = document.getElementById("pm-feedback-email")?.value.trim() || "";
+  if (message.length < 5) { setStatus("pm-feedback-status", "Write at least a few words.", "error"); return; }
+  const btn = document.getElementById("pm-feedback-submit");
+  if (btn) { btn.disabled = true; btn.textContent = "Sending…"; }
+  const ok = await submitFeedback(type, message, email);
+  if (btn) { btn.disabled = false; btn.textContent = "Send"; }
+  if (ok) {
+    setStatus("pm-feedback-status", "Sent. Thank you.", "success");
+    const m = document.getElementById("pm-feedback-message");
+    if (m) m.value = "";
+    loadRecentFeedback();
+  } else {
+    setStatus("pm-feedback-status", "Could not send. Are you signed in?", "error");
+  }
+}
+
+function loadRecentFeedback() {
+  const box = document.getElementById("pm-feedback-recent");
+  if (!box) return;
+  fetchMyFeedback().then((items) => {
+    const el = document.getElementById("pm-feedback-recent");
+    if (!el) return;
+    if (!items.length) { el.innerHTML = ""; return; }
+    const status = { new: "received", reviewed: "read", resolved: "resolved" };
+    el.innerHTML = `<div class="pm-lib-menu-cap">Recent</div>` + items.slice(0, 3).map((it) =>
+      `<div class="pm-lib-feedback-item"><span>${escHtml(it.message)}</span>` +
+      `<span>${status[it.status] || "received"}${it.timestamp ? " · " + getTimeAgo(it.timestamp) : ""}</span></div>`).join("");
+    // It arrives after the page was drawn and can make the page scroll.
+    const page = el.closest(".pm-lib-page");
+    watchScrollable(page);
+    markScrollable(page);
   });
 }
 
-// ══════════════════════════════════════════════════════════════
-// SKELETON LOADERS
-// ══════════════════════════════════════════════════════════════
+// ── Context: attached prompts, kept for the browser session ──
 
-function renderSkeleton(count = 3) {
-  let items = "";
-  for (let i = 0; i < count; i++) {
-    items += `
-      <div class="pm-skeleton-item">
-        <div class="pm-skeleton-checkbox"></div>
-        <div class="pm-skeleton-body">
-          <div class="pm-skeleton-line"></div>
-          <div class="pm-skeleton-line"></div>
-          <div class="pm-skeleton-line"></div>
-        </div>
-      </div>`;
+const ATTACH_KEY = "pm_attached";
+
+function saveAttachments() {
+  const list = [...selectedIds].map((id) => ({ id, title: attachTitles.get(id) || "" }));
+  draftStore.area().then((area) => area.set({ [ATTACH_KEY]: list })).catch(() => {});
+}
+
+function applyAttachments(list) {
+  selectedIds = new Set();
+  attachTitles.clear();
+  (Array.isArray(list) ? list : []).forEach((a) => {
+    if (a && a.id != null) { selectedIds.add(a.id); attachTitles.set(a.id, a.title || ""); }
+  });
+  renderRail();
+  renderChipCount();
+  if (panelOpen) renderLibraryList();
+}
+
+async function restoreAttachments() {
+  try {
+    const area = await draftStore.area();
+    const { [ATTACH_KEY]: list } = await area.get(ATTACH_KEY);
+    applyAttachments(list);
+  } catch { /* nothing attached */ }
+}
+
+function toggleAttachment(p) {
+  if (selectedIds.has(p.id)) {
+    selectedIds.delete(p.id);
+    attachTitles.delete(p.id);
+  } else {
+    selectedIds.add(p.id);
+    attachTitles.set(p.id, p.content ? promptTitle(p) : attachTitles.get(p.id) || "");
   }
-  return `<div class="pm-skeleton">${items}</div>`;
+  saveAttachments();
+  renderRail();
+  renderChipCount();
+  if (panelOpen) renderLibraryList();
+}
+
+function clearAttachments() {
+  selectedIds.clear();
+  attachTitles.clear();
+  saveAttachments();
+  renderRail();
+  renderChipCount();
+  if (panelOpen) renderLibraryList();
+}
+
+/** After a fetch: forget attachments whose prompt was deleted, refresh titles. */
+function reconcileAttachments() {
+  if (!selectedIds.size) return;
+  const byId = new Map(savedPrompts.map((p) => [p.id, p]));
+  let changed = false;
+  for (const id of [...selectedIds]) {
+    const p = byId.get(id);
+    if (!p) { selectedIds.delete(id); attachTitles.delete(id); changed = true; continue; }
+    const t = promptTitle(p);
+    if (attachTitles.get(id) !== t) { attachTitles.set(id, t); changed = true; }
+  }
+  if (changed) { saveAttachments(); renderRail(); renderChipCount(); }
+}
+
+function renderChipCount() {
+  const cnt = document.querySelector("#pm-library-btn .pm-library-count");
+  if (!cnt) return;
+  cnt.textContent = selectedIds.size ? String(selectedIds.size) : "";
+  cnt.hidden = !selectedIds.size;
+}
+
+/**
+ * The chat box as the user sees it: the rounded frame around the editable
+ * element, not the element itself. Hosts pad the text inside that frame, so
+ * anchoring to the editable left chips sitting on the frame's border and let
+ * the sheet reach down over the send button. The frame is the nearest
+ * ancestor, a few levels up at most, that is barely larger than the editable
+ * and visibly drawn (a background, a border or rounded corners).
+ */
+function composerFrame(el) {
+  if (!el) return null;
+  const inner = el.getBoundingClientRect();
+  let frame = inner;
+  let node = el.parentElement;
+  for (let i = 0; node && i < 6; i++, node = node.parentElement) {
+    const r = node.getBoundingClientRect();
+    if (r.width > inner.width + 240 || r.height > inner.height + 200) break;
+    const cs = getComputedStyle(node);
+    const drawn = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderRadius) >= 8 ||
+      (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent");
+    if (drawn) frame = r;
+  }
+  return frame;
+}
+
+/**
+ * The rail: attached prompts as chips on the chat box's top edge.
+ *
+ * It names them on the thing about to be sent, rather than counting them in a
+ * panel the user has closed. It steps aside while the rewrite card is open,
+ * because the card sits on that same edge, and when the chat box is too near
+ * the top of the window to leave room above it.
+ */
+function renderRail() {
+  let rail = document.getElementById("pm-rail");
+  if (!selectedIds.size) { rail?.remove(); return; }
+  if (!rail) {
+    rail = document.createElement("div");
+    rail.id = "pm-rail";
+    rail.className = "pm-rail";
+    rail.setAttribute("role", "group");
+    rail.setAttribute("aria-label", "Attached as context for the next rewrite");
+    rail.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b) return;
+      if (b.dataset.detach !== undefined) {
+        toggleAttachment({ id: [...selectedIds].find((id) => String(id) === b.dataset.detach) });
+      } else if (b.dataset.act === "railadd") {
+        togglePanel(true);
+      }
+    });
+    document.body.appendChild(rail);
+  }
+  rail.innerHTML = [...selectedIds].map((id) => {
+    const title = attachTitles.get(id) || "Saved prompt";
+    return `<span class="pm-rail-chip" title="Attached as context: ${escHtml(title)}">${LIB_ICON.clip}<span>${escHtml(title)}</span>` +
+      `<button type="button" data-detach="${escHtml(String(id))}" aria-label="Detach ${escHtml(title)}">${PILL_X_SVG}</button></span>`;
+  }).join("") + `<button type="button" class="pm-rail-add" data-act="railadd" aria-label="Attach another saved prompt">+ Context</button>`;
+  positionRail();
+}
+
+function positionRail() {
+  const rail = document.getElementById("pm-rail");
+  if (!rail) return;
+  const r = composerFrame(findComposer());
+  const hide = !r || cardExpanded || r.top < 48;
+  rail.hidden = hide;
+  if (hide) return;
+  rail.style.left = Math.max(8, Math.round(r.left)) + "px";
+  rail.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
+  rail.style.maxWidth = Math.max(180, Math.round(r.width)) + "px";
+}
+
+// ── // in the chat box ──
+//
+// Typing // after a space or at the start of a line opens the saved prompts at
+// the caret, filtered by what follows (//bug). ↵ puts the prompt where the //
+// was, ⇥ attaches it as context instead, esc leaves the text exactly as typed.
+// A URL (https://) or a//b never opens it: the // must start a word.
+
+let slash = null;          // { el, node, start, end, q } while open
+let slashMuted = false;    // esc pressed: stay shut until this // is gone
+let slashSel = 0;
+let slashFetching = false;
+
+const SLASH_TOKEN = /(^|\s)\/\/([^\s/]*)$/;
+
+function isTextField(el) {
+  return el.tagName === "TEXTAREA" || el.tagName === "INPUT";
+}
+
+/** The text before the caret in the composer, and where it lives. */
+function slashContext(el) {
+  if (isTextField(el)) {
+    const end = el.selectionStart;
+    if (end == null || el.selectionEnd !== end) return null;
+    return { node: null, text: el.value.slice(0, end), offset: end };
+  }
+  const sel = window.getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed || !el.contains(sel.focusNode)) return null;
+  // The token is matched in the caret's own text node: a range over the whole
+  // editor runs paragraphs together with no separator, so // at the start of a
+  // new line would read as the end of the previous word.
+  if (sel.focusNode.nodeType !== Node.TEXT_NODE) return null;
+  return { node: sel.focusNode, text: sel.focusNode.data.slice(0, sel.focusOffset), offset: sel.focusOffset };
+}
+
+function checkSlash() {
+  const el = findComposer();
+  if (!el || !slashEnabled || !libSignedIn || !dataConsent || panelOpen) { closeSlash(); return; }
+  const ctx = slashContext(el);
+  const m = ctx && ctx.text.match(SLASH_TOKEN);
+  if (!m) { slashMuted = false; closeSlash(); return; }
+  if (slashMuted) return;
+  const q = m[2];
+  if (!slash || slash.q !== q) slashSel = 0;
+  slash = { el, node: ctx.node, start: ctx.offset - q.length - 2, end: ctx.offset, q };
+  if (!promptsLoaded && !slashFetching) {
+    slashFetching = true;
+    fetchSavedPrompts().finally(() => { slashFetching = false; if (slash) renderSlash(); });
+  }
+  renderSlash();
+}
+
+function slashItems() {
+  if (!slash) return [];
+  const q = slash.q.toLowerCase();
+  return savedPrompts
+    .filter((p) => !q || [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q.replace(/^#/, "")))
+    .slice(0, 6);
+}
+
+function closeSlash() {
+  slash = null;
+  document.getElementById("pm-caret")?.remove();
+}
+
+function caretRect(el) {
+  if (!isTextField(el)) {
+    const sel = window.getSelection();
+    if (sel.rangeCount) {
+      const range = sel.getRangeAt(0).cloneRange();
+      range.collapse(true);
+      const rect = range.getClientRects()[0];
+      if (rect && (rect.width || rect.height)) return rect;
+      const parent = sel.focusNode?.parentElement;
+      if (parent && el.contains(parent)) return parent.getBoundingClientRect();
+    }
+  }
+  const r = el.getBoundingClientRect();
+  return { left: r.left + 12, top: r.top + 8, bottom: r.top + 28 };
+}
+
+function renderSlash() {
+  if (!slash) return;
+  let menu = document.getElementById("pm-caret");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.id = "pm-caret";
+    menu.className = "pm-caret";
+    menu.setAttribute("role", "listbox");
+    menu.setAttribute("aria-label", "Saved prompts");
+    // Keep the caret in the chat box: a click here must not take focus away.
+    menu.addEventListener("mousedown", (e) => e.preventDefault());
+    menu.addEventListener("click", (e) => {
+      const row = e.target.closest("[data-i]");
+      if (!row) return;
+      slashSel = Number(row.dataset.i);
+      if (e.target.closest("[data-act='attach']")) slashAttach(); else slashInsert();
+    });
+    document.body.appendChild(menu);
+    // The rewrite card sits on the chat box, which is exactly where this menu
+    // opens, and typing // has just made its draft stale: the text no longer
+    // matches what was rewritten. It folds into the pill, as esc would fold
+    // it, rather than have a menu drawn across its text and buttons. The pill
+    // keeps the draft and offers Redo (or Insert again, if the // is deleted
+    // and the text matches once more). It does not spring back when the menu
+    // closes: the user is mid-sentence.
+    if (cardExpanded) hideCard();
+  }
+  const items = slashItems();
+  slashSel = Math.max(0, Math.min(slashSel, items.length - 1));
+  const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
+  let body;
+  if (!promptsLoaded) body = `<div class="pm-caret-empty">Loading your saved prompts…</div>`;
+  else if (!items.length) body = `<div class="pm-caret-empty">${savedPrompts.length ? `No saved prompt matches “${escHtml(slash.q)}”` : "No saved prompts yet. Open the library to save one."}</div>`;
+  else body = items.map((p, i) => {
+    const att = selectedIds.has(p.id);
+    return `<div class="pm-caret-row${i === slashSel ? " pm-sel" : ""}${att ? " pm-att" : ""}" data-i="${i}" role="option" aria-selected="${i === slashSel}">` +
+      `<div class="pm-lib-text"><div class="pm-lib-title">${escHtml(promptTitle(p))}</div>` +
+      (i === slashSel ? `<div class="pm-lib-preview">${escHtml(promptPreview(p))}</div>` : "") + `</div>` +
+      `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" tabindex="-1" aria-label="Attach as context">${LIB_ICON.clip}</button></div>`;
+  }).join("");
+  menu.innerHTML = head + `<div class="pm-caret-list">${body}</div>`;
+
+  const rect = caretRect(slash.el);
+  const width = Math.min(340, window.innerWidth - 24);
+  menu.style.width = width + "px";
+  menu.style.left = Math.max(12, Math.min(rect.left - 12, window.innerWidth - width - 12)) + "px";
+  if (rect.top > 240) {
+    menu.style.top = "auto";
+    menu.style.bottom = Math.round(window.innerHeight - rect.top + 8) + "px";
+  } else {
+    menu.style.bottom = "auto";
+    menu.style.top = Math.round(rect.bottom + 8) + "px";
+  }
+}
+
+/**
+ * Where the //query is now. The position noted when the menu opened can be
+ * stale by the time a prompt is chosen: an editor that re-renders on every
+ * transaction may have replaced the text node it pointed into. The caret has
+ * not moved (the menu keeps focus in the chat box), so it is read again.
+ */
+function refreshSlashToken(s) {
+  const ctx = slashContext(s.el);
+  const m = ctx && ctx.text.match(SLASH_TOKEN);
+  if (!m || m[2] !== s.q) return s;
+  return { ...s, node: ctx.node, start: ctx.offset - s.q.length - 2, end: ctx.offset };
+}
+
+/** Select the //query token in the composer, so the next edit replaces it. */
+function selectSlashToken(s) {
+  s.el.focus({ preventScroll: true });
+  if (isTextField(s.el)) {
+    s.el.setSelectionRange(s.start, s.end);
+    return true;
+  }
+  if (!s.node || !s.node.isConnected || s.node.data.length < s.end) return false;
+  const range = document.createRange();
+  range.setStart(s.node, s.start);
+  range.setEnd(s.node, s.end);
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+  return true;
+}
+
+/** Replace the selection the way an editor accepts: beforeinput, then insertText. */
+function typeIntoSelection(el, text) {
+  const go = el.dispatchEvent(new InputEvent("beforeinput", {
+    bubbles: true, cancelable: true, inputType: text ? "insertText" : "deleteContentBackward", data: text || null,
+  }));
+  if (go) document.execCommand(text ? "insertText" : "delete", false, text || undefined);
+}
+
+async function slashInsert() {
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
+  if (!s || !p) return;
+  closeSlash();
+  const before = composerText(s.el);
+  const token = "//" + s.q;
+  // What the whole box should read afterwards, for checking and as a fallback.
+  const idx = before.lastIndexOf(token);
+  const lead = idx > 0 && !/\s$/.test(before.slice(0, idx)) ? " " : "";
+  const expected = idx >= 0 ? before.slice(0, idx) + lead + p.content + before.slice(idx + token.length) : null;
+  if (selectSlashToken(s)) typeIntoSelection(s.el, p.content);
+  await nextFrame();
+  const after = composerText(s.el);
+  const landed = norm(after).includes(norm(p.content)) && !norm(after).includes(norm(token));
+  if (!landed && expected !== null) await applyOrFallback(expected, null);
+  showApplied(null);
+}
+
+function slashAttach() {
+  const p = slashItems()[slashSel];
+  const s = slash && refreshSlashToken(slash);
+  if (!s || !p) return;
+  closeSlash();
+  if (!selectedIds.has(p.id)) toggleAttachment(p);
+  // The //query was a way to find the prompt, not text to send.
+  if (selectSlashToken(s)) typeIntoSelection(s.el, "");
+}
+
+function handleSlashKeydown(e) {
+  if (!slash || e.isComposing) return;
+  if (e.target !== slash.el && !slash.el.contains(e.target)) return;
+  const items = slashItems();
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (!items.length) return;
+    slashSel = (slashSel + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    renderSlash();
+  } else if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    // With nothing to pick, Enter is the user's: it sends what they typed.
+    if (!items.length) { closeSlash(); return; }
+    slashInsert();
+  } else if (e.key === "Tab" && !e.shiftKey) {
+    if (!items.length) return;
+    slashAttach();
+  } else if (e.key === "Escape") {
+    slashMuted = true;
+    closeSlash();
+  } else {
+    return;
+  }
+  // Window capture runs before the host editor and before this script's own
+  // document listeners, so Enter here never reaches the host's send, and the
+  // passive tracker never records a //query as a sent prompt.
+  e.preventDefault();
+  e.stopImmediatePropagation();
+}
+
+// ── Watching the chat box ──
+//
+// Most editors fire `input` as the user types. ProseMirror, the editor ChatGPT
+// and Claude are built on, does not: it takes each keypress itself and writes
+// the text through its own transaction, so no input event ever reaches the
+// page. Everything here that reacted to typing listened for `input` — the //
+// menu, the rail following the box as it grows, a draft turning stale — and on
+// those two sites heard nothing: // never opened, and the Enter meant to pick
+// a prompt sent the message instead. A MutationObserver on the composer sees
+// every change to its text whoever makes it, and selectionchange sees the
+// caret move; `input` stays as the fast path where it does fire.
+
+let watchedComposer = null;
+let composerObserver = null;
+let composerChangeQueued = false;
+
+/** Observe whatever the composer is now. Cheap to call often. */
+function watchComposer() {
+  const el = findComposer();
+  if (el === watchedComposer) return;
+  composerObserver?.disconnect();
+  watchedComposer = el;
+  if (!el) return;
+  composerObserver = new MutationObserver(onComposerChanged);
+  composerObserver.observe(el, { subtree: true, childList: true, characterData: true });
+}
+
+/** The chat box's text changed. Batched: one keystroke can be many mutations. */
+function onComposerChanged() {
+  if (composerChangeQueued) return;
+  composerChangeQueued = true;
+  Promise.resolve().then(() => {
+    composerChangeQueued = false;
+    checkSlash();
+    refreshCardStaleness();
+    positionRail();
+  });
+}
+
+function setupLibraryListeners() {
+  window.addEventListener("keydown", handleSlashKeydown, true);
+  document.addEventListener("input", (e) => {
+    const composer = findComposer();
+    if (composer && (e.target === composer || composer.contains(e.target))) {
+      checkSlash();
+      requestAnimationFrame(positionRail);
+    }
+  }, true);
+  // The caret moving (a click, an arrow key) opens or closes // too, and it is
+  // the one signal every editor gives.
+  document.addEventListener("selectionchange", () => {
+    if (slash || composerHasFocus()) checkSlash();
+  });
+  document.addEventListener("focusin", watchComposer, true);
+  watchComposer();
+  document.addEventListener("focusout", (e) => {
+    if (slash && (e.target === slash.el || slash.el.contains(e.target))) setTimeout(() => {
+      if (slash && !slash.el.contains(document.activeElement) && document.activeElement !== slash.el) closeSlash();
+    }, 0);
+  }, true);
+  window.addEventListener("scroll", () => { positionRail(); if (slash) renderSlash(); }, true);
+  window.addEventListener("resize", () => { positionRail(); positionLibrary(); closeSlash(); });
+
+  // Sign-in state and attachments can change in another tab or the popup.
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (changes.token && area === "local") {
+        const t = changes.token.newValue;
+        libSignedIn = Boolean(t && !isTokenExpired(t));
+        promptsLoaded = false;
+      }
+      // Signed out, or someone else signed in: the attachments are not theirs.
+      // Keyed on the user, not the token, which refreshes itself for the same
+      // user every few days and must not wipe what they attached.
+      const signedOut = changes.token && area === "local" && changes.token.oldValue && !changes.token.newValue;
+      const otherUser = changes.user_id && area === "local" && changes.user_id.oldValue &&
+        changes.user_id.newValue !== changes.user_id.oldValue;
+      if (signedOut || otherUser) {
+        savedPrompts = [];
+        clearAttachments();
+      }
+      if (changes[ATTACH_KEY]) applyAttachments(changes[ATTACH_KEY].newValue);
+    });
+  } catch (error) { onOrphaned(error); }
+
+  getAuth().then((auth) => { libSignedIn = Boolean(auth && !isTokenExpired(auth.token)); });
+  restoreAttachments();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1560,33 +2329,18 @@ async function fetchUsage() {
   }
 }
 
+/**
+ * The count is known now. The library shows it only where it decides
+ * something: a footer line with three or fewer left, and a line in ⋯. It used
+ * to be a bar on screen at every level, which added worry and no decision.
+ */
 function updateUsageBar() {
-  const bar = document.getElementById("pm-usage-bar");
-  const fill = document.getElementById("pm-usage-fill");
-  const label = document.getElementById("pm-usage-label");
-  if (!bar || !fill || !label) return;
-
-  const pct = Math.min(100, Math.round((usageData.count / usageData.limit) * 100));
-  bar.style.display = "flex";
-  fill.style.width = pct + "%";
-  fill.className = pct >= 80 ? "pm-usage-fill pm-usage-warn" : "pm-usage-fill";
-
-  // The number tracks the bar. It was --pm-text-muted at every level — the
-  // dimmest token in the palette — so at 15/15, the one moment the count
-  // decides whether the next thing you try will work at all, it was the
-  // hardest thing in the panel to read, sitting beside an alarm-red bar.
-  label.className =
-    pct >= 100 ? "pm-usage-label pm-usage-label-spent"
-    : pct >= 80 ? "pm-usage-label pm-usage-label-warn"
-    : "pm-usage-label";
-  label.textContent =
-    pct >= 100
-      ? `${usageData.count}/${usageData.limit} today \u2014 none left`
-      : `${usageData.count}/${usageData.limit} today`;
+  usageData.known = true;
+  if (panelOpen) renderLibraryList();
 }
 
 // ══════════════════════════════════════════════════════════════
-// RENDER: TAB CONTENT
+// SCROLL HINTS
 // ══════════════════════════════════════════════════════════════
 
 /**
@@ -1615,279 +2369,6 @@ function watchScrollable(el) {
   el.addEventListener("scroll", () => markScrollable(el), { passive: true });
 }
 
-function renderTabContent() {
-  const body = document.getElementById("pm-tab-body");
-  if (!body) return;
-
-  if (currentTab === "context") {
-    renderContextTab(body);
-  } else if (currentTab === "save") {
-    renderSaveTab(body);
-  } else if (currentTab === "history") {
-    renderHistoryTab(body);
-  } else if (currentTab === "feedback") {
-    renderFeedbackTab(body);
-  }
-
-  // After the tab's own markup lands, so the measurement sees real content.
-  watchScrollable(body);
-  markScrollable(body);
-}
-
-// ══════════════════════════════════════════════════════════════
-// RENDER: CONTEXT TAB (with search + checkboxes)
-// ══════════════════════════════════════════════════════════════
-
-function renderContextTab(container) {
-  let html = `<div class="pm-search-row">
-    <input type="text" class="pm-search-input" id="pm-search" placeholder="Search saved prompts..." value="${escHtml(searchQuery)}" />
-  </div>`;
-
-  const filtered = savedPrompts.filter((p) => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    const matchTitle = (p.title || "").toLowerCase().includes(q);
-    const matchContent = (p.content || "").toLowerCase().includes(q);
-    const matchTags = (p.tags || []).some((t) => t.toLowerCase().includes(q));
-    return matchTitle || matchContent || matchTags;
-  });
-
-  if (savedPrompts.length === 0) {
-    html += `<div class="pm-prompts-empty">No saved prompts yet.<br>Switch to the Save tab to add one.</div>`;
-    container.innerHTML = html;
-    _bindSearch(container);
-    return;
-  }
-
-  if (filtered.length === 0) {
-    html += `<div class="pm-prompts-empty">No prompts match "${escHtml(searchQuery)}"</div>`;
-    container.innerHTML = html;
-    _bindSearch(container);
-    return;
-  }
-
-  container.innerHTML = html;
-  _bindSearch(container);
-
-  filtered.forEach((p) => {
-    const item = document.createElement("div");
-    item.className = `pm-prompt-item${selectedIds.has(p.id) ? " pm-checked" : ""}`;
-
-    const displayTitle = p.title || truncate(p.content, 40);
-
-    item.innerHTML = `
-      <div class="pm-check-chip" title="Click to include in prompt context">
-        <svg class="pm-check-icon" viewBox="0 0 16 16" fill="none">
-          <path d="M3.5 8.5L6.5 11.5L12.5 4.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-      </div>
-      <div class="pm-prompt-body">
-        <div class="pm-prompt-title-row">
-          <div class="pm-prompt-title" title="${escHtml(displayTitle)}">${escHtml(displayTitle)}</div>
-          <span class="pm-context-badge">In Context</span>
-        </div>
-      </div>
-      <div class="pm-prompt-actions">
-        <button class="pm-action-btn pm-view" title="View details">◎</button>
-        <button class="pm-action-btn pm-edit" title="Edit">✎</button>
-        <button class="pm-action-btn pm-delete" title="Delete">✕</button>
-      </div>
-    `;
-
-    item.addEventListener("click", (e) => {
-      if (e.target.closest(".pm-action-btn")) return;
-      if (selectedIds.has(p.id)) {
-        selectedIds.delete(p.id);
-        item.classList.remove("pm-checked");
-      } else {
-        selectedIds.add(p.id);
-        item.classList.add("pm-checked");
-      }
-      updateEnhanceHint();
-    });
-
-    item.querySelector(".pm-view").addEventListener("click", (e) => {
-      e.stopPropagation();
-      showViewPromptModal(p);
-    });
-
-    item.querySelector(".pm-edit").addEventListener("click", (e) => {
-      e.stopPropagation();
-      showEditModal(p);
-    });
-
-    item.querySelector(".pm-delete").addEventListener("click", (e) => {
-      e.stopPropagation();
-      showModal(
-        "Delete Prompt",
-        `Are you sure you want to delete this prompt?\n\n"${truncate(p.content, 100)}"`,
-        [
-          { label: "Cancel", action: "close", style: "secondary" },
-          {
-            label: "Delete",
-            style: "danger",
-            action: async () => {
-              const ok = await deleteSavedPrompt(p.id);
-              if (ok) {
-                selectedIds.delete(p.id);
-                await fetchSavedPrompts();
-                renderTabContent();
-              }
-              closeModal();
-            },
-          },
-        ]
-      );
-    });
-
-    container.appendChild(item);
-  });
-
-  updateEnhanceHint();
-}
-
-function _bindSearch(container) {
-  const input = container.querySelector("#pm-search");
-  if (input) {
-    input.addEventListener("input", (e) => {
-      searchQuery = e.target.value;
-      renderContextTab(container);
-      const newInput = container.querySelector("#pm-search");
-      if (newInput) {
-        newInput.focus();
-        newInput.selectionStart = newInput.selectionEnd = searchQuery.length;
-      }
-    });
-  }
-}
-
-function updateEnhanceHint() {
-  const hint = document.getElementById("pm-enhance-hint");
-  if (!hint) return;
-  const count = selectedIds.size;
-  if (count > 0) {
-    hint.innerHTML = `<span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+E</kbd> enhance ${count} prompt${count > 1 ? "s" : ""}</span>`;
-  } else {
-    hint.innerHTML = `<span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+E</kbd> enhance</span> <span class="pm-enhance-hint-btn"><kbd>${CMD_KEY}Shift+V</kbd> voice</span>`;
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
-// RENDER: SAVE TAB
-// ══════════════════════════════════════════════════════════════
-
-function renderSaveTab(container) {
-  const currentText = getCurrentInputText();
-
-  container.innerHTML = `
-    <div class="pm-save-form">
-      <div class="pm-field">
-        <label class="pm-label">Prompt content</label>
-        <textarea class="pm-textarea" id="pm-save-content" placeholder="Paste or type the prompt you want to save...">${escHtml(currentText)}</textarea>
-      </div>
-      <div class="pm-field">
-        <label class="pm-label">Title <span style="color:var(--pm-text-muted)">(optional)</span></label>
-        <input class="pm-input" id="pm-save-title" placeholder="e.g. Code review template" />
-      </div>
-      <div class="pm-field">
-        <label class="pm-label">Tags <span style="color:var(--pm-text-muted)">(optional, comma-separated)</span></label>
-        <input class="pm-input" id="pm-save-tags" placeholder="e.g. coding, review" />
-      </div>
-      <div class="pm-btn-row">
-        <button class="pm-btn pm-btn-primary" id="pm-save-btn" style="flex:1">Save Prompt</button>
-      </div>
-      <div class="pm-status" id="pm-save-status"></div>
-    </div>
-  `;
-
-  document.getElementById("pm-save-btn").addEventListener("click", async () => {
-    const content = document.getElementById("pm-save-content").value.trim();
-    if (!content) {
-      setStatus("pm-save-status", "Please enter prompt content.", "error");
-      return;
-    }
-    const title = document.getElementById("pm-save-title").value.trim();
-    const tagsRaw = document.getElementById("pm-save-tags").value.trim();
-    const tags = tagsRaw ? tagsRaw.split(",").map((t) => t.trim()).filter((t) => t) : [];
-
-    const btn = document.getElementById("pm-save-btn");
-    btn.disabled = true;
-    btn.textContent = "Saving...";
-
-    const outcome = await createSavedPrompt(content, title, tags);
-    if (outcome === "saved") {
-      setStatus("pm-save-status", "Prompt saved successfully.", "success");
-      document.getElementById("pm-save-content").value = "";
-      document.getElementById("pm-save-title").value = "";
-      document.getElementById("pm-save-tags").value = "";
-      await fetchSavedPrompts();
-    } else if (outcome === "duplicate") {
-      // The form is deliberately left filled: nothing was written, and emptying
-      // it is the gesture that means it was.
-      setStatus("pm-save-status", "That prompt is already in your library.", "info");
-    } else {
-      setStatus("pm-save-status", "Failed to save. Check login status.", "error");
-    }
-    btn.disabled = false;
-    btn.textContent = "Save Prompt";
-  });
-}
-
-// ══════════════════════════════════════════════════════════════
-// RENDER: HISTORY TAB
-// ══════════════════════════════════════════════════════════════
-
-function renderHistoryTab(container) {
-  container.innerHTML = `<div class="pm-prompts-empty">Loading history...</div>`;
-
-  fetchEnhanceHistory().then((history) => {
-    if (history.length === 0) {
-      container.innerHTML = `<div class="pm-prompts-empty">No enhancement history yet.<br>Enhance a prompt to see it here.</div>`;
-      markScrollable(container);
-      return;
-    }
-
-    container.innerHTML = "";
-    history.forEach((item) => {
-      const card = document.createElement("div");
-      card.className = "pm-history-card";
-
-      const timeAgo = item.timestamp ? getTimeAgo(item.timestamp) : "";
-      const modeBadge = { quick: "⚡", deep: "🎯", creative: "✨" }[item.mode] || "🎯";
-
-      card.innerHTML = `
-        <div class="pm-history-header">
-          <span class="pm-history-mode">${modeBadge} ${item.mode || "deep"}</span>
-          <span class="pm-history-time">${timeAgo}</span>
-        </div>
-        <div class="pm-history-original">${escHtml(truncate(item.original, 120))}</div>
-        <div class="pm-history-arrow">↓</div>
-        <div class="pm-history-enhanced">${escHtml(truncate(item.enhanced, 150))}</div>
-        <div class="pm-history-footer">
-          <span class="pm-history-latency">${item.latency}s</span>
-          <button class="pm-action-btn pm-history-use" title="Use this prompt">↗</button>
-          <button class="pm-action-btn pm-history-copy" title="Copy enhanced">📋</button>
-        </div>
-      `;
-
-      card.querySelector(".pm-history-use").addEventListener("click", async () => {
-        const applied = await applyOrFallback(item.enhanced);
-        if (applied && item.log_id) await approveEnhancement(item.log_id);
-      });
-
-      card.querySelector(".pm-history-copy").addEventListener("click", () => {
-        navigator.clipboard.writeText(item.enhanced);
-        showToast("Copied to clipboard!", "success");
-      });
-
-      container.appendChild(card);
-    });
-    // The tab was measured before this async fetch completed. Recalculate the
-    // parent marker now that the history cards are actually in the DOM.
-    markScrollable(container);
-  });
-}
-
 function getTimeAgo(isoString) {
   const date = new Date(isoString);
   const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
@@ -1896,79 +2377,6 @@ function getTimeAgo(isoString) {
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
   if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
   return date.toLocaleDateString();
-}
-
-// ══════════════════════════════════════════════════════════════
-// RENDER: FEEDBACK TAB
-// ══════════════════════════════════════════════════════════════
-
-function renderFeedbackTab(container) {
-  // Pre-fill email from chrome.storage
-  storageGet(["email"], (result) => {
-    const userEmail = result.email || "";
-
-    container.innerHTML = `
-      <div class="pm-save-form">
-        <div class="pm-feedback-header">
-          <div class="pm-feedback-icon">💬</div>
-          <div class="pm-feedback-title">Send Feedback</div>
-          <div class="pm-feedback-subtitle">Bug reports, feature requests, or general feedback</div>
-        </div>
-        <div class="pm-field">
-          <label class="pm-label">Type</label>
-          <select class="pm-input pm-select" id="pm-feedback-type">
-            <option value="bug">🐛 Bug Report</option>
-            <option value="feature">💡 Feature Request</option>
-            <option value="general" selected>💬 General Feedback</option>
-          </select>
-        </div>
-        <div class="pm-field">
-          <label class="pm-label">Message</label>
-          <textarea class="pm-textarea" id="pm-feedback-message" rows="4" placeholder="Describe the issue, suggestion, or feedback..."></textarea>
-        </div>
-        <div class="pm-field">
-          <label class="pm-label">Email <span style="color:var(--pm-text-muted)">(for follow-ups)</span></label>
-          <input class="pm-input" id="pm-feedback-email" type="email" value="${escHtml(userEmail)}" placeholder="your@email.com" />
-        </div>
-        <div class="pm-btn-row">
-          <button class="pm-btn pm-btn-primary" id="pm-feedback-submit" style="flex:1">Submit Feedback</button>
-        </div>
-        <div class="pm-status" id="pm-feedback-status"></div>
-        <div class="pm-feedback-recent" id="pm-feedback-recent"></div>
-      </div>
-    `;
-
-    // Submit handler
-    document.getElementById("pm-feedback-submit").addEventListener("click", async () => {
-      const type = document.getElementById("pm-feedback-type").value;
-      const message = document.getElementById("pm-feedback-message").value.trim();
-      const email = document.getElementById("pm-feedback-email").value.trim();
-
-      if (!message || message.length < 5) {
-        setStatus("pm-feedback-status", "Please write at least a few words.", "error");
-        return;
-      }
-
-      const btn = document.getElementById("pm-feedback-submit");
-      btn.disabled = true;
-      btn.textContent = "Sending...";
-
-      const ok = await submitFeedback(type, message, email);
-      if (ok) {
-        setStatus("pm-feedback-status", "Thank you! Your feedback has been received. ✓", "success");
-        document.getElementById("pm-feedback-message").value = "";
-        // Refresh the recent list
-        loadRecentFeedback();
-      } else {
-        setStatus("pm-feedback-status", "Failed to send. Check your login status.", "error");
-      }
-      btn.disabled = false;
-      btn.textContent = "Submit Feedback";
-    });
-
-    // Load recent feedback
-    loadRecentFeedback();
-  });
 }
 
 async function submitFeedback(type, message, email) {
@@ -1994,41 +2402,6 @@ async function fetchMyFeedback() {
     return data.feedback || [];
   }
   return [];
-}
-
-function loadRecentFeedback() {
-  const recentContainer = document.getElementById("pm-feedback-recent");
-  if (!recentContainer) return;
-
-  recentContainer.innerHTML = `<div class="pm-prompts-empty" style="padding:8px 0;font-size:11px;">Loading recent...</div>`;
-
-  fetchMyFeedback().then((items) => {
-    if (items.length === 0) {
-      recentContainer.innerHTML = "";
-      markScrollable(document.getElementById("pm-tab-body"));
-      return;
-    }
-
-    const typeIcons = { bug: "🐛", feature: "💡", general: "💬" };
-    const statusIcons = { new: "📨", reviewed: "👀", resolved: "✅" };
-
-    let html = `<div class="pm-feedback-recent-title">Recent Feedback</div>`;
-    items.slice(0, 3).forEach((item) => {
-      const icon = typeIcons[item.type] || "💬";
-      const statusIcon = statusIcons[item.status] || "📨";
-      const time = item.timestamp ? getTimeAgo(item.timestamp) : "";
-      html += `
-        <div class="pm-feedback-recent-item">
-          <span class="pm-feedback-recent-icon">${icon}</span>
-          <span class="pm-feedback-recent-msg">${escHtml(item.message)}</span>
-          <span class="pm-feedback-recent-meta">${statusIcon} ${time}</span>
-        </div>
-      `;
-    });
-    recentContainer.innerHTML = html;
-    // Recent feedback arrives after renderTabContent's initial measurement.
-    markScrollable(document.getElementById("pm-tab-body"));
-  });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2073,6 +2446,43 @@ function reopenDraftIfRelevant() {
   return true;
 }
 
+/**
+ * Ask the service worker how an enhancement should be routed, or explain why
+ * it cannot run. Resolves to the route, or null once the user has been told.
+ * Shared by ⊕ and by the card's style buttons, which must fail the same way.
+ */
+async function resolveEnhanceRoute() {
+  if (!(await ensureDataConsent())) return null;
+  // Ask the service worker how this request should be routed. It owns the API
+  // key, so the decision cannot be made here.
+  const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (orphaned) return null;
+  if (!route) {
+    // The worker is unreachable. Almost always this tab's content script was
+    // orphaned by an extension update or reload — the page needs refreshing,
+    // which is a different problem from "you have not set anything up yet".
+    showToast("Prompt Memory was updated — please reload this page.", "error");
+    return null;
+  }
+  if (route.route === "expired") {
+    // Signed in at some point, token past its 7-day life, and no API key to
+    // fall back on. Previously this routed at the backend anyway and produced
+    // an unexplained failure on every attempt.
+    showToast("Your session expired — please sign in again.", "error");
+    openSettings();
+    return null;
+  }
+  if (route.route === "none") {
+    // Neither signed in nor holding a key. Previously this said "Please log in
+    // first" and stopped — the extension delivered nothing at all until the
+    // user completed a Google OAuth flow. Now there are two ways forward and
+    // the faster one needs no account.
+    showSetupRequiredModal();
+    return null;
+  }
+  return route;
+}
+
 async function handleEnhance() {
   if (orphaned || !extensionAlive()) {
     onOrphaned();
@@ -2089,41 +2499,8 @@ async function handleEnhance() {
     showToast("Type a prompt in the chat input first.", "error");
     return;
   }
-  if (!(await ensureDataConsent())) return;
-
-  // Ask the service worker how this request should be routed. It owns the API
-  // key, so the decision cannot be made here.
-  const route = await askWorker({ type: "PM_GET_ROUTE" });
-  if (orphaned) return;
-  if (!route) {
-    // The worker is unreachable. Almost always this tab's content script was
-    // orphaned by an extension update or reload — the page needs refreshing,
-    // which is a different problem from "you have not set anything up yet".
-    showToast("Prompt Memory was updated — please reload this page.", "error");
-    return;
-  }
-  if (route.route === "expired") {
-    // Signed in at some point, token past its 7-day life, and no API key to
-    // fall back on. Previously this routed at the backend anyway and produced
-    // an unexplained failure on every attempt.
-    showToast("Your session expired — please sign in again.", "error");
-    openSettings();
-    return;
-  }
-  if (route.route === "none") {
-    // Neither signed in nor holding a key. Previously this said "Please log in
-    // first" and stopped — the extension delivered nothing at all until the
-    // user completed a Google OAuth flow. Now there are two ways forward and
-    // the faster one needs no account.
-    showSetupRequiredModal();
-    return;
-  }
-
-  const btn = document.getElementById("pm-enhance-btn");
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = "Enhancing...";
-  }
+  const route = await resolveEnhanceRoute();
+  if (!route) return;
 
   enhanceInFlight = true;
   showStreamingDiffModal(inputText);
@@ -2139,15 +2516,11 @@ async function handleEnhance() {
     failStreamingModal(err?.message || "Enhancement failed. Please try again.");
   } finally {
     enhanceInFlight = false;
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = "Enhance Current Prompt";
-    }
   }
 }
 
 /** No account, no server: the service worker calls the user's own provider. */
-async function runDirectEnhance(inputText, route) {
+async function runDirectEnhance(inputText, route, style = currentMode) {
   return new Promise((resolve) => {
     let port;
     try {
@@ -2182,7 +2555,7 @@ async function runDirectEnhance(inputText, route) {
             enhanced: msg.enhanced,
             log_id: null,          // nothing is logged in direct mode
             latency: null,
-            mode: currentMode,
+            mode: style,
             direct: true,
             model: msg.model,
           };
@@ -2198,12 +2571,12 @@ async function runDirectEnhance(inputText, route) {
       finish(() => failStreamingModal("Connection to the extension worker was lost."));
     });
 
-    port.postMessage({ type: "PM_ENHANCE_STREAM", prompt: inputText, mode: currentMode });
+    port.postMessage({ type: "PM_ENHANCE_STREAM", prompt: inputText, mode: style });
   });
 }
 
 /** Signed in: go through the backend so memory features still apply. */
-async function runBackendEnhance(inputText, inputMetadata = {}) {
+async function runBackendEnhance(inputText, inputMetadata = {}, style = currentMode) {
   let parts = [];
   let finished = false;
 
@@ -2226,17 +2599,9 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
         );
         return;
       }
-      lastEnhanceResult = {
-        original: inputText,
-        enhanced: parts.join(""),
-        log_id: metadata.log_id,
-        latency: metadata.latency,
-        mode: metadata.mode,
-        model: metadata.model,
-        context_used: metadata.context_used,
-      };
-      finalizeStreamingModal(lastEnhanceResult);
-
+      // The count first: the card that finalize draws labels its style
+      // buttons with how many rewrites are left, and drawn before this it
+      // was always one rewrite behind — blank on the first of the day.
       if (metadata.usage_today) {
         usageData.count = metadata.usage_today.used;
         usageData.limit = metadata.usage_today.limit;
@@ -2244,8 +2609,20 @@ async function runBackendEnhance(inputText, inputMetadata = {}) {
         usageData.count++;
       }
       updateUsageBar();
+
+      lastEnhanceResult = {
+        original: inputText,
+        enhanced: parts.join(""),
+        log_id: metadata.log_id,
+        latency: metadata.latency,
+        mode: metadata.mode || style,
+        model: metadata.model,
+        context_used: metadata.context_used,
+      };
+      finalizeStreamingModal(lastEnhanceResult);
     },
-    inputMetadata
+    inputMetadata,
+    style
   );
 
   // enhancePromptStream returns without ever invoking onDone if the request
@@ -2323,6 +2700,15 @@ let cardExpanded = false;
 let cardMinimized = false;
 let cardError = "";
 let pillStreamingPreview = "";
+// Every rewrite of this draft, one per style asked for, oldest first. The card
+// shows cardVersions[cardVersionIndex]; cardResult is always that entry.
+let cardVersions = [];
+let cardVersionIndex = 0;
+// Set while a style rerun streams: the versions to go back to if it is
+// cancelled or fails. A rerun must never cost the user the draft they had.
+let cardRerunFrom = null;
+// The style the streaming card is waiting on, for its title.
+let cardStreamingStyle = "";
 // Set by whichever stream runner is active; called by closeCard() while
 // streaming. Without it "cancel" only hid the card, and the rewrite popped
 // back up as a finished draft when the stream it was still running ended.
@@ -2469,10 +2855,7 @@ function setupCardInteractions(card) {
       moved = true;
       card.classList.add(kind === "move" ? "pm-card-moving" : "pm-card-resizing");
       if (kind === "resize") {
-        const panel = document.querySelector("#pm-panel.pm-open");
-        const rightBound = panel
-          ? Math.min(window.innerWidth - 12, panel.getBoundingClientRect().left - 8)
-          : window.innerWidth - 12;
+        const rightBound = window.innerWidth - 12;
         // A resize keeps its top-left corner fixed. The ordinary layout clamp
         // can move the whole card when a requested size passes an edge.
         cardLayout = clampCardResize(r, dx, dy, rightBound, window.innerHeight);
@@ -2559,15 +2942,10 @@ function positionCard() {
   const margin = 12;
   const pillBox = pill.getBoundingClientRect();
 
-  // The open panel is a hard right-hand boundary. The card outranks it in the
-  // stacking order — deliberately, since nothing may cover a card whose Tab key
-  // is live — which means an overlap would hide the panel's own controls.
-  const panel = document.querySelector("#pm-panel.pm-open");
-  const rightBound = panel
-    ? Math.min(window.innerWidth - margin, panel.getBoundingClientRect().left - gap)
-    : window.innerWidth - margin;
-
-  if (panel && rightBound < 280) { hideCard(); return; }
+  // The library no longer takes a column of the page: it is a sheet on the
+  // pill that sits above the card while open and goes away on the next click
+  // elsewhere, so the card keeps the whole width.
+  const rightBound = window.innerWidth - margin;
 
   // Once the user moves or resizes the card, their layout wins. Keep every
   // edge reachable after a window resize or after the library panel opens.
@@ -2681,6 +3059,7 @@ function openCard(innerHTML) {
   card.innerHTML = innerHTML +
     `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" title="Drag to resize, or click for layout controls"></button>`;
   cardExpanded = true;
+  positionRail();   // the card takes the chat box's top edge; the rail steps aside
   setupCardInteractions(card);
   if (focusedId) card.querySelector(`[id="${focusedId}"]`)?.focus({ preventScroll: true });
   positionCard();
@@ -2718,6 +3097,9 @@ function hideCard() {
   }
   cardExpanded = false;
   cardMinimized = true;
+  // Folding the card leaves the pill as it was, so placement is not re-run on
+  // its own; the rail has to be told the edge is free again.
+  positionRail();
   draftStore.setExpanded(false);
   renderPill();
 }
@@ -2750,6 +3132,10 @@ function closeCard() {
   cardError = "";
   cardMinimized = false;
   pillStreamingPreview = "";
+  cardVersions = [];
+  cardVersionIndex = 0;
+  cardRerunFrom = null;
+  cardStreamingStyle = "";
   draftStore.clear();
   renderPill();
 }
@@ -2780,7 +3166,8 @@ function cardHead(title, kind = "") {
 }
 
 // ── Entry point 1: the flow is starting ──
-function showStreamingDiffModal(originalText) {
+function showStreamingDiffModal(originalText, style = currentMode) {
+  cardStreamingStyle = style;
   cardOriginal = originalText;
   cardBasedOn = norm(originalText);
   cardHasBaseline = true;
@@ -2796,7 +3183,7 @@ function showStreamingDiffModal(originalText) {
 /** The streaming card's markup, also used to re-open it from the pill. */
 function showStreamingCardAgain() {
   openCard(
-    cardHead("Rewriting\u2026", "live") +
+    cardHead(`Rewriting${STYLE_NAMES[cardStreamingStyle] ? " \u00b7 " + STYLE_NAMES[cardStreamingStyle] : ""}\u2026`, "live") +
     `<div class="pm-card-text" id="pm-stream-target"><span class="pm-card-cursor"></span></div>` +
     cardFoot([
       `<button class="pm-card-act" id="pm-card-cancel">${cardKey("esc")} cancel</button>`,
@@ -2805,7 +3192,7 @@ function showStreamingCardAgain() {
     ])
   );
   if (pillStreamingPreview) updateStreamingText(pillStreamingPreview);
-  document.getElementById("pm-card-cancel")?.addEventListener("click", closeCard);
+  document.getElementById("pm-card-cancel")?.addEventListener("click", cancelStreaming);
   document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
 }
 
@@ -2824,7 +3211,33 @@ function finalizeStreamingModal(result) {
   // Cancelled — or replaced by something else — while the tokens were still
   // arriving. The result is dropped; it is no longer the draft.
   if (cardState !== "streaming") return;
+  if (cardRerunFrom) {
+    cardVersions = [...cardRerunFrom.versions, result];
+    cardRerunFrom = null;
+  }
   showDiffModal(result);
+}
+
+/**
+ * Stop the rewrite in flight. A first rewrite has nothing to fall back to, so
+ * the draft goes; a style rerun goes back to the version it started from.
+ */
+function cancelStreaming() {
+  if (cardState !== "streaming" || !cardRerunFrom) { closeCard(); return; }
+  if (cancelActiveStream) cancelActiveStream();
+  cancelActiveStream = null;
+  restoreFromRerun();
+}
+
+/** Put the draft back exactly as it was before a style rerun started. */
+function restoreFromRerun() {
+  const from = cardRerunFrom;
+  cardRerunFrom = null;
+  cardVersions = from.versions;
+  cardVersionIndex = from.index;
+  cardState = "ready";
+  pillStreamingPreview = "";
+  showDiffModal(cardVersions[cardVersionIndex]);
 }
 
 // ── Entry point 4: failed ──
@@ -2832,6 +3245,15 @@ function failStreamingModal(message) {
   // Only a stream in flight (or a re-opened error) can become an error card;
   // a cancelled stream's late failure is nobody's business.
   if (cardState !== "streaming" && cardState !== "error") return;
+  if (cardState === "streaming" && cardRerunFrom) {
+    // The error card's "try again" and "dismiss" both discard the draft. For
+    // a rerun that would throw away the version the user was happy enough
+    // with to ask for a variation of, so it comes back instead.
+    const style = STYLE_NAMES[cardStreamingStyle] || "new";
+    restoreFromRerun();
+    showToast(`Couldn\u2019t make the ${style} version: ${message}`, "error");
+    return;
+  }
   cardState = "error";
   cardError = message;
   renderPill();
@@ -2857,6 +3279,9 @@ function showDiffModal(result) {
   // minimized, and the \ toggle or a staleness flip re-renders the same
   // result — all of those respect the minimize.
   if (result !== cardResult && cardState !== "streaming") cardMinimized = false;
+  // A result that is not one of this draft's versions is a new draft.
+  if (!cardVersions.includes(result)) cardVersions = [result];
+  cardVersionIndex = cardVersions.indexOf(result);
   cardResult = result;
   cardState = "ready";
   lastEnhanceResult = result;
@@ -2874,6 +3299,8 @@ function showDiffModal(result) {
   // Written through so the draft outlives this page. Cheap, and idempotent.
   draftStore.save({
     result,
+    versions: cardVersions,
+    index: cardVersionIndex,
     basedOn: cardBasedOn,
     createdAt: result.createdAt || Date.now(),
     source: window.location.hostname,
@@ -2904,7 +3331,7 @@ function showDiffModal(result) {
     ? cardHead(cardShowingOriginal
         ? "Prompt changed \u2014 this is the text the rewrite was built from"
         : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
-    : cardHead(cardShowingOriginal ? "Original" : "Rewrite");
+    : cardHead(cardShowingOriginal ? "Original" : `Rewrite${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
 
   // Only shown when a saved prompt actually shaped the rewrite. The old footer
   // printed four zeros on every result, which teaches people to stop reading it.
@@ -2967,7 +3394,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + chip + cardFoot(actions));
+  const card = openCard(head + body + chip + cardStyleRow(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -2987,7 +3414,100 @@ function showDiffModal(result) {
     showDiffModal(cardResult);
   });
   document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
+  card.querySelectorAll("[data-pm-style]").forEach((b) =>
+    b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
+  document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
+  document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
   renderPill();
+}
+
+/**
+ * The other two styles, and a way back through the versions already made.
+ *
+ * Hidden while the original is showing (there is no rewrite to vary) and while
+ * the draft is stale (Redo is the only honest action then). A style already
+ * made is shown rather than re-requested: switching back to it is free, and
+ * spending one of fifteen daily rewrites on text you have already seen is the
+ * thing this row must never do.
+ */
+function cardStyleRow(result) {
+  if (cardShowingOriginal || cardStale) return "";
+  const on = STYLES.includes(result.mode) ? result.mode : currentMode;
+  const left = result.direct ? Infinity : usageData.limit - usageData.count;
+  const cost = result.direct ? "Makes one more call with your own key." : "Uses one of today\u2019s rewrites.";
+  const styles = STYLES.filter((s) => s !== on).map((s) => {
+    const made = cardVersions.some((v) => v.mode === s);
+    const spent = !made && left <= 0;
+    const note = !made && left > 0 && left <= 3 ? ` \u00b7 ${left} left` : "";
+    const title = made
+      ? `Show the ${STYLE_NAMES[s]} version you already made`
+      : spent
+        ? "No rewrites left today"
+        : `Rewrite your original again in the ${STYLE_NAMES[s]} style: ${STYLE_HINTS[s]}. ${cost}`;
+    return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
+      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
+  }).join("");
+  const n = cardVersions.length;
+  const versions = n > 1
+    ? `<span class="pm-card-versions" role="group" aria-label="Versions">` +
+      `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
+      `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
+      `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
+      `</span>`
+    : "";
+  return `<div class="pm-card-styles">${versions}<span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+}
+
+/** Show another version of this draft. Free: nothing is requested. */
+function stepVersion(delta) {
+  const i = cardVersionIndex + delta;
+  if (cardState !== "ready" || i < 0 || i >= cardVersions.length) return;
+  cardShowingOriginal = false;
+  showDiffModal(cardVersions[i]);
+}
+
+/**
+ * Rewrite the same original again in another style, keeping the versions
+ * already made. The default ⊕ runs is not changed by this.
+ */
+async function rerunInStyle(style) {
+  if (cardState !== "ready" || !cardResult || cardStale || !STYLES.includes(style)) return;
+  const made = cardVersions.findIndex((v) => v.mode === style);
+  if (made !== -1) { stepVersion(made - cardVersionIndex); return; }
+  if (enhanceInFlight) {
+    showToast("Already enhancing \u2014 hang on a moment.", "info");
+    return;
+  }
+  if (!cardResult.direct && usageData.limit - usageData.count <= 0) {
+    showToast("No rewrites left today.", "error");
+    return;
+  }
+  const original = cardVersions[0]?.original || cardResult.original || cardOriginal;
+  if (!original) return;
+  const route = await resolveEnhanceRoute();
+  // The user may have inserted, discarded or edited while the worker answered.
+  if (!route || cardState !== "ready" || isStaleAgainstComposer()) return;
+
+  cardRerunFrom = { versions: cardVersions.slice(), index: cardVersionIndex };
+  // Staleness is judged against what the draft was built from, which is not
+  // always the text being rewritten: a voice draft's baseline is the chat box
+  // as it was when recording started, and its original is the transcript.
+  // showStreamingDiffModal() rebases on the text it is given, so the rerun
+  // puts the draft's own baseline back. Without this, a voice draft taken over
+  // a half-written message turned stale the moment a style was tried.
+  const basedOn = cardBasedOn;
+  enhanceInFlight = true;
+  showStreamingDiffModal(original, style);
+  cardBasedOn = basedOn;
+  try {
+    if (route.route === "direct") await runDirectEnhance(original, route, style);
+    else await runBackendEnhance(original, {}, style);
+  } catch (err) {
+    console.error("Prompt Memory: style rerun failed", err);
+    failStreamingModal(err?.message || "Enhancement failed. Please try again.");
+  } finally {
+    enhanceInFlight = false;
+  }
 }
 
 /**
@@ -3109,11 +3629,16 @@ function handleCardKeydown(e) {
   if (!card) return;
   if (e.key === "Escape") {
     e.preventDefault(); e.stopPropagation();
-    if (cardState === "ready") hideCard(); else closeCard();
+    if (cardState === "ready") hideCard();
+    else if (cardState === "streaming") cancelStreaming();
+    else closeCard();
     return;
   }
   // Save/redo belong to the review controls, not the host's editor.
   if (!inCard || cardState !== "ready") return;
+  if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey && cardVersions.length > 1) {
+    e.preventDefault(); e.stopPropagation(); stepVersion(e.key === "]" ? 1 : -1); return;
+  }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
   }
@@ -3330,73 +3855,6 @@ function showToast(message, type = "info") {
 }
 
 // ══════════════════════════════════════════════════════════════
-// VIEW PROMPT MODAL
-// ══════════════════════════════════════════════════════════════
-
-function showViewPromptModal(prompt) {
-  const overlay = getOrCreateModalOverlay();
-  const modal = overlay.querySelector(".pm-modal");
-
-  const displayTitle = prompt.title || "Untitled Prompt";
-  const tags = Array.isArray(prompt.tags) ? prompt.tags.filter(Boolean) : [];
-  const tagsHtml =
-    tags.length > 0
-      ? `<div class="pm-view-section">
-           <div class="pm-view-label">Tags</div>
-           <div class="pm-tags">${tags.map((t) => `<span class="pm-tag">${escHtml(t)}</span>`).join("")}</div>
-         </div>`
-      : "";
-
-  modal.innerHTML = `
-    <div class="pm-modal-header">
-      <span class="pm-modal-title">Saved Prompt Details</span>
-      <button class="pm-header-close pm-modal-close-btn" title="Close">×</button>
-    </div>
-    <div class="pm-modal-body pm-view-modal-body">
-      <div class="pm-view-section">
-        <div class="pm-view-label">Title</div>
-        <div class="pm-view-title-text">${escHtml(displayTitle)}</div>
-      </div>
-      <div class="pm-view-section">
-        <div class="pm-view-label">Prompt Content</div>
-        <div class="pm-view-content-box">${escHtml(prompt.content || "")}</div>
-      </div>
-      ${tagsHtml}
-    </div>
-    <div class="pm-modal-footer">
-      <button class="pm-btn pm-btn-secondary" id="pm-view-copy-btn">📋 Copy Content</button>
-      <button class="pm-btn pm-btn-secondary" id="pm-view-edit-btn">✎ Edit</button>
-      <button class="pm-btn pm-btn-primary pm-modal-close-btn">Close</button>
-    </div>
-  `;
-
-  overlay.querySelectorAll(".pm-modal-close-btn").forEach((b) =>
-    b.addEventListener("click", closeModal)
-  );
-
-  const copyBtn = modal.querySelector("#pm-view-copy-btn");
-  copyBtn?.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(prompt.content || "");
-      copyBtn.textContent = "✓ Copied!";
-      setTimeout(() => {
-        if (copyBtn) copyBtn.textContent = "📋 Copy Content";
-      }, 2000);
-    } catch {
-      showToast("Failed to copy content", "warning");
-    }
-  });
-
-  const editBtn = modal.querySelector("#pm-view-edit-btn");
-  editBtn?.addEventListener("click", () => {
-    closeModal();
-    showEditModal(prompt);
-  });
-
-  overlay.classList.add("pm-visible");
-}
-
-// ══════════════════════════════════════════════════════════════
 // EDIT MODAL
 // ══════════════════════════════════════════════════════════════
 
@@ -3448,7 +3906,7 @@ function showEditModal(prompt) {
     const ok = await updateSavedPrompt(prompt.id, fields);
     if (ok) {
       await fetchSavedPrompts();
-      renderTabContent();
+      renderLibrary();
     }
     closeModal();
   });
@@ -3554,7 +4012,7 @@ function getOrCreateModalOverlay() {
     // tokens before the next theme toggle.
     overlay.setAttribute(
       "data-pm-theme",
-      document.getElementById("pm-panel")?.getAttribute("data-pm-theme") || "dark"
+      uiTheme
     );
     overlay.innerHTML = `<div class="pm-modal"></div>`;
     overlay.addEventListener("click", (e) => {
@@ -3678,15 +4136,25 @@ function selectAllIn(el) {
  * every editor tested, and costs nothing where the selection would have been
  * replaced anyway.
  */
-function clearComposer(el) {
+async function clearComposer(el) {
   el.focus();
   selectAllIn(el);
+  // Editors that keep their own model of the selection (Lexical) learn of a
+  // programmatic one from selectionchange, a beat later. Deleting at once
+  // deleted nothing in their model, execCommand's DOM edit was then reverted,
+  // and the insert that followed landed after the old text: the chat box
+  // ended up holding its text and the rewrite twice.
+  await nextFrame();
+  // Ask the way a real delete key does. An editor that handles it cancels the
+  // event and deletes through its own state; one that does not leaves it to
+  // execCommand, as before.
+  const handled = !el.dispatchEvent(new InputEvent("beforeinput", {
+    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
+  }));
+  if (handled) { await nextFrame(); return; }
   try {
     if (document.execCommand("delete", false)) return;
   } catch { /* fall through */ }
-  el.dispatchEvent(new InputEvent("beforeinput", {
-    bubbles: true, cancelable: true, inputType: "deleteContentBackward",
-  }));
   if (norm(composerText(el))) el.textContent = "";
 }
 
@@ -3793,8 +4261,9 @@ async function applyToInput(text) {
     }
 
     for (const strategy of INSERT_STRATEGIES) {
-      clearComposer(el);
+      await clearComposer(el);
       selectAllIn(el);
+      await nextFrame();   // the same beat, for the insert's selection
       try {
         strategy(el, text);
       } catch {
@@ -3872,7 +4341,7 @@ function setupPassiveTracking() {
     if (
       btn &&
       !btn.classList.contains("pm-trigger") &&
-      !btn.closest("#pm-panel") &&
+      !btn.closest("#pm-library, #pm-rail, #pm-caret") &&
       !btn.closest("#pm-modal-overlay") &&
       lastText.trim().length > 5
     ) {
@@ -4210,7 +4679,7 @@ function showVoiceOverlay() {
     // panel's active theme instead of resolving its variables from :root.
     overlay.setAttribute(
       "data-pm-theme",
-      document.getElementById("pm-panel")?.getAttribute("data-pm-theme") || "dark"
+      uiTheme
     );
     document.body.appendChild(overlay);
   }
@@ -4305,7 +4774,6 @@ function setStatus(id, msg, type) {
 
 function applyTheme(theme) {
   const els = [
-    document.getElementById("pm-panel"),
     document.getElementById("pm-trigger"),
     document.querySelector(".pm-modal-overlay"),
     document.querySelector(".pm-voice-overlay"),
@@ -4317,10 +4785,8 @@ function applyTheme(theme) {
     document.getElementById("pm-toast-stack"),
     document.getElementById("pm-library-btn"),
   ].filter(Boolean);
+  uiTheme = theme;
   els.forEach((el) => el.setAttribute("data-pm-theme", theme));
-
-  const toggleBtn = document.getElementById("pm-theme-toggle");
-  if (toggleBtn) toggleBtn.textContent = theme === "dark" ? "☀️" : "🌙";
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -4341,7 +4807,8 @@ async function init() {
   await restoreCardLayout();
   if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   createTrigger();
-  createPanel();
+  createLibrary();
+  setupLibraryListeners();
   setupKeyboardShortcut();
   setupPassiveTracking();
   watchNavigation();
