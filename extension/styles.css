@@ -1720,6 +1720,79 @@
 @media (prefers-reduced-motion: reduce) {
     .pm-library-btn { transition: none; }
 }
+
+/* Shortcuts — the same chip, one step further up the column.
+   Positioned from content.js (placePill) so it always stands on Library and
+   shares its edge, whichever way the pill is docked. */
+.pm-help-btn {
+    position: fixed;
+    right: 66px;
+    bottom: 61px;
+    z-index: var(--pm-z-trigger);
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 13px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    color: var(--pm-con-text-2);
+    font-family: var(--pm-font);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+    box-shadow: var(--pm-con-shadow);
+    opacity: 0;
+    transform: translateX(8px);
+    pointer-events: none;
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+.pm-help-btn[hidden] { display: none; }
+/* Same defence as the Library chip: a host's own `button { width: … }` would
+   otherwise stretch this over ⊕ and take its clicks. */
+.pm-help-btn {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    padding: 0 10px !important;
+    margin: 0 !important;
+    overflow: hidden;
+    line-height: 1;
+    text-transform: none;
+    letter-spacing: normal;
+}
+.pm-help-btn svg { width: 14px; height: 14px; flex: none; }
+
+/* 40ms behind Library, so the cluster unfurls upward instead of both chips
+   appearing at once. On the way out it leads by the same amount, which reads
+   as the column folding back down into ⊕. */
+.pm-help-btn.pm-lib-reveal,
+.pm-trigger:focus-visible ~ .pm-help-btn,
+.pm-help-btn:focus-visible {
+    opacity: 1;
+    transform: translateX(0);
+    pointer-events: auto;
+    transition-delay: 40ms;
+}
+
+.pm-help-btn:hover {
+    color: var(--pm-con-text);
+    border-color: var(--pm-con-border-hover);
+}
+
+.pm-help-btn:focus-visible {
+    outline: 2px solid var(--pm-accent);
+    outline-offset: 2px;
+    transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pm-help-btn { transition: none; }
+}
 /* A script left behind by an extension update cannot call chrome.* again. */
 .pm-reload-notice {
   position: fixed;

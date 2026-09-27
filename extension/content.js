@@ -842,16 +842,46 @@ function createTrigger() {
   // pill is docked left or has grown wide, and above it when beside would put
   // it on the chat box. Entering either one shows the chip; leaving both
   // hides it after a grace period long enough to cross any gap.
+  // Help, stacked above the Library chip in the same reveal.
+  //
+  // There is a "?" chord for this, and on a chat page it is close to useless:
+  // "?" has to stay typable, so it only answers when focus is NOT in a text
+  // box — and on ChatGPT the caret is in the composer essentially always. A
+  // key you must first click away from the thing you are typing in to press
+  // is not a shortcut, it is a puzzle. So the chord stays for pages where it
+  // does fire, and this is the way people actually find the list: in the same
+  // place, by the same gesture, as the Library they already found here.
+  const help = document.createElement("button");
+  help.id = "pm-help-btn";
+  help.className = "pm-help-btn";
+  help.type = "button";
+  help.innerHTML = `${LIB_ICON.help}<span>Shortcuts</span>`;
+  help.title = "Keyboard shortcuts";
+  help.setAttribute("aria-haspopup", "dialog");
+  help.setAttribute("aria-expanded", "false");
+  help.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openShortcuts();
+  });
+  document.body.appendChild(help);
+
   let libRevealTimer = null;
   const revealChip = () => {
     clearTimeout(libRevealTimer);
-    if (!panelOpen) lib.classList.add("pm-lib-reveal");
+    if (panelOpen) return;
+    lib.classList.add("pm-lib-reveal");
+    help.classList.add("pm-lib-reveal");
   };
   const concealChip = () => {
     clearTimeout(libRevealTimer);
-    libRevealTimer = setTimeout(() => lib.classList.remove("pm-lib-reveal"), 350);
+    libRevealTimer = setTimeout(() => {
+      lib.classList.remove("pm-lib-reveal");
+      help.classList.remove("pm-lib-reveal");
+    }, 350);
   };
-  for (const el of [btn, lib]) {
+  // Every member of the cluster both shows it and holds it open, so crossing
+  // from ⊕ to Library to Shortcuts never passes over a gap that hides it.
+  for (const el of [btn, lib, help]) {
     el.addEventListener("pointerenter", revealChip);
     el.addEventListener("pointerleave", concealChip);
   }
@@ -862,6 +892,7 @@ function createTrigger() {
     uiTheme = theme;
     btn.setAttribute("data-pm-theme", theme);
     lib.setAttribute("data-pm-theme", theme);
+    help.setAttribute("data-pm-theme", theme);
   });
 }
 
@@ -1133,10 +1164,12 @@ function placePill() {
         : window.innerWidth - beside - lib.offsetWidth;
       const libTop = window.innerHeight - bottom - (pill.offsetHeight + lib.offsetHeight) / 2;
       const cb = composer && c0(composer);
-      const overlaps = (left, top) => cb && left < cb.right && left + lib.offsetWidth > cb.left && top < cb.bottom && top + lib.offsetHeight > cb.top;
+      const overlaps = (left, top, w = lib.offsetWidth, h = lib.offsetHeight) =>
+        cb && left < cb.right && left + w > cb.left && top < cb.bottom && top + h > cb.top;
       const clearOfComposer = !overlaps(libLeft, libTop);
 
       lib.dataset.dock = pillDock;
+      const libH = lib.offsetHeight;
       const inline = clearOfComposer ? beside : inset;
       lib.style.top = "auto";
       lib.style.bottom = clearOfComposer
@@ -1147,8 +1180,36 @@ function placePill() {
       const finalLeft = pillDock === "left" ? inline : window.innerWidth - inline - lib.offsetWidth;
       const finalTop = clearOfComposer ? libTop : window.innerHeight - bottom - pill.offsetHeight - 8 - lib.offsetHeight;
       lib.hidden = Boolean(overlaps(finalLeft, finalTop)) || finalTop < PILL_MARGIN;
+
+      // Shortcuts sits directly on top of Library, sharing its edge offset, so
+      // the cluster reads as one column growing upward from ⊕ rather than as
+      // chips scattered around it. Above and not below because below is the
+      // composer on every one of these sites.
+      const hlp = document.getElementById("pm-help-btn");
+      if (hlp) {
+        // libH is measured above, before lib.hidden may have zeroed it: a
+        // display:none element reports offsetHeight 0, which would stack this
+        // chip on the wrong row the moment Library came back.
+        const hlpBottom = (parseFloat(lib.style.bottom) || 0) + libH + 8;
+        hlp.dataset.dock = pillDock;
+        hlp.style.top = "auto";
+        hlp.style.bottom = hlpBottom + "px";
+        hlp.style.left = pillDock === "left" ? inline + "px" : "auto";
+        hlp.style.right = pillDock === "right" ? inline + "px" : "auto";
+        const hlpW = hlp.offsetWidth, hlpH = hlp.offsetHeight;
+        const hlpLeft = pillDock === "left" ? inline : window.innerWidth - inline - hlpW;
+        const hlpTop = window.innerHeight - hlpBottom - hlpH;
+        // Hidden with Library, not merely alongside it: if there is no room
+        // for the chip this one stands on, a lone "?" floating over the page
+        // belongs to nothing.
+        hlp.hidden = lib.hidden
+          || Boolean(overlaps(hlpLeft, hlpTop, hlpW, hlpH))
+          || hlpTop < PILL_MARGIN;
+      }
     }
   }
+  const hlpOff = document.getElementById("pm-help-btn");
+  if (hlpOff && panelOpen) hlpOff.hidden = true;
   positionCard();
   positionToasts();
   positionLibrary();
@@ -1184,8 +1245,10 @@ function setupPillDrag(pill) {
     pill.style.left = left + "px";
     pill.style.top = top + "px";
     // The card and library button follow live, not just on release.
-    const lib = document.getElementById("pm-library-btn");
-    if (lib) lib.style.opacity = "0";
+    for (const id of ["pm-library-btn", "pm-help-btn"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.opacity = "0";
+    }
     positionCard();
   });
 
@@ -1194,8 +1257,10 @@ function setupPillDrag(pill) {
     try { pill.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     start = null;
     pill.classList.remove("pm-pill-dragging");
-    const lib = document.getElementById("pm-library-btn");
-    if (lib) lib.style.opacity = "";
+    for (const id of ["pm-library-btn", "pm-help-btn"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.opacity = "";
+    }
     if (!moved) return;
     pillSuppressClick = true;
 
@@ -1374,6 +1439,9 @@ const LIB_ICON = {
   clip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 5.5 6 10a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4L4 8a4.2 4.2 0 0 0 6 6l3.5-3.5"/></svg>',
   back: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
   shelf: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="4" rx="1.2"/><path d="M3.5 9.5h9M4.5 12.5h7"/></svg>',
+  // Drawn rather than typed, like the others: a "?" left to the host's font
+  // renders at a different weight and baseline on every site.
+  help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
 };
 
 // "recent" is the History tab: every rewrite, as the popup and the consent
@@ -1439,7 +1507,7 @@ function createLibrary() {
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
 
@@ -1459,7 +1527,12 @@ function togglePanel(force) {
   lib.hidden = !open;
   const chip = document.getElementById("pm-library-btn");
   chip?.setAttribute("aria-expanded", String(open));
-  if (open) chip?.classList.remove("pm-lib-reveal");
+  const helpChip = document.getElementById("pm-help-btn");
+  helpChip?.setAttribute("aria-expanded", String(open && libPage === "shortcuts"));
+  if (open) {
+    chip?.classList.remove("pm-lib-reveal");
+    helpChip?.classList.remove("pm-lib-reveal");
+  }
   if (open) {
     closeSlash();
     libPage = "list";
@@ -5153,6 +5226,7 @@ function applyTheme(theme) {
     document.getElementById("pm-card"),
     document.getElementById("pm-toast-stack"),
     document.getElementById("pm-library-btn"),
+    document.getElementById("pm-help-btn"),
   ].filter(Boolean);
   uiTheme = theme;
   els.forEach((el) => el.setAttribute("data-pm-theme", theme));

@@ -795,11 +795,18 @@ def test_the_chip_survives_the_trip_from_the_plus():
     assert ".pm-trigger:hover ~ .pm-library-btn" not in STYLES_CSS
     assert ".pm-library-btn.pm-lib-reveal" in STYLES_CSS
     create = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
-    assert "for (const el of [btn, lib])" in create
+    # Every member of the cluster holds the reveal open, or crossing from one
+    # to the next passes over a gap that hides all of them.
+    assert "for (const el of [btn, lib, help])" in create
     assert 'addEventListener("pointerenter", revealChip)' in create
     assert 'addEventListener("pointerleave", concealChip)' in create
-    assert re.search(r"setTimeout\(\(\) => lib\.classList\.remove\(\"pm-lib-reveal\"\), \d{3}\)", create), \
-        "leaving must hide the chip after a grace period, not at once"
+    # The grace period, now hiding the whole cluster rather than one chip.
+    conceal = create[create.index("const concealChip"):]
+    conceal = conceal[:conceal.index("};")]
+    assert re.search(r"setTimeout\(.*?\}, \d{3}\)", conceal, re.S), \
+        "leaving must hide the cluster after a grace period, not at once"
+    assert conceal.count('classList.remove("pm-lib-reveal")') == 2, \
+        "both chips retire together, or one is left hanging alone"
 
 
 def test_the_primary_action_is_unchanged():
