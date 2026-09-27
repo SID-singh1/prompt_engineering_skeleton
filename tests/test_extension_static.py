@@ -1509,3 +1509,91 @@ def test_the_chrome_shortcut_address_is_copied_not_linked():
     assert '<a ' not in body, "a chrome:// link does nothing when clicked"
     assert 'data-act="copyshortcuts"' in body
     assert 'case "copyshortcuts":' in CONTENT_JS
+
+
+# ── Shortcuts: a chip in the cluster, not only a chord ──────────────────
+
+def test_the_shortcuts_list_has_a_pointer_route_not_only_the_question_mark():
+    """
+    "?" has to stay typable, so it only fires when focus is NOT in a text box.
+    On ChatGPT the caret is in the composer essentially always, which made the
+    chord unreachable exactly where it was most wanted. The chip is the route
+    that works there; the chord stays for pages where it does fire.
+    """
+    create = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    assert 'help.id = "pm-help-btn"' in create
+    assert "openShortcuts()" in create[create.index('help.id = "pm-help-btn"'):]
+    # And the chord is still there.
+    assert 'e.key !== "?"' in CONTENT_JS
+
+
+def test_the_shortcuts_chip_follows_the_trigger_in_the_dom():
+    """Keyboard reveal is a sibling selector, so order is load-bearing."""
+    assert CONTENT_JS.index('btn.id = "pm-trigger"') < CONTENT_JS.index('help.id = "pm-help-btn"')
+    assert ".pm-trigger:focus-visible ~ .pm-help-btn" in STYLES_CSS
+    assert ".pm-help-btn.pm-lib-reveal" in STYLES_CSS
+
+
+def test_the_shortcuts_chip_stands_on_the_library_chip():
+    """
+    It is positioned from placePill against the Library chip's own bottom and
+    edge offset, so the cluster stays one column whichever way the pill docks.
+    A fixed CSS offset would drift the moment the pill moved.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert 'document.getElementById("pm-help-btn")' in place
+    assert 'parseFloat(lib.style.bottom)' in place, "stacked on Library's real bottom"
+    assert "+ libH + 8" in place, "and on its height, measured before it can be hidden"
+    assert 'hlp.style.left = pillDock === "left"' in place
+
+
+def test_the_library_height_is_read_before_the_chip_can_be_hidden():
+    """
+    A display:none element reports offsetHeight 0. Reading it after lib.hidden
+    is set would stack Shortcuts on the wrong row the moment Library returned.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    # Against the overlap assignment specifically. `lib.hidden = panelOpen`
+    # runs earlier and is not the one that can zero the measurement: the block
+    # below it only runs when the panel is closed.
+    hide = place.index("lib.hidden = Boolean(overlaps(")
+    assert place.index("const libH = lib.offsetHeight") < hide
+    assert place.index("+ libH + 8") > hide, "and the stack is computed from the saved height"
+
+
+def test_the_composer_overlap_test_measures_the_chip_it_is_asked_about():
+    """
+    overlaps() used to close over the Library chip's width and height, so
+    asking it about the narrower Shortcuts chip tested the wrong box.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert "const overlaps = (left, top, w = lib.offsetWidth, h = lib.offsetHeight)" in place
+    assert "overlaps(hlpLeft, hlpTop, hlpW, hlpH)" in place
+
+
+def test_the_shortcuts_chip_goes_when_the_library_chip_has_no_room():
+    """A lone "?" floating over the page belongs to nothing."""
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert "hlp.hidden = lib.hidden" in place
+    assert "PILL_MARGIN" in place[place.index("hlp.hidden = lib.hidden"):]
+
+
+def test_the_shortcuts_chip_is_not_outside_the_ui():
+    """A click on it must not read as a click-elsewhere that closes the sheet."""
+    assert "#pm-library-btn, #pm-help-btn, #pm-trigger" in CONTENT_JS
+
+
+def test_the_whole_cluster_fades_while_the_pill_is_dragged():
+    assert CONTENT_JS.count('for (const id of ["pm-library-btn", "pm-help-btn"])') == 2
+
+
+def test_the_shortcuts_chip_defends_itself_from_host_button_css():
+    """
+    The Library chip needed width/padding pinned !important because a host's
+    own `button { width: … }` stretched it over ⊕ and took its clicks. The
+    same chip in the same place needs the same defence.
+    """
+    block = STYLES_CSS[STYLES_CSS.index(".pm-help-btn {"):]
+    block = block[:block.index("@media (prefers-reduced-motion: reduce) {\n    .pm-help-btn")]
+    for rule in ("width: auto !important", "min-width: 0 !important", "overflow: hidden"):
+        assert rule in block, rule
