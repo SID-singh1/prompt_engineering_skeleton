@@ -67,7 +67,7 @@ def check(cond, msg):
 
 
 def router_modes():
-    tree = ast.parse((ROOT / "backend/routers/prompts.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "backend/services/prompt_builder.py").read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.Assign) and any(getattr(t, "id", None) == "MODE_INSTRUCTIONS" for t in node.targets):
             return {k: v.strip() for k, v in ast.literal_eval(node.value).items()}
@@ -225,7 +225,8 @@ def main():
         page.click("#pm-card-discard")   # start the next phase with no draft pending
 
         # ── Signed in: the same flow through the server ──────────────────
-        server = {"stream": [], "accept": [], "used": 12, "limit": 15, "fail_next": False}
+        server = {"stream": [], "accept": [], "used": 12, "limit": 15, "fail_next": False,
+                  "matched": [], "put": [], "post": []}
 
         def api(route):
             req, path = route.request, route.request.url.split(".hf.space", 1)[1]
@@ -240,10 +241,18 @@ def main():
                     server["used"] += 1
                     text = REPLY[body["mode"]]
                     events = [{"token": text[i:i + 12]} for i in range(0, len(text), 12)]
+                    # Like the server: dropped and attached prompts are not matched.
+                    skip = set(body.get("excluded_prompt_ids") or []) | set(body.get("selected_prompt_ids") or [])
+                    matched = [m for m in server["matched"] if m["id"] not in skip]
+                    selected = [{"id": p["id"], "title": p["title"], "content": p["content"]}
+                                for p in SAVED if p["id"] in (body.get("selected_prompt_ids") or [])]
                     events.append({"done": True, "failed": False, "log_id": f"log-{len(server['stream'])}",
                                    "latency": 0.4, "mode": body["mode"], "model": "fake",
                                    "usage_today": {"used": server["used"], "limit": server["limit"], "tier": "free"},
-                                   "context_used": {"selected": 0, "auto_matched": 0, "passive_matched": 0}})
+                                   "context_used": {"selected": len(selected), "auto_matched": len(matched), "passive_matched": 0},
+                                   "context_details": {"selected_prompts": selected, "auto_matched_prompts": matched,
+                                                       "passive_patterns": [], "conversation_preview": None,
+                                                       "feedback_summary": None}})
                 route.fulfill(status=200, content_type="text/event-stream",
                               body="".join(f"data: {json.dumps(e)}\n\n" for e in events))
             elif req.method == "POST" and path.startswith("/enhance/accept"):
@@ -251,6 +260,16 @@ def main():
                 route.fulfill(status=200, content_type="application/json", body="{}")
             elif req.method == "GET" and path.startswith("/saved-prompts"):
                 route.fulfill(status=200, content_type="application/json", body=json.dumps({"prompts": SAVED}))
+            elif req.method == "PUT" and path.startswith("/saved-prompts/"):
+                pid, body = path.split("/")[2], json.loads(req.post_data or "{}")
+                server["put"].append((pid, body))
+                for p in SAVED:
+                    if p["id"] == pid:
+                        p.update(body)
+                route.fulfill(status=200, content_type="application/json", body='{"ok": true}')
+            elif req.method == "POST" and path.startswith("/saved-prompts"):
+                server["post"].append(json.loads(req.post_data or "{}"))
+                route.fulfill(status=200, content_type="application/json", body='{"ok": true}')
             elif req.method == "GET" and path.startswith("/enhance/usage"):
                 route.fulfill(status=200, content_type="application/json",
                               body=json.dumps({"count": server["used"], "limit": server["limit"]}))
@@ -392,6 +411,100 @@ def main():
         sw.evaluate("chrome.storage.local.remove(['token', 'user_id', 'email'])")
         page.wait_for_timeout(400)
         check(page.locator("#pm-rail").count() == 0, "signing out clears the attachments")
+
+
+        # ── Which saved prompts shaped a rewrite, and dropping one ───────
+        sw.evaluate(f"""chrome.storage.local.set({{ token: '{jwt}', user_id: 'u1', email: 'u@example.com', pm_mode: 'deep' }})""")
+        server["used"] = 2
+        server["matched"] = [
+            {"id": "s1", "title": "Code review template", "content": SAVED[0]["content"], "score": 0.62},
+            {"id": "s2", "title": "Bug report triage", "content": SAVED[1]["content"], "score": 0.31},
+        ]
+        open_chat()
+        type_prompt(ORIG)
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        summary = page.inner_text("#pm-card-used-toggle").replace("\n", " ")
+        check("Code review template" in summary and "Bug report triage" in summary,
+              f"the card names the saved prompts it used, got {summary!r}")
+        check(page.is_hidden("#pm-card-used-list"), "the list starts folded")
+        page.click("#pm-card-used-toggle")
+        items = [t.replace("\n", " ") for t in page.locator("#pm-card-used-list .pm-card-used-item").all_inner_texts()]
+        check(len(items) == 2 and "close match" in items[0] and "loose match" in items[1],
+              f"each one says how strongly it matched, got {items}")
+        n = len(server["stream"])
+        page.click("#pm-card-used-list [data-pm-drop='s2']")
+        page.wait_for_function(f"document.querySelector('#pm-card .pm-card-versions')?.textContent.includes('2 of 2')", timeout=8000)
+        last = server["stream"][-1]
+        check(len(server["stream"]) == n + 1 and last["mode"] == "deep" and last["prompt"] == ORIG,
+              "Don't use rewrites the same text, same style")
+        check(last.get("excluded_prompt_ids") == ["s2"], f"and asks the server to leave it out, got {last.get('excluded_prompt_ids')}")
+        check("Bug report triage" not in page.inner_text("#pm-card-used-toggle"), "the new version no longer lists it")
+        check("Left out: Bug report triage" in page.inner_text("#pm-card-used-list"), "and says it was left out")
+        page.click("#pm-card-style-quick")
+        wait_title("Rewrite · Quick")
+        check(server["stream"][-1].get("excluded_prompt_ids") == ["s2"], "a dropped prompt stays dropped in another style")
+        page.click("#pm-card-ver-prev")
+        page.click("#pm-card-ver-prev")
+        check("Bug report triage" in page.inner_text("#pm-card-used-toggle"), "the first version still shows what it used")
+        page.click("#pm-card-discard")
+
+        # ── Improve a saved prompt ────────────────────────────────────────
+        server["matched"] = [{"id": "s2", "title": "Bug report triage", "content": SAVED[1]["content"], "score": 0.99}]
+        before_content = SAVED[1]["content"]
+        type_prompt("an unrelated message I am halfway through")
+        page.keyboard.press("Meta+Shift+L")
+        page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
+        row = page.locator("#pm-library .pm-lib-row", has_text="Bug report triage")
+        row.hover()   # the row's ⋯ shows on hover, as it does for a person
+        row.locator("[data-act='more']").click()
+        page.click("#pm-library [data-act='improve']")
+
+        def card_title():
+            return page.evaluate("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').trim()")
+        page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').startsWith('Improved')", timeout=8000)
+        check(card_title() == "Improved \u201cBug report triage\u201d \u00b7 Deep", f"the card says what it improves, got {card_title()!r}")
+        req = server["stream"][-1]
+        check(req["prompt"] == before_content and req.get("excluded_prompt_ids") == ["s2"],
+              "Improve rewrites the saved prompt, and never matches it against itself")
+        check(page.locator("#pm-card-used-toggle").count() == 0, "so it does not list itself as used")
+        check(page.inner_text("#pm-card-accept").strip() == "Update saved prompt", "the verb is Update saved prompt")
+        check(page.locator("#pm-card.pm-card-stale").count() == 0, "text in the chat box does not make it stale")
+        check(page.get_attribute("#pm-trigger", "data-state") == "ready"
+              and page.inner_text("#pm-trigger .pm-pill-insert").strip() == "Update", "the pill offers Update")
+        page.click("#pm-trigger", position={"x": 10, "y": 10})
+        page.wait_for_timeout(250)
+        page.click("#pm-trigger", position={"x": 10, "y": 10})
+        page.wait_for_timeout(250)
+        check(len(server["stream"]) == n + 3, "the plus button shows an Improve draft instead of rewriting the chat box")
+        open_chat()
+        page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').startsWith('Improved')", timeout=8000)
+        check(True, "an Improve draft survives a reload as an Improve draft")
+        page.click("#pm-card-style-quick")
+        page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').endsWith('Quick')", timeout=8000)
+        check("s2" in (server["stream"][-1].get("excluded_prompt_ids") or []), "a style rerun still leaves it out")
+        type_prompt("an unrelated message I am halfway through")
+        page.click("#pm-card-accept")
+        page.wait_for_selector(".pm-toast:has-text('Updated')", timeout=5000)
+        check(server["put"] and server["put"][-1] == ("s2", {"content": REPLY["quick"]}),
+              f"Update writes the version on screen over the saved prompt, got {server['put'][-1:]}")
+        check(page.text_content("#prompt-textarea").strip() == "an unrelated message I am halfway through",
+              "and leaves the chat box alone")
+        page.click(".pm-toast .pm-toast-action")
+        page.wait_for_function("document.querySelector('.pm-toast')?.textContent.includes('Restored')", timeout=5000)
+        check(server["put"][-1] == ("s2", {"content": before_content}), "Undo puts the earlier text back")
+        page.keyboard.press("Meta+Shift+L")
+        page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
+        row = page.locator("#pm-library .pm-lib-row", has_text="Code review template")
+        row.hover()   # the row's ⋯ shows on hover, as it does for a person
+        row.locator("[data-act='more']").click()
+        page.click("#pm-library [data-act='improve']")
+        page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').startsWith('Improved')", timeout=8000)
+        page.click("#pm-card-save")
+        page.wait_for_selector(".pm-toast:has-text('new prompt')", timeout=5000)
+        check(server["post"][-1] == {"content": REPLY["deep"], "title": "Code review template (improved)"},
+              f"save as new keeps the original and adds one, got {server['post'][-1:]}")
+        page.click("#pm-card-discard")
 
         check(not errors, f"console errors: {errors}")
         ctx.close()

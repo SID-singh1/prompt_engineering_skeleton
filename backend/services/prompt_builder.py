@@ -245,40 +245,78 @@ If it evaluates, rates, or answers the user's question → STOP and rewrite.
 Your output = a prompt. Always. No exceptions.
 """
 
-def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None):
-    """Shared context builder for both regular and streaming enhance."""
+def _conversation_context(messages) -> str:
+    """Preserves conversational turns without collapsing untagged messages."""
+    if not messages:
+        return ""
+    kept = []
+    for message in messages:
+        text = str(message).strip()
+        if not text:
+            continue
+        if text.startswith("[user]:"):
+            text = text[len("[user]:"):].strip()
+        elif text.startswith("[assistant]:"):
+            text = text[len("[assistant]:"):].strip()
+        elif text.startswith("[message]:"):
+            text = text[len("[message]:"):].strip()
+        elif text.startswith("[") and "]:" in text:
+            text = text.split("]:", 1)[1].strip()
+        if text:
+            kept.append(text)
+    return "\n".join(kept)
+
+
+def _squash(text: str) -> str:
+    return " ".join(str(text or "").lower().split())
+
+
+# A saved prompt the user has just inserted with // (or is improving) matches
+# itself almost perfectly. Sending it back as "related" context repeats the
+# draft to the model and shows up as a match the user never needed.
+_MIN_CONTAINED_CHARS = 20
+_NEAR_DUPLICATE_SCORE = 0.97
+
+
+def _already_in_prompt(item: dict, prompt: str) -> bool:
+    content = _squash(item.get("content"))
+    if len(content) >= _MIN_CONTAINED_CHARS and content in _squash(prompt):
+        return True
+    return float(item.get("score") or 0) >= _NEAR_DUPLICATE_SCORE
+
+
+def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None) -> dict:
+    """Shared context builder for every enhance route (text, stream, voice)."""
     start_time = time.time()
     mode = (request.mode or "deep").lower()
     if mode not in MODE_INSTRUCTIONS:
         mode = "deep"
     platform = request.platform or "unknown"
 
-    conversation_ctx = ""
-    if request.conversation_context and len(request.conversation_context) > 0:
-        user_msgs = [m for m in request.conversation_context if m.startswith("[user]")]
-        ai_msgs = [m for m in request.conversation_context if not m.startswith("[user]")]
-        if user_msgs:
-            selected = [m[:300] for m in user_msgs[-3:]]
-            if ai_msgs:
-                selected.append(ai_msgs[-1][:500])
-        else:
-            selected = [m[:300] for m in request.conversation_context[-4:]]
-        conversation_ctx = "\n".join([f"- {m}" for m in selected])
+    conversation_ctx = _conversation_context(request.conversation_context)
 
     selected_context_parts = []
-    selected_ids = request.selected_prompt_ids or []
+    selected_prompts = []
+    selected_ids = [str(pid) for pid in (request.selected_prompt_ids or [])]
     for pid in selected_ids:
-        doc = fetch_saved_prompt_fn(pid, user_id)
+        doc = fetch_saved_prompt_fn(pid, user_id) if fetch_saved_prompt_fn else None
         if doc:
             label = doc.get("title") or "Saved Prompt"
             selected_context_parts.append(f'[Selected by user] {label}: "{doc["content"]}"')
+            selected_prompts.append({"id": pid, "title": doc.get("title") or "", "content": doc["content"][:200]})
 
-    similar_saved = MemoryService.search_saved_prompts(
-        user_id=user_id,
-        query_text=request.prompt,
-        limit=3,
-        exclude_ids=selected_ids,
-    )
+    # The user can drop an auto-matched prompt from the card ("don't use") and
+    # rerun; those, and anything they attached themselves, are not searched.
+    excluded_ids = [str(pid) for pid in (getattr(request, "excluded_prompt_ids", None) or [])]
+    similar_saved = [
+        item for item in MemoryService.search_saved_prompts(
+            user_id=user_id,
+            query_text=request.prompt,
+            limit=3,
+            exclude_ids=selected_ids + excluded_ids,
+        )
+        if not _already_in_prompt(item, request.prompt)
+    ]
     similarity_context_parts = []
     for item in similar_saved:
         label = item.get("title") or "Saved Prompt"
@@ -326,11 +364,22 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
     user_parts.append(f'### USER\'S PROMPT\n"{request.prompt}"')
 
     source_lang = getattr(request, 'source_language', None)
-    if not source_lang:
+    detected = not source_lang
+    if detected:
         source_lang = _detect_text_language(request.prompt)
     if source_lang == 'ur':
         source_lang = 'hi'
     lang_name = LANGUAGE_NAMES.get(source_lang, source_lang)
+    # The detector only recognises Hindi and Hinglish; everything else comes
+    # back "en", so naming English here told the model to translate Spanish or
+    # French prompts into English. Name a language only on positive evidence
+    # (a script, Hinglish words, or Whisper's own language); otherwise ask for
+    # the prompt's own language, as the direct path already does.
+    if detected and source_lang == "en":
+        lang_name = "the same language as the USER'S PROMPT"
+        same_language = "Do NOT translate it or switch languages."
+    else:
+        same_language = f"The input text is in {lang_name} — do NOT switch languages."
 
     task_instruction = (
         "### TASK\n"
@@ -340,7 +389,7 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
         "Use conversation context to resolve ambiguity. "
         "CRITICALLY: If the provided contexts (Selected or Related) are completely irrelevant to the User's Prompt, IGNORE THEM COMPLETELY. Do not try to blend unrelated topics.\n\n"
         f"⚠️ LANGUAGE REQUIREMENT: Your output MUST be in **{lang_name}**. "
-        f"The input text is in {lang_name} — do NOT switch languages. "
+        f"{same_language} "
         "Ignore the language of past patterns, saved prompts, or conversation history — "
         f"output ONLY in **{lang_name}**."
         + (
@@ -361,7 +410,9 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
         "mode": mode,
         "platform": platform,
         "start_time": start_time,
+        "source_language": source_lang,
         "similar_saved": similar_saved,
+        "selected_prompts": selected_prompts,
         "passive_matches": passive_matches,
         "selected_context_parts": selected_context_parts,
         "similarity_context_parts": similarity_context_parts,
@@ -369,6 +420,35 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
         "conversation_ctx": conversation_ctx,
         "feedback_summary": feedback_summary,
     }
+
+
+def _context_used(ctx: dict, request: EnhanceRequest) -> dict:
+    return {
+        "selected": len(ctx["selected_context_parts"]),
+        "auto_matched": len(ctx["similarity_context_parts"]),
+        "passive_matched": len(ctx["passive_context_parts"]),
+        "conversation_messages": len(request.conversation_context or []),
+    }
+
+
+def _context_details(ctx: dict) -> dict:
+    """What shaped a rewrite, for the card: each saved prompt with its id, so
+    the user can see it and drop it ("don't use") on a rerun."""
+    return {
+        "selected_prompts": ctx.get("selected_prompts", []),
+        "auto_matched_prompts": [
+            {"id": s.get("mongo_id", ""), "title": s.get("title", ""),
+             "content": s.get("content", "")[:200], "score": s["score"]}
+            for s in ctx["similar_saved"]
+        ],
+        "passive_patterns": [
+            {"original": pm["original"][:150], "refined": pm["refined"][:150], "score": pm["score"]}
+            for pm in ctx["passive_matches"]
+        ],
+        "conversation_preview": ctx["conversation_ctx"][:300] if ctx["conversation_ctx"] else None,
+        "feedback_summary": ctx["feedback_summary"] or None,
+    }
+
 
 STEERING_TURN = (
     "Understood. I will rewrite the user's raw text into a better prompt. "

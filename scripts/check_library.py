@@ -192,10 +192,13 @@ def main():
         check(rows() == [] or "Product spec critic" not in rows(), "and it is gone")
         page.fill("#pm-lib-q", "")
 
-        # Recent
+        # History (it was "Recent", which read as "recently saved")
+        check([t.strip() for t in page.locator("#pm-library .pm-lib-views button").all_inner_texts()] == ["Saved", "History"],
+              "the two lists are Saved and History")
         page.click("#pm-lib-view-recent")
         page.wait_for_function("document.querySelectorAll('#pm-library .pm-lib-row').length === 2")
-        check(rows()[0].startswith("Show me how to sort"), f"recent rewrites listed, got {rows()}")
+        check(page.get_attribute("#pm-lib-q", "placeholder") == "Search your rewrite history", "History says what it holds")
+        check(rows()[0].startswith("Show me how to sort"), f"past rewrites listed, got {rows()}")
         check("from “hw do i sort" in page.inner_text("#pm-library .pm-lib-row .pm-lib-preview"), "with what they came from")
         page.keyboard.press("Enter")
         page.wait_for_selector("#pm-library", state="hidden")
@@ -216,12 +219,15 @@ def main():
         page.click("#pm-library [data-style='deep']")
         page.click("#pm-library [data-act='privacy']")
         check(ev("document.getElementById('pm-library').dataset.page") == "privacy", "privacy page")
-        check(page.is_checked("#pm-tracking-toggle") and page.is_checked("#pm-context-toggle") and page.is_checked("#pm-slash-toggle"),
-              "switches show the current settings")
+        check(not page.is_checked("#pm-tracking-toggle") and page.is_checked("#pm-context-toggle") and page.is_checked("#pm-slash-toggle"),
+              "switches show the current settings: tracking starts off, as the privacy policy says")
+        check(ev("promptTrackingEnabled") is False, "and nothing is tracked until it is turned on")
+        page.click("#pm-tracking-toggle")
+        check(ev("JSON.parse(localStorage.getItem('pm')).pm_tracking") is True and ev("promptTrackingEnabled") is True,
+              "tracking on is stored and applied")
         page.click("#pm-tracking-toggle")
         check(ev("JSON.parse(localStorage.getItem('pm')).pm_tracking") is False and ev("promptTrackingEnabled") is False,
-              "tracking off is stored and applied")
-        page.click("#pm-tracking-toggle")
+              "and off again")
         page.keyboard.press("Escape")
         check(ev("document.getElementById('pm-library').dataset.page") == "list", "esc on a page goes back to the list")
         page.click("#pm-lib-more")

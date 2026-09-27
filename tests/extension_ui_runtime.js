@@ -93,9 +93,9 @@ function placePill() {}
 function saveCardLayout() { saves++; }
 function resetCardLayout() { cardLayout=null; resets++; }
 document.createElement=() => new Element();
-const gestureCard = new Element(), head = new Element(), grip = new Element(), toggle = new Element(), resetButton = new Element();
+const gestureCard = new Element(), head = new Element(), grip = new Element(), resetButton = new Element();
 gestureCard.rect={left:100,top:100,width:400,height:260};
-gestureCard.querySelector = selector => ({'.pm-card-head':head,'.pm-card-resize':grip,'#pm-card-layout-toggle':toggle,'#pm-card-reset':resetButton})[selector];
+gestureCard.querySelector = selector => ({'.pm-card-head':head,'.pm-card-resize':grip,'#pm-card-reset':resetButton})[selector];
 setupCardInteractions(gestureCard);
 const event = (x,y) => ({button:0,pointerId:1,clientX:x,clientY:y,target:{closest:()=>null}});
 head.fire('pointerdown',event(100,100));
@@ -131,13 +131,24 @@ grip.fire('pointerdown',event(730,530));window.fire('pointermove',event(780,570)
 assert(cardLayout.width===650 && cardLayout.height===450,'Resize changes dimensions');
 gestureCard._pmEndGesture();
 assert(!gestureCard.classes.size && globalListeners.pointermove.size===0,'Rerender cleanup removes active gesture');
-toggle.fire('click');assert(head.afterElement.hidden===false && toggle.attrs['aria-expanded']==='true','Layout reveals controls');
+// No Layout button: the grip opens the same controls. A mouse press is
+// captured by the card, so its click never reaches the grip; a press that ends
+// without moving is the click, handled when the gesture ends.
+const up = (x,y) => ({...event(x,y), type:'pointerup'});
+grip.fire('pointerdown',event(730,530));window.fire('pointerup',up(731,531));
+assert(head.afterElement.hidden===false && grip.attrs['aria-expanded']==='true','A mouse click on the grip reveals the move and size controls');
+grip.fire('click',{detail:1});
+assert(head.afterElement.hidden===false,'The captured click that follows does not toggle them shut again');
+grip.fire('click',{detail:0});assert(head.afterElement.hidden===true && grip.attrs['aria-expanded']==='false','Enter/Space on the grip toggles them');
+grip.fire('click',{detail:0});assert(head.afterElement.hidden===false,'and back');
 const leftButton=head.afterElement.children.find(x=>x.textContent==='Left');leftButton.fire('click');
 assert(cardLayout.x===106,'Click-only movement');
 const widerButton=head.afterElement.children.find(x=>x.textContent==='Wider');widerButton.fire('click');
 assert(cardLayout.width===690,'Click-only resizing');
 head.afterElement.children.find(x=>x.textContent==='Reset layout').fire('click');
 assert(cardLayout===null && resets===1,'Reset layout available without dragging');
+grip.fire('pointerdown',event(730,530));window.fire('pointermove',event(760,560));window.fire('pointerup',up(760,560));
+assert(head.afterElement.hidden===false,'A resize drag does not toggle the controls');
 // The pill must insert what it previews even after reviewing the original.
 let cardShowingOriginal=true, canInsert=true, insertedOriginal=null;
 function pillOffersInsert() { return canInsert; }

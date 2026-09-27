@@ -143,8 +143,30 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         // A content script has no API for opening the action popup, which is
         // why five separate "open the settings" messages were dead ends that
         // only told the user to go and click the toolbar icon themselves.
+        // The shortcut Chrome actually assigned. Chrome leaves a suggested key
+        // unset when another extension already has it (common on Windows,
+        // where Ctrl+Shift+E is popular), and the key then goes to that
+        // extension, so a tip must not promise a shortcut that is not there.
+        case "PM_GET_SHORTCUT": {
+          const commands = await chrome.commands.getAll();
+          sendResponse({ shortcut: commands.find((c) => c.name === "enhance-prompt")?.shortcut || "" });
+          break;
+        }
+
+        case "PM_OPEN_SHORTCUTS": {
+          await chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+          sendResponse({ ok: true });
+          break;
+        }
+
         case "PM_OPEN_OPTIONS": {
-          await chrome.runtime.openOptionsPage();
+          // A named step ("key", "signin") opens the settings page at it: the
+          // plain options page landed people at the top of a long page.
+          if (msg.section === "key" || msg.section === "signin") {
+            await chrome.tabs.create({ url: chrome.runtime.getURL(`popup.html?onboarding=1#${msg.section}`) });
+          } else {
+            await chrome.runtime.openOptionsPage();
+          }
           sendResponse({ ok: true });
           break;
         }

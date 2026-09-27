@@ -945,7 +945,17 @@ def test_the_pill_click_does_not_respend_quota_on_the_same_text():
     body = _function_bodies(CONTENT_JS, r"reopenDraftIfRelevant")["reopenDraftIfRelevant"]
     assert "now && now !== cardBasedOn" in body
     handle = _function_bodies(CONTENT_JS, r"handleEnhance")["handleEnhance"]
-    assert handle.index("reopenDraftIfRelevant()") < handle.index("getCurrentInputText()")
+    assert handle.index("reopenDraftIfRelevant(") < handle.index("getCurrentInputText()")
+
+
+def test_the_shortcut_shows_a_draft_but_never_hides_it():
+    """Pressed twice on one draft, the shortcut used to hide the card it had
+    just shown. Both of its paths ask handleEnhance to reveal."""
+    assert CONTENT_JS.count("handleEnhance({ reveal: true })") == 2
+    body = _function_bodies(CONTENT_JS, r"reopenDraftIfRelevant")["reopenDraftIfRelevant"]
+    assert "if (reveal) revealCard();" in body
+    reveal = _function_bodies(CONTENT_JS, r"revealCard")["revealCard"]
+    assert "hideCard" not in reveal and "toggleCard" not in reveal
 
 
 def test_navigation_is_watched_and_rejudges_the_draft():
@@ -1299,3 +1309,126 @@ def test_the_chat_box_is_cleared_through_the_editor():
     body = _function_bodies(CONTENT_JS, r"clearComposer")["clearComposer"]
     assert body.index("await nextFrame()") < body.index('inputType: "deleteContentBackward"') < body.index('execCommand("delete"')
     assert "await clearComposer(el)" in _function_bodies(CONTENT_JS, r"applyToInput")["applyToInput"]
+
+
+# ── Tester feedback, 2026-09-24 ──────────────────────────────────────────
+
+POPUP_HTML = (ROOT / "extension" / "popup.html").read_text(encoding="utf-8")
+LIVE_POLICY = "https://prompt-engineering-skeleton-seven.vercel.app/privacy"
+
+
+def test_the_card_keeps_the_names_of_the_saved_prompts_it_used():
+    """runBackendEnhance copied only the counts, so the card could never say
+    which saved prompts shaped a rewrite."""
+    body = _function_bodies(CONTENT_JS, r"runBackendEnhance")["runBackendEnhance"]
+    assert "context_details: metadata.context_details" in body
+    used = _function_bodies(CONTENT_JS, r"cardUsedHtml")["cardUsedHtml"]
+    assert "selected_prompts" in used and "auto_matched_prompts" in used and "data-pm-drop" in used
+
+
+def test_a_dropped_saved_prompt_is_sent_as_excluded():
+    stream = _function_bodies(CONTENT_JS, r"enhancePromptStream")["enhancePromptStream"]
+    assert "body.excluded_prompt_ids = inputMetadata.excludedIds" in stream
+    rerun = _function_bodies(CONTENT_JS, r"rerunWithout")["rerunWithout"]
+    assert "rerunDraft(" in rerun
+    styles = _function_bodies(CONTENT_JS, r"rerunInStyle")["rerunInStyle"]
+    assert "cardResult.excluded" in styles, "a dropped prompt must stay dropped in another style"
+
+
+def test_improving_a_saved_prompt_never_matches_it_against_itself():
+    body = _function_bodies(CONTENT_JS, r"improveSavedPrompt")["improveSavedPrompt"]
+    assert "excludedIds: [p.id]" in body
+    rerun = _function_bodies(CONTENT_JS, r"rerunDraft")["rerunDraft"]
+    assert "cardSubject ? [cardSubject.id]" in rerun
+
+
+def test_an_improve_draft_ignores_the_chat_box():
+    stale = _function_bodies(CONTENT_JS, r"isStaleAgainstComposer")["isStaleAgainstComposer"]
+    assert "cardSubject" in stale
+    accept = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
+    assert accept.index("acceptImprovement()") < accept.index("applyOrFallback")
+    improve = _function_bodies(CONTENT_JS, r"acceptImprovement")["acceptImprovement"]
+    assert "updateSavedPrompt(subject.id" in improve and "Undo" in improve
+    assert "applyOrFallback" not in improve, "updating a saved prompt must not write into the chat box"
+
+
+def test_prompt_tracking_starts_off():
+    """The privacy policy, the first-run notice and the popup all say so."""
+    assert "let promptTrackingEnabled = false;" in CONTENT_JS
+    assert "result.pm_tracking === true" in CONTENT_JS
+    assert "pm_tracking !== false" not in CONTENT_JS
+
+
+def test_privacy_links_open_the_live_policy():
+    for name, src in (("content.js", CONTENT_JS), ("popup.html", POPUP_HTML)):
+        assert LIVE_POLICY in src, name
+        assert "blob/main/website/privacy.html" not in src, f"{name} links to the GitHub source"
+
+
+def test_the_card_has_no_layout_button_and_dragging_does_not_need_one():
+    assert "pm-card-layout-toggle" not in CONTENT_JS and "pm-card-layout-toggle" not in STYLES_CSS
+    body = _function_bodies(CONTENT_JS, r"setupCardInteractions")["setupCardInteractions"]
+    assert "if (!head || !grip) return;" in body
+    assert 'grip.setAttribute("aria-expanded"' in body
+
+
+def test_the_library_tabs_are_saved_and_history():
+    head = _function_bodies(CONTENT_JS, r"libHeadHtml")["libHeadHtml"]
+    assert ">History</button>" in head and ">Recent</button>" not in head
+
+
+# ── First run: the setup page, the setup modal and the tips ──────────────
+
+POPUP_JS = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
+BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
+
+
+def test_the_setup_page_has_three_screens_chosen_by_state():
+    for screen in ("screen-welcome", "screen-setup", "screen-ready"):
+        assert f'id="{screen}"' in POPUP_HTML
+    body = _function_bodies(POPUP_JS, r"screenFor")["screenFor"]
+    assert '"welcome"' in body and '"setup"' in body and '"ready"' in body
+
+
+def test_the_ready_screen_says_what_to_do_next():
+    """People finished setup and did not know the plus button existed."""
+    for site in ("https://chatgpt.com/", "https://claude.ai/new", "https://gemini.google.com/app",
+                 "https://www.perplexity.ai/", "https://grok.com/"):
+        assert f'href="{site}"' in POPUP_HTML
+    assert "You're ready. Try it now:" in POPUP_JS
+
+
+def test_the_setup_page_draws_nothing_from_the_network():
+    assert "fonts.googleapis.com" not in POPUP_HTML
+
+
+def test_the_setup_modal_does_not_render_its_templates_whitespace():
+    rule = STYLES_CSS[STYLES_CSS.index(".pm-modal-body {"):]
+    rule = rule[:rule.index("}")]
+    assert "pre-wrap" not in rule, "HTML modals rendered every newline and indent as blank space"
+    assert ".pm-modal-body.pm-modal-text" in STYLES_CSS and 'class="pm-modal-body pm-modal-text"' in CONTENT_JS
+
+
+def test_the_chat_page_opens_setup_at_the_right_step():
+    assert 'openSettings("key")' in CONTENT_JS and 'openSettings("signin")' in CONTENT_JS
+    assert "popup.html?onboarding=1#${msg.section}" in BACKGROUND_JS
+
+
+def test_tips_never_promise_a_shortcut_chrome_did_not_assign():
+    assert 'case "PM_GET_SHORTCUT"' in BACKGROUND_JS
+    body = _function_bodies(CONTENT_JS, r"orShortcut")["orShortcut"]
+    assert 'assignedShortcut ? ' in body and ': ""' in body
+
+
+def test_tips_are_one_at_a_time_and_stay_out_of_the_way():
+    allowed = _function_bodies(CONTENT_JS, r"tipAllowed")["tipAllowed"]
+    for guard in ("!tips.off", "!tips.seen[id]", "TIP_MAX_SHOWS", "!cardExpanded", "!panelOpen", "!overlayHasInput()"):
+        assert guard in allowed, guard
+    show = _function_bodies(CONTENT_JS, r"showTip")["showTip"]
+    assert "hideTip()" in show and ".focus(" not in show, "a tip must never take focus"
+
+
+def test_tips_hear_typing_in_a_textarea_composer():
+    """A <textarea> changes its value, not its DOM: the MutationObserver is deaf to it."""
+    listeners = _function_bodies(CONTENT_JS, r"setupLibraryListeners")["setupLibraryListeners"]
+    assert "tipsOnComposerChanged()" in listeners

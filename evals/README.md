@@ -202,7 +202,7 @@ the direct-provider runners read that value if it is not in the process
 environment. Never commit or paste the key. The live `/enhance` runner below
 still requires an exported key and a dedicated test-user token.
 
-This extracts the literal rewrite instructions from `backend/routers/prompts.py`
+This extracts the literal rewrite instructions from `backend/services/prompt_builder.py`
 without importing the database or embedding stack. It reproduces the production
 system, steering, mode, platform, language, and conversation messages. The base
 82-case corpus mostly isolates rewrite behavior; the separate

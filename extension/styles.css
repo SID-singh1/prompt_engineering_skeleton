@@ -121,6 +121,10 @@
        handle they let go of in the wrong place. Placement puts it back below
        the card, and clear of it, on release. */
     --pm-z-drag: 2147482350;
+    /* A first-run tip points at the pill. It is below a pill being dragged
+       and below the dialogs, and hides itself while the card or the library
+       is open (see showTip), so it never competes with either. */
+    --pm-z-tip: 2147482340;
     --pm-z-overlay: 2147482400;
     --pm-z-toast: 2147482500;
 }
@@ -618,6 +622,12 @@
     font-size: 13px;
     line-height: 1.6;
     color: var(--pm-text-secondary);
+}
+/* Only the plain-text message keeps its own line breaks. On the modals built
+   from indented HTML (setup, consent, edit), pre-wrap rendered every newline
+   and indent of the template as blank space: the setup modal opened with
+   gaps and pushed "Sign in with Google" below the fold. */
+.pm-modal-body.pm-modal-text {
     white-space: pre-wrap;
 }
 
@@ -1747,15 +1757,14 @@
 .pm-card { max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow-y: auto; }
 .pm-card-head, .pm-card-foot { flex-shrink: 0; }
 .pm-card-min, .pm-card-reset { width: 32px; height: 32px; }
-.pm-card-layout-toggle, .pm-card-layout button {
+.pm-card-layout button {
     font: 12px var(--pm-font); color: var(--pm-text); background: var(--pm-bg-hover);
     border: 1px solid var(--pm-border); border-radius: 6px; min-height: 32px;
     padding: 4px 8px; cursor: pointer;
 }
-.pm-card-layout-toggle { flex: none; }
 .pm-card-layout { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 16px; flex: none; }
 .pm-card-layout[hidden] { display: none; }
-.pm-card-layout button:focus-visible, .pm-card-layout-toggle:focus-visible {
+.pm-card-layout button:focus-visible {
     outline: 2px solid var(--pm-accent); outline-offset: 2px;
 }
 .pm-card-resize { width: 28px; height: 28px; border: 0; background: transparent; padding: 0; }
@@ -2296,4 +2305,127 @@
     .pm-lib, .pm-caret, .pm-rail { animation: none; }
     .pm-lib .pm-lib-skeleton i { animation: none; }
     .pm-lib .pm-lib-switch, .pm-lib .pm-lib-switch::before { transition: none; }
+}
+
+/* The shortcut asked for a card that is already open: point at it instead of
+   hiding it (see revealCard). */
+@keyframes pm-card-nudge {
+  40% { outline: 3px solid rgba(80, 200, 168, .6); outline-offset: 2px; }
+}
+.pm-card.pm-card-nudge { animation: pm-card-nudge .6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .pm-card.pm-card-nudge { animation: none; } }
+
+/* ── Saved prompts that shaped the rewrite (cardUsedHtml) ── */
+.pm-card-used { margin: 0 17px 12px; }
+.pm-card-used > .pm-card-chip { margin: 0; }
+.pm-card-used-toggle { cursor: pointer; font: inherit; font-size: 10.5px; }
+.pm-card-used-toggle:hover { filter: brightness(1.15); }
+.pm-card-used-toggle:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+.pm-card-used-caret { transition: transform .15s ease; opacity: .8; }
+.pm-card-used-toggle[aria-expanded="true"] .pm-card-used-caret { transform: rotate(180deg); }
+.pm-card-used-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pm-card-used-list[hidden] { display: none; }
+.pm-card-used-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; background: var(--pm-bg-hover); }
+.pm-card-used-icon { flex: none; width: 16px; text-align: center; color: var(--pm-accent); font-size: 13px; line-height: 1; }
+.pm-card-used-icon svg { width: 14px; height: 14px; vertical-align: middle; }
+.pm-card-used-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.pm-card-used-name { font-size: 12.5px; color: var(--pm-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-card-used-why { font-size: 11px; color: var(--pm-text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pm-card-used-drop {
+    flex: none; font: 11.5px var(--pm-font); color: var(--pm-text); cursor: pointer;
+    background: transparent; border: 1px solid var(--pm-border); border-radius: 100px; padding: 3px 10px; min-height: 26px;
+}
+.pm-card-used-drop:hover { border-color: var(--pm-danger, #e5484d); color: var(--pm-danger, #e5484d); }
+.pm-card-used-drop:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+.pm-card-used-left { font-size: 11px; color: var(--pm-text-muted); padding: 4px 8px 0; }
+
+/* One action inside a toast (Undo after updating a saved prompt). */
+.pm-toast-action {
+    margin-left: 12px; padding: 2px 10px; min-height: 24px; border-radius: 100px; cursor: pointer;
+    font: 600 12px var(--pm-font); color: var(--pm-accent); background: transparent; border: 1px solid currentColor;
+    pointer-events: auto;
+}
+.pm-toast-action:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+
+/* ── First-run tips (showTip in content.js) ──
+   Console family: the same near-black as the pill it points at. One at a time,
+   never modal, never taking focus. */
+.pm-tip {
+    position: fixed;
+    z-index: var(--pm-z-tip);
+    width: min(300px, calc(100vw - 24px));
+    padding: 14px 14px 12px;
+    border-radius: 14px;
+    background: var(--pm-con-bg-solid);
+    border: 1px solid rgba(80, 200, 168, .38);
+    box-shadow: var(--pm-con-shadow-lg);
+    color: var(--pm-con-text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    text-align: left;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity .18s ease, transform .18s ease;
+}
+.pm-tip.pm-tip-visible { opacity: 1; transform: none; }
+.pm-tip-title { font-weight: 650; font-size: 13.5px; padding-right: 22px; margin: 0 0 4px; color: var(--pm-con-text); }
+.pm-tip-body { margin: 0; color: var(--pm-con-text-2); }
+.pm-tip-body b { color: var(--pm-con-text); font-weight: 600; }
+.pm-tip kbd {
+    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; padding: 1px 5px; border-radius: 5px;
+    border: 1px solid var(--pm-con-border-hover); background: rgba(255, 255, 255, .06); color: var(--pm-con-text);
+}
+.pm-tip-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+.pm-tip-btn {
+    all: unset; box-sizing: border-box; cursor: pointer; font: 600 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    padding: 6px 12px; border-radius: 8px; color: var(--pm-con-text); border: 1px solid var(--pm-con-border-hover);
+}
+.pm-tip-btn:hover { background: var(--pm-con-hover); }
+.pm-tip-btn.pm-tip-primary { background: #50c8a8; border-color: #50c8a8; color: #062a22; }
+.pm-tip-btn.pm-tip-primary:hover { filter: brightness(1.08); }
+.pm-tip-btn:focus-visible, .pm-tip-x:focus-visible { outline: 2px solid #50c8a8; outline-offset: 2px; }
+.pm-tip-x {
+    all: unset; box-sizing: border-box; cursor: pointer; position: absolute; top: 8px; right: 8px;
+    width: 24px; height: 24px; border-radius: 6px; display: grid; place-items: center; color: var(--pm-con-muted);
+}
+.pm-tip-x:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
+.pm-tip-x svg { width: 11px; height: 11px; }
+/* The arrow, pointing at the pill: under the tip when the tip is above it. */
+.pm-tip::after {
+    content: ""; position: absolute; width: 10px; height: 10px; background: var(--pm-con-bg-solid);
+    border: 1px solid rgba(80, 200, 168, .38); transform: rotate(45deg); left: var(--pm-tip-arrow, 24px);
+}
+.pm-tip[data-side="above"]::after { bottom: -6px; border-top: 0; border-left: 0; }
+.pm-tip[data-side="below"]::after { top: -6px; border-bottom: 0; border-right: 0; }
+
+/* The pill, drawing the eye while its first tip is up. */
+@keyframes pm-pill-hint {
+    0%, 100% { box-shadow: var(--pm-con-shadow), 0 0 0 0 rgba(80, 200, 168, .55); }
+    50% { box-shadow: var(--pm-con-shadow), 0 0 0 7px rgba(80, 200, 168, 0); }
+}
+.pm-trigger.pm-pill-hint { animation: pm-pill-hint 1.8s ease-out 3; }
+
+/* A one-line tip inside the card, the first time a rewrite is shown. */
+.pm-card-tip {
+    display: flex; gap: 10px; align-items: flex-start; margin: 0 17px 12px; padding: 9px 10px 9px 12px;
+    border-radius: 10px; background: rgba(80, 200, 168, .08); border: 1px solid rgba(80, 200, 168, .25);
+    color: var(--pm-text-secondary, #b8bcc6); font-size: 12px; line-height: 1.5;
+}
+.pm-card-tip b { color: var(--pm-text); font-weight: 600; }
+.pm-card-tip button {
+    all: unset; flex: none; cursor: pointer; width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center;
+    color: var(--pm-text-muted);
+}
+.pm-card-tip button:hover { background: rgba(255, 255, 255, .07); }
+.pm-card-tip svg { width: 10px; height: 10px; }
+@media (prefers-reduced-motion: reduce) {
+    .pm-tip { transition: none; }
+    .pm-trigger.pm-pill-hint { animation: none; }
+}
+
+/* Windows draws classic 17px scrollbars; on the card and its lists they took
+   a noticeable bite out of a 600px-wide object. Thin, and in the console's
+   colours, everywhere the extension scrolls. */
+.pm-card, .pm-card-text, .pm-card-used-list, .pm-caret-list, .pm-tip {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .16) transparent;
 }

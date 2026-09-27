@@ -229,6 +229,42 @@ def main():
         check(ev("cardVersions.length") == 1 and ev("cardResult.enhanced") == "Old draft text", "old drafts still load")
         ev("closeCard(); setDefaultStyle('deep')")
 
+        # ── the shortcut shows a draft and never hides it ──
+        # Testers pressed Ctrl+Shift+E twice: the first press rewrote, the second
+        # hid the card, and the shortcut read as broken.
+        def shortcut():
+            page.focus("#composer")
+            page.keyboard.press("Control+Shift+E")
+            page.wait_for_timeout(250)
+
+        def card_open():
+            return ev("Boolean(document.querySelector('#pm-card.pm-card-visible')) && cardExpanded")
+
+        ev("FAKE.calls = []; H.type(H.ORIG)")
+        shortcut()
+        wait_title("Rewrite · Deep")
+        check(ev("FAKE.calls") == ["deep"], "the shortcut rewrites a new draft")
+        for n in (2, 3):
+            shortcut()
+            check(card_open(), f"press {n} on the same draft keeps the card open")
+        check(ev("FAKE.calls") == ["deep"], "pressing again on the same draft makes no call")
+        check("Already rewritten" in " ".join(page.locator(".pm-toast").all_inner_texts()), "and says why nothing new came")
+        page.focus("#pm-card-min")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(250)
+        check(not card_open() and ev("cardState") == "ready", "Esc tucks the draft into the pill")
+        shortcut()
+        check(card_open() and ev("FAKE.calls") == ["deep"], "the shortcut brings a tucked-away draft back, for free")
+        ev("H.type('a completely different question about rust lifetimes')")
+        shortcut()
+        page.wait_for_function("FAKE.calls.length === 2")
+        wait_title("Rewrite · Deep")
+        check(ev("cardOriginal") == "a completely different question about rust lifetimes", "new text: the shortcut rewrites it")
+        page.click("#pm-trigger", position={"x": 12, "y": 12})
+        page.wait_for_timeout(250)
+        check(not card_open(), "a click on the pill still folds the card (the pill is its handle)")
+        ev("closeCard()")
+
         # ── screenshots, dark and light host ──
         if args.shots:
             ev("FAKE.calls = []; H.type(H.ORIG)")

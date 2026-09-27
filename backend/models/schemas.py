@@ -39,12 +39,15 @@ class EnhanceRequest(BaseModel):
     - conversation_context: recent messages from the visible chat (scraped from DOM)
     - mode: 'quick' | 'deep' | 'creative' — controls enhancement intensity
     - selected_prompt_ids: IDs of saved prompts the user explicitly ticked
+    - excluded_prompt_ids: saved prompts the user asked not to use
     """
     prompt: str
     platform: Optional[str] = "unknown"
     mode: Optional[str] = "deep"  # quick | deep | creative
     conversation_context: Optional[List[str]] = None
     selected_prompt_ids: Optional[List[str]] = None
+    # Auto-matched saved prompts the user dropped from the card ("don't use").
+    excluded_prompt_ids: Optional[List[str]] = None
     source_language: Optional[str] = None  # ISO code from Whisper (e.g., "en", "hi")
     tracking_enabled: Optional[bool] = True
 

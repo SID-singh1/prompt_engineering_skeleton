@@ -116,7 +116,9 @@ let uiTheme = "dark";
 let isLoadingTab = false;
 // Passive prompt tracking: records every prompt the user submits on these
 // sites, whether or not they ever press Enhance, and keeps it server-side.
-let promptTrackingEnabled = true;
+// Off until the user turns it on, as the privacy policy, the first-run notice
+// and the popup all say. f8d0b96 had flipped the default to on.
+let promptTrackingEnabled = false;
 
 // Conversation context is different in kind: it is read from the page only
 // while fulfilling an enhancement the user explicitly asked for, is sent for
@@ -127,7 +129,7 @@ let dataConsent = false;
 
 // Load privacy preferences
 storageGet(["pm_tracking", "pm_context", "pm_data_consent_v1", "pm_mode"], (result) => {
-  promptTrackingEnabled = result.pm_tracking !== false;   // default: ON
+  promptTrackingEnabled = result.pm_tracking === true;   // default: off
   contextEnabled = result.pm_context !== false;          // default: on
   dataConsent = result.pm_data_consent_v1 === true;
   setDefaultStyle(result.pm_mode, false);
@@ -136,7 +138,7 @@ try {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
     if (changes.pm_data_consent_v1) dataConsent = changes.pm_data_consent_v1.newValue === true;
-    if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue !== false;
+    if (changes.pm_tracking) promptTrackingEnabled = changes.pm_tracking.newValue === true;
     if (changes.pm_context) contextEnabled = changes.pm_context.newValue !== false;
     // Picked in another tab: this one's next ⊕ should agree with it.
     if (changes.pm_mode) setDefaultStyle(changes.pm_mode.newValue, false);
@@ -348,6 +350,10 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   };
   if (selectedPromptIds && selectedPromptIds.length > 0) {
     body.selected_prompt_ids = selectedPromptIds;
+  }
+  // Saved prompts the user dropped from the card ("Don't use"): not searched.
+  if (inputMetadata.excludedIds && inputMetadata.excludedIds.length) {
+    body.excluded_prompt_ids = inputMetadata.excludedIds;
   }
   if (inputMetadata.inputMethod === "voice") {
     body.input_method = "voice";
@@ -892,7 +898,7 @@ function renderPill() {
       // The moment this exists for: a fresh chat, an empty box, a draft that
       // followed the user here. The verb says what it will do.
       state = "ready";
-      verb = norm(getCurrentInputText()) ? "Replace" : "Insert";
+      verb = cardSubject ? "Update" : norm(getCurrentInputText()) ? "Replace" : "Insert";
     }
   } else if (pillApplied) {
     state = "applied";
@@ -914,6 +920,7 @@ function renderPill() {
     verbEl.textContent = verb;
     verbEl.title = {
       Insert: "Insert into the chat box",
+      Update: "Update the saved prompt with this rewrite",
       Replace: "Replace the chat box text with the rewrite",
       Redo: "Rewrite what is in the chat box now",
       Retry: "Try the rewrite again",
@@ -975,6 +982,7 @@ function c0(el) {
 function placePill() {
   const pill = document.getElementById("pm-trigger");
   if (!pill) return;
+  requestAnimationFrame(positionTip);
   _c0cache = null;
   const maxBottom = Math.max(PILL_MARGIN, window.innerHeight - pill.offsetHeight - PILL_MARGIN);
   pillBottom = Math.min(Math.max(PILL_MARGIN, pillBottom), maxBottom);
@@ -1182,6 +1190,7 @@ async function restoreDraft() {
   cardResult = versions[cardVersionIndex];
   lastEnhanceResult = cardResult;
   cardOriginal = cardResult.original || "";
+  cardSubject = draft.subject && draft.subject.id ? draft.subject : null;
   cardBasedOn = draft.basedOn || norm(cardOriginal);
   cardHasBaseline = true;
   cardState = "ready";
@@ -1210,7 +1219,7 @@ function setupKeyboardShortcut() {
   try {
     chrome.runtime.onMessage.addListener((msg) => {
       if (orphaned || msg?.type !== "PM_COMMAND") return;
-      if (msg.command === "enhance-prompt") handleEnhance();
+      if (msg.command === "enhance-prompt") handleEnhance({ reveal: true });
       if (msg.command === "voice-prompt") toggleVoice();
     });
   } catch (e) { onOrphaned(e); return; }
@@ -1230,7 +1239,7 @@ function setupKeyboardShortcut() {
     // whereas e.code names the physical key.
     if (e.code === "KeyE") {
       e.preventDefault();
-      handleEnhance();
+      handleEnhance({ reveal: true });
     } else if (e.code === "KeyV") {
       e.preventDefault();
       toggleVoice();
@@ -1273,7 +1282,9 @@ const LIB_ICON = {
   shelf: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="4" rx="1.2"/><path d="M3.5 9.5h9M4.5 12.5h7"/></svg>',
 };
 
-let libView = "saved";        // "saved" | "recent"
+// "recent" is the History tab: every rewrite, as the popup and the consent
+// notice call it. "Recent" read as "recently saved", the same thing as Saved.
+let libView = "saved";        // "saved" | "recent" (shown as History)
 let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
@@ -1342,6 +1353,7 @@ function createLibrary() {
 }
 
 function togglePanel(force) {
+  hideTip();
   const lib = document.getElementById("pm-library");
   if (!lib) return;
   const open = force !== undefined ? Boolean(force) : !panelOpen;
@@ -1513,14 +1525,14 @@ function libHeadHtml() {
   const count = libView === "saved" ? savedPrompts.length : enhanceHistory.length;
   const placeholder = libView === "saved"
     ? (count ? `Search ${count} saved prompt${count === 1 ? "" : "s"}` : "Search saved prompts")
-    : "Search recent rewrites";
+    : "Search your rewrite history";
   return `<div class="pm-lib-head">` +
     `<label class="pm-lib-search">${LIB_ICON.search}` +
     `<input id="pm-lib-q" type="text" autocomplete="off" spellcheck="false" placeholder="${placeholder}" value="${escHtml(searchQuery)}"` +
     ` aria-label="Search the library" role="combobox" aria-expanded="true" aria-controls="pm-lib-list" aria-autocomplete="list"></label>` +
     `<div class="pm-lib-views" role="group" aria-label="Show">` +
-    `<button type="button" id="pm-lib-view-saved" data-view="saved" aria-pressed="${libView === "saved"}">Saved</button>` +
-    `<button type="button" id="pm-lib-view-recent" data-view="recent" aria-pressed="${libView === "recent"}">Recent</button></div>` +
+    `<button type="button" id="pm-lib-view-saved" data-view="saved" aria-pressed="${libView === "saved"}" title="Prompts you chose to keep">Saved</button>` +
+    `<button type="button" id="pm-lib-view-recent" data-view="recent" aria-pressed="${libView === "recent"}" title="Every rewrite you have made">History</button></div>` +
     more + `</div>`;
 }
 
@@ -1528,7 +1540,7 @@ function libBodyHtml() {
   if (libPage === "signin") {
     return `<div class="pm-lib-page">` +
       `<p class="pm-lib-lead">Your library lives in your account.</p>` +
-      `<p class="pm-lib-note">Saved prompts, your recent rewrites and context you attach are kept there, so they follow you across sites. ⊕ still rewrites without one.</p>` +
+      `<p class="pm-lib-note">Saved prompts, your rewrite history and context you attach are kept there, so they follow you across sites. ⊕ still rewrites without one.</p>` +
       `<button type="button" class="pm-lib-primary" id="pm-lib-signin" data-act="signin">Sign in</button></div>`;
   }
   if (libPage === "privacy") {
@@ -1539,6 +1551,7 @@ function libBodyHtml() {
       row("pm-tracking-toggle", promptTrackingEnabled, "Prompt tracking", "Logs the prompts you send on these sites to improve future suggestions.") +
       row("pm-context-toggle", contextEnabled, "Conversation context", "Reads recent messages in this chat when you ask for a rewrite, for that request only.") +
       row("pm-slash-toggle", slashEnabled, "Type // for saved prompts", "Opens your saved prompts at the cursor in the chat box.") +
+      row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
   if (libPage === "feedback") {
@@ -1551,7 +1564,7 @@ function libBodyHtml() {
       `<span class="pm-lib-status" id="pm-feedback-status" role="status"></span></div>` +
       `<div class="pm-lib-recent-feedback" id="pm-feedback-recent"></div></div>`;
   }
-  return `<div class="pm-lib-list" id="pm-lib-list" role="listbox" aria-label="${libView === "saved" ? "Saved prompts" : "Recent rewrites"}">${libRowsHtml()}</div>`;
+  return `<div class="pm-lib-list" id="pm-lib-list" role="listbox" aria-label="${libView === "saved" ? "Saved prompts" : "Rewrite history"}">${libRowsHtml()}</div>`;
 }
 
 function libRowsHtml() {
@@ -1563,7 +1576,7 @@ function libRowsHtml() {
   if (!list.length) {
     const q = searchQuery.trim();
     if (q) return `<div class="pm-lib-empty"><b>Nothing matches “${escHtml(q)}”</b>Search looks at titles, text and tags. Start with # to match a tag.</div>`;
-    if (libView === "recent") return `<div class="pm-lib-empty"><b>No rewrites yet</b>Press ⊕ on anything you type and it shows up here.</div>`;
+    if (libView === "recent") return `<div class="pm-lib-empty"><b>No history yet</b>Every rewrite you make with ⊕ shows up here. Save the ones worth keeping.</div>`;
     return `<div class="pm-lib-empty"><b>Your library is empty</b>Type a prompt in the chat box and it appears here, ready to save. ${CMD_KEY}S saves a rewrite from its card.</div>`;
   }
   const verb = libVerb();
@@ -1603,7 +1616,8 @@ function libRowsHtml() {
       `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
       `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
     if (libRowMenu === p.id) {
-      row += `<div class="pm-lib-rowmenu"><button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;
+      row += `<div class="pm-lib-rowmenu"><button type="button" data-act="improve" data-i="${i}" title="Rewrite this saved prompt, then update it or save a new one">Improve</button>` +
+        `<button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;
     }
     return row;
   }).join("");
@@ -1644,6 +1658,36 @@ function libMenuHtml() {
 
 // ── What the sheet does ──
 
+/**
+ * Rewrite a saved prompt itself. Opens the same card as ⊕, with the saved
+ * prompt as the original; styles and versions work as usual, and the verb is
+ * "Update saved prompt". It never matches itself as related context.
+ */
+async function improveSavedPrompt(p) {
+  closeLibrary();
+  if (enhanceInFlight) { showToast("Already enhancing \u2014 hang on a moment.", "info"); return; }
+  if (cardState !== "idle") {
+    // Starting over would drop the pending draft without a word.
+    showToast("Use or discard the draft in the pill first.", "info");
+    revealCard();
+    return;
+  }
+  const route = await resolveEnhanceRoute();
+  if (!route || cardState !== "idle") return;
+  cardSubject = { id: p.id, title: promptTitle(p), content: p.content };
+  enhanceInFlight = true;
+  showStreamingDiffModal(p.content);
+  try {
+    if (route.route === "direct") await runDirectEnhance(p.content, route);
+    else await runBackendEnhance(p.content, { excludedIds: [p.id], excluded: [] });
+  } catch (err) {
+    console.error("Prompt Memory: improve failed", err);
+    failStreamingModal(err?.message || "Enhancement failed. Please try again.");
+  } finally {
+    enhanceInFlight = false;
+  }
+}
+
 async function libInsert(text, logId) {
   closeLibrary();
   const applied = await applyOrFallback(text, null);
@@ -1656,6 +1700,8 @@ async function libInsert(text, logId) {
 async function libSaveText(text) {
   const outcome = await createSavedPrompt(text, "", []);
   if (outcome === "saved") {
+    statsBump("saves");
+    tipDone("save");
     await fetchSavedPrompts();
     showToast("Saved to your library", "success");
   } else {
@@ -1688,6 +1734,9 @@ function libAct(act, i) {
       return;
     case "edit":
       if (it?.kind === "saved") { libRowMenu = null; showEditModal(it.p); }
+      return;
+    case "improve":
+      if (it?.kind === "saved") { libRowMenu = null; improveSavedPrompt(it.p); }
       return;
     case "ask":
       if (it?.kind === "saved") { libConfirm = it.p.id; libRowMenu = null; renderLibraryList(); document.getElementById("pm-lib-del")?.focus(); }
@@ -1775,6 +1824,7 @@ function onLibraryChange(e) {
   if (id === "pm-tracking-toggle") { promptTrackingEnabled = e.target.checked; storageSet({ pm_tracking: promptTrackingEnabled }); }
   if (id === "pm-context-toggle") { contextEnabled = e.target.checked; storageSet({ pm_context: contextEnabled }); }
   if (id === "pm-slash-toggle") { slashEnabled = e.target.checked; storageSet({ pm_slash: slashEnabled }); }
+  if (id === "pm-tips-toggle") { tips.off = !e.target.checked; storageSet({ pm_tips_off: tips.off }); if (tips.off) hideTip(); }
 }
 
 function onLibraryKeydown(e) {
@@ -2178,6 +2228,8 @@ async function slashInsert() {
   const landed = norm(after).includes(norm(p.content)) && !norm(after).includes(norm(token));
   if (!landed && expected !== null) await applyOrFallback(expected, null);
   showApplied(null);
+  statsBump("slash");
+  tipDone("slash");
 }
 
 function slashAttach() {
@@ -2254,6 +2306,7 @@ function onComposerChanged() {
     checkSlash();
     refreshCardStaleness();
     positionRail();
+    tipsOnComposerChanged();
   });
 }
 
@@ -2264,6 +2317,9 @@ function setupLibraryListeners() {
     if (composer && (e.target === composer || composer.contains(e.target))) {
       checkSlash();
       requestAnimationFrame(positionRail);
+      // A <textarea> composer changes its value, not its DOM, so the
+      // MutationObserver never fires for it: the tips hear typing here too.
+      tipsOnComposerChanged();
     }
   }, true);
   // The caret moving (a click, an arrow key) opens or closes // too, and it is
@@ -2409,10 +2465,11 @@ async function fetchMyFeedback() {
 // ══════════════════════════════════════════════════════════════
 
 /** Open the extension's own settings UI. */
-function openSettings() {
+/** Open the settings page; `section` ("key" or "signin") opens it at that step. */
+function openSettings(section = "") {
   if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   try {
-    chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS" }, () => {
+    chrome.runtime.sendMessage({ type: "PM_OPEN_OPTIONS", section }, () => {
       if (!extensionAlive()) { onOrphaned(); return; }
       if (chrome.runtime.lastError) {
         showToast("Click the Prompt Memory icon in your toolbar to open settings.", "info");
@@ -2436,14 +2493,37 @@ let enhanceInFlight = false;
  * on the pill from spending one of fifteen daily enhancements on the same
  * sentence twice.
  */
-function reopenDraftIfRelevant() {
+function reopenDraftIfRelevant(reveal = false) {
   if (cardState === "idle") return false;
-  if (cardState === "streaming") { toggleCard(); return true; }
-  if (cardState === "error") { toggleCard(); return true; }
-  const now = norm(getCurrentInputText());
-  if (now && now !== cardBasedOn) return false;
-  toggleCard();
+  // An Improve draft is not about the chat box, so new text there does not
+  // replace it: ⊕ shows it until it is used or discarded.
+  if (cardState === "ready" && !cardSubject) {
+    const now = norm(getCurrentInputText());
+    if (now && now !== cardBasedOn) return false;
+  }
+  if (reveal) revealCard();
+  else toggleCard();
   return true;
+}
+
+/**
+ * Bring the draft's card up, and never put it away.
+ *
+ * The keyboard shortcut used to go through toggleCard(), so pressing it again
+ * on the same draft hid the card it had just shown: one press rewrote, the next
+ * made the rewrite vanish, and testers reported the shortcut as broken. The
+ * pill still folds the card on click (it is the card's handle), and ⌘⇧P is
+ * the explicit toggle; the shortcut only ever shows.
+ */
+function revealCard() {
+  if (!cardExpanded) { expandCard(); return; }
+  const card = document.getElementById("pm-card");
+  if (card) {
+    card.classList.remove("pm-card-nudge");
+    void card.offsetWidth;   // restart the animation
+    card.classList.add("pm-card-nudge");
+  }
+  if (cardState === "ready") showToast("Already rewritten. Change the text in the chat box to rewrite it again.", "info");
 }
 
 /**
@@ -2483,16 +2563,18 @@ async function resolveEnhanceRoute() {
   return route;
 }
 
-async function handleEnhance() {
+/** `reveal`: the keyboard shortcut, which shows a pending draft but never hides it. */
+async function handleEnhance({ reveal = false } = {}) {
   if (orphaned || !extensionAlive()) {
     onOrphaned();
     return;
   }
   if (enhanceInFlight) {
-    showToast("Already enhancing — hang on a moment.", "info");
+    if (reveal && cardState === "streaming") revealCard();
+    else showToast("Already enhancing — hang on a moment.", "info");
     return;
   }
-  if (reopenDraftIfRelevant()) return;
+  if (reopenDraftIfRelevant(reveal)) return;
 
   const inputText = getCurrentInputText();
   if (!inputText || inputText.trim().length < 3) {
@@ -2610,6 +2692,10 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
       }
       updateUsageBar();
 
+      // context_details names each saved prompt that shaped the rewrite. It
+      // was dropped here, so the card could only ever say "3 saved prompts
+      // used" and never which ones, though the server has sent them since
+      // the streaming route learned to (7725aef).
       lastEnhanceResult = {
         original: inputText,
         enhanced: parts.join(""),
@@ -2618,6 +2704,8 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
         mode: metadata.mode || style,
         model: metadata.model,
         context_used: metadata.context_used,
+        context_details: metadata.context_details,
+        excluded: inputMetadata.excluded || [],
       };
       finalizeStreamingModal(lastEnhanceResult);
     },
@@ -2709,6 +2797,12 @@ let cardVersionIndex = 0;
 let cardRerunFrom = null;
 // The style the streaming card is waiting on, for its title.
 let cardStreamingStyle = "";
+// Whether the list of saved prompts under the rewrite is open. Per draft.
+let cardUsedOpen = false;
+// Set when the draft improves a saved prompt rather than the chat box text:
+// { id, title, content }. Its verb is "Update saved prompt", and the chat box
+// has no say in it — it is neither the source nor the destination.
+let cardSubject = null;
 // Set by whichever stream runner is active; called by closeCard() while
 // streaming. Without it "cancel" only hid the card, and the rewrite popped
 // back up as a finished draft when the stream it was still running ended.
@@ -2741,7 +2835,7 @@ function resetCardLayout() {
   if (!card) return;
   card.classList.remove("pm-card-free");
   card.style.height = "";
-  if (document.activeElement?.id === "pm-card-reset") card.querySelector("#pm-card-layout-toggle")?.focus({ preventScroll: true });
+  if (document.activeElement?.id === "pm-card-reset") card.querySelector("#pm-card-resize")?.focus({ preventScroll: true });
   positionCard();
   placePill();
 }
@@ -2753,7 +2847,7 @@ function resetCardLayout() {
  * that followed the user is meant to land.
  */
 function isStaleAgainstComposer() {
-  if (!cardBasedOn) return false;
+  if (!cardBasedOn || cardSubject) return false;
   const now = norm(getCurrentInputText());
   return now !== "" && now !== cardBasedOn;
 }
@@ -2786,8 +2880,11 @@ function getOrCreateCard() {
 function setupCardInteractions(card) {
   const head = card.querySelector(".pm-card-head");
   const grip = card.querySelector(".pm-card-resize");
-  const toggle = card.querySelector("#pm-card-layout-toggle");
-  if (!head || !grip || !toggle) return;
+  // No separate "Layout" button in the title bar: the grip is the one way in.
+  // Dragging it resizes; clicking it (or Enter/Space) opens the move and size
+  // controls, the non-drag route; arrow keys on it resize. Before, a missing
+  // toggle made this return early and silently disabled dragging too.
+  if (!head || !grip) return;
   const controls = document.createElement("div");
   controls.id = "pm-card-layout";
   controls.className = "pm-card-layout";
@@ -2821,15 +2918,18 @@ function setupCardInteractions(card) {
   head.after(controls);
   const toggleLayout = () => {
     controls.hidden = !controls.hidden;
-    toggle.setAttribute("aria-expanded", String(!controls.hidden));
+    grip.setAttribute("aria-expanded", String(!controls.hidden));
     positionCard();
   };
-  toggle.addEventListener("click", toggleLayout);
   card.querySelector("#pm-card-reset")?.addEventListener("click", resetCardLayout);
-  let suppressGripClick = false;
+  // A pointer press on the grip is captured by the card (so a resize cannot
+  // slip off the small grip), which means the click it ends with lands on the
+  // card, not here: a mouse click on the grip never reached this handler and
+  // opened nothing. A press that ends without moving is therefore handled in
+  // end() below, and this handler only answers keyboard clicks (detail 0:
+  // Enter or Space on the focused grip).
   grip.addEventListener("click", (e) => {
-    if (suppressGripClick && e.detail !== 0) { suppressGripClick = false; return; }
-    suppressGripClick = false;
+    if (e.detail !== 0) return;
     toggleLayout();
   });
   grip.addEventListener("keydown", (e) => {
@@ -2841,7 +2941,6 @@ function setupCardInteractions(card) {
   const begin = (event, kind) => {
     if (event.button !== 0 || (kind === "move" && event.target.closest("button"))) return;
     card._pmEndGesture?.();
-    suppressGripClick = false;
     const r = card.getBoundingClientRect();
     const start = { x: event.clientX, y: event.clientY };
     let moved = false;
@@ -2876,8 +2975,9 @@ function setupCardInteractions(card) {
       card.removeEventListener("lostpointercapture", end);
       try { card.releasePointerCapture(event.pointerId); } catch { /* already released */ }
       card.classList.remove("pm-card-moving", "pm-card-resizing");
+      // A press on the grip that did not move is a click: open the controls.
+      if (!moved && kind === "resize" && next?.type === "pointerup") toggleLayout();
       if (moved) {
-        suppressGripClick = kind === "resize";
         const box = card.getBoundingClientRect();
         cardLayout = { detached: true, x: box.left, y: box.top, width: box.width, height: box.height };
         saveCardLayout();
@@ -3053,11 +3153,12 @@ function positionCard() {
 }
 
 function openCard(innerHTML) {
+  hideTip();   // the card is what the user is looking at now
   const card = getOrCreateCard();
   const focusedId = card.contains(document.activeElement) ? document.activeElement.id : null;
   card._pmEndGesture?.();
   card.innerHTML = innerHTML +
-    `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" title="Drag to resize, or click for layout controls"></button>`;
+    `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" aria-expanded="false" aria-controls="pm-card-layout" title="Drag to resize, or click to move and size with buttons"></button>`;
   cardExpanded = true;
   positionRail();   // the card takes the chat box's top edge; the rail steps aside
   setupCardInteractions(card);
@@ -3136,6 +3237,8 @@ function closeCard() {
   cardVersionIndex = 0;
   cardRerunFrom = null;
   cardStreamingStyle = "";
+  cardUsedOpen = false;
+  cardSubject = null;
   draftStore.clear();
   renderPill();
 }
@@ -3159,7 +3262,6 @@ function cardHead(title, kind = "") {
   return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}" title="Drag to move">` +
     `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
     `<span class="pm-card-title">${title}</span>` +
-    `<button class="pm-card-layout-toggle" type="button" id="pm-card-layout-toggle" aria-expanded="false" aria-controls="pm-card-layout">Layout</button>` +
     `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
     `<button class="pm-card-min" type="button" id="pm-card-min" title="Minimize to the pill (esc)" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
   `</div>`;
@@ -3182,8 +3284,9 @@ function showStreamingDiffModal(originalText, style = currentMode) {
 
 /** The streaming card's markup, also used to re-open it from the pill. */
 function showStreamingCardAgain() {
+  const what = cardSubject ? `Improving \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewriting";
   openCard(
-    cardHead(`Rewriting${STYLE_NAMES[cardStreamingStyle] ? " \u00b7 " + STYLE_NAMES[cardStreamingStyle] : ""}\u2026`, "live") +
+    cardHead(`${what}${STYLE_NAMES[cardStreamingStyle] ? " \u00b7 " + STYLE_NAMES[cardStreamingStyle] : ""}\u2026`, "live") +
     `<div class="pm-card-text" id="pm-stream-target"><span class="pm-card-cursor"></span></div>` +
     cardFoot([
       `<button class="pm-card-act" id="pm-card-cancel">${cardKey("esc")} cancel</button>`,
@@ -3211,6 +3314,8 @@ function finalizeStreamingModal(result) {
   // Cancelled — or replaced by something else — while the tokens were still
   // arriving. The result is dropped; it is no longer the draft.
   if (cardState !== "streaming") return;
+  statsBump("rewrites");
+  tipDone("meet");
   if (cardRerunFrom) {
     cardVersions = [...cardRerunFrom.versions, result];
     cardRerunFrom = null;
@@ -3305,6 +3410,7 @@ function showDiffModal(result) {
     createdAt: result.createdAt || Date.now(),
     source: window.location.hostname,
     expanded: !cardMinimized,
+    subject: cardSubject,
   });
   if (!result.createdAt) result.createdAt = Date.now();
 
@@ -3318,7 +3424,7 @@ function showDiffModal(result) {
   const body = `<div class="pm-card-comparison">` +
     `<div class="pm-card-reading"><div class="pm-card-pane-label">Selected: ${cardShowingOriginal ? "Original" : "Rewrite"}</div>` +
     `<div class="pm-card-text${cardShowingOriginal ? " pm-card-original" : ""}">${cardShowingOriginal ? original : enhanced}</div></div>` +
-    `<div class="pm-card-reference"><div class="pm-card-pane-label">${cardShowingOriginal ? "Rewrite" : "Original"}</div>` +
+    `<div class="pm-card-reference"><div class="pm-card-pane-label">${cardShowingOriginal ? "Rewrite" : cardSubject ? "Saved prompt" : "Original"}</div>` +
     `<div class="pm-card-reference-text">${cardShowingOriginal ? enhanced : original}</div></div></div>`;
 
   // Named rather than merely dimmed. "Why is this greyed out" is a worse
@@ -3331,28 +3437,14 @@ function showDiffModal(result) {
     ? cardHead(cardShowingOriginal
         ? "Prompt changed \u2014 this is the text the rewrite was built from"
         : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
-    : cardHead(cardShowingOriginal ? "Original" : `Rewrite${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
+    : cardHead(cardShowingOriginal
+        ? (cardSubject ? "Saved prompt, as it is" : "Original")
+        : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
 
-  // Only shown when a saved prompt actually shaped the rewrite. The old footer
-  // printed four zeros on every result, which teaches people to stop reading it.
-  // Degrade by what the response actually carries. The two enhance endpoints
-  // returned different shapes — only the non-streaming one included
-  // context_details — so reading details alone meant the chip never appeared
-  // on the streaming path, which is the path the extension uses.
-  let chip = "";
-  const matched = result.context_details?.auto_matched_prompts?.[0];
-  const autoCount = result.context_used?.auto_matched || 0;
-  const selectedCount = result.context_used?.selected || 0;
-  if (!cardShowingOriginal) {
-    if (matched && (matched.title || matched.content)) {
-      const label = (matched.title || matched.content || "saved prompt").slice(0, 48);
-      chip = `<div class="pm-card-chip" title="This rewrite drew on a saved prompt">\u21B3 ${escHtml(label)}</div>`;
-    } else if (autoCount > 0) {
-      chip = `<div class="pm-card-chip">\u21B3 ${autoCount} saved prompt${autoCount > 1 ? "s" : ""} used</div>`;
-    } else if (selectedCount > 0) {
-      chip = `<div class="pm-card-chip">\u21B3 ${selectedCount} selected</div>`;
-    }
-  }
+  // Which saved prompts shaped this rewrite, each one named, with a way to
+  // drop an auto-matched one and rewrite again without it. Only shown when a
+  // saved prompt actually took part.
+  const chip = cardUsedHtml(result);
 
   const truncatedNote = result.truncated
     ? `<span class="pm-card-meta" style="color:var(--pm-danger)">cut short</span>`
@@ -3363,7 +3455,9 @@ function showDiffModal(result) {
   // ⌘S save while their key handlers below stayed live. A footer that stops
   // listing keys that still work is worse than one that never listed them, and
   // the reflow made the card visibly rebuild itself the moment you typed.
-  const acceptLabel = cardShowingOriginal ? "Use original" : norm(getCurrentInputText()) ? "Replace draft" : "Insert";
+  const acceptLabel = cardSubject
+    ? (cardShowingOriginal ? "Keep it as it is" : "Update saved prompt")
+    : cardShowingOriginal ? "Use original" : norm(getCurrentInputText()) ? "Replace draft" : "Insert";
   const accept = cardStale
     ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${acceptLabel}</span>`
     : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
@@ -3377,7 +3471,7 @@ function showDiffModal(result) {
     // up again — from this chat or the next one. Discard is its own action.
     `<button class="pm-card-act" id="pm-card-close">${cardKey("esc")} minimize</button>`,
     `<button class="pm-card-act" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
-    `<button class="pm-card-act" id="pm-card-save">${cardKey(CMD_KEY + "S")} save</button>`,
+    `<button class="pm-card-act" id="pm-card-save">${cardKey(CMD_KEY + "S")} ${cardSubject ? "save as new" : "save"}</button>`,
     `<button class="pm-card-act pm-card-discard" id="pm-card-discard">discard</button>`,
     `<span class="pm-card-spacer"></span>`,
     truncatedNote,
@@ -3394,7 +3488,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + chip + cardStyleRow(result) + cardFoot(actions));
+  const card = openCard(head + body + cardTipHtml() + chip + cardStyleRow(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -3418,7 +3512,68 @@ function showDiffModal(result) {
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
+  document.getElementById("pm-card-tip-x")?.addEventListener("click", () => {
+    tipDone("card");
+    document.getElementById("pm-card-tip")?.remove();
+    positionCard();
+  });
+  document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
+    cardUsedOpen = !cardUsedOpen;
+    e.currentTarget.setAttribute("aria-expanded", String(cardUsedOpen));
+    const list = document.getElementById("pm-card-used-list");
+    if (list) list.hidden = !cardUsedOpen;
+    positionCard();
+  });
+  card.querySelectorAll("[data-pm-drop]").forEach((b) =>
+    b.addEventListener("click", () => rerunWithout(b.dataset.pmDrop, b.dataset.pmTitle || "")));
   renderPill();
+}
+
+/**
+ * The saved prompts that shaped a rewrite: the ones the user attached, and
+ * the ones the server matched on its own. A matched one can be dropped, which
+ * rewrites the same text again without it (a new version; the old one stays).
+ */
+function cardUsedHtml(result) {
+  if (cardShowingOriginal) return "";
+  const d = result.context_details || {};
+  const items = [
+    ...(d.selected_prompts || []).map((p) => ({ ...p, kind: "attached" })),
+    ...(d.auto_matched_prompts || []).map((p) => ({ ...p, kind: "matched" })),
+  ];
+  const left = result.excluded || [];
+  if (!items.length && !left.length) {
+    // A server that sends counts only.
+    const n = (result.context_used?.auto_matched || 0) + (result.context_used?.selected || 0);
+    return n ? `<div class="pm-card-chip">\u21B3 ${n} saved prompt${n > 1 ? "s" : ""} used</div>` : "";
+  }
+  const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
+  const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
+  const name = (p) => flat(p.title) || clip(flat(p.content), 40) || "Saved prompt";
+  const summary = items.length
+    ? "Used " + items.slice(0, 2).map((p) => escHtml(clip(name(p), 26))).join(" \u00b7 ") +
+      (items.length > 2 ? ` +${items.length - 2}` : "")
+    : "No saved prompts used";
+  const rows = items.map((p) => {
+    const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
+    const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
+    const drop = p.kind === "matched" && p.id && !cardStale
+      ? `<button type="button" class="pm-card-used-drop" data-pm-drop="${escHtml(p.id)}" data-pm-title="${escHtml(name(p))}" ` +
+        `title="Rewrite again without this saved prompt">Don\u2019t use</button>`
+      : "";
+    return `<li class="pm-card-used-item pm-card-used-${p.kind}">` +
+      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : "\u2248"}</span>` +
+      `<span class="pm-card-used-text"><span class="pm-card-used-name">${escHtml(clip(name(p), 60))}</span>` +
+      `<span class="pm-card-used-why">${why}${preview}</span></span>${drop}</li>`;
+  }).join("");
+  const leftOut = left.length
+    ? `<li class="pm-card-used-left">Left out: ${left.map((x) => escHtml(clip(flat(x.title) || "a saved prompt", 40))).join(", ")}</li>`
+    : "";
+  return `<div class="pm-card-used">` +
+    `<button type="button" class="pm-card-chip pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
+    `aria-controls="pm-card-used-list" title="The saved prompts this rewrite drew on">\u21B3 ${summary}` +
+    `<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>` +
+    `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul></div>`;
 }
 
 /**
@@ -3474,6 +3629,20 @@ async function rerunInStyle(style) {
   if (cardState !== "ready" || !cardResult || cardStale || !STYLES.includes(style)) return;
   const made = cardVersions.findIndex((v) => v.mode === style);
   if (made !== -1) { stepVersion(made - cardVersionIndex); return; }
+  // A saved prompt the user dropped stays dropped in the other styles.
+  await rerunDraft(style, cardResult.excluded || []);
+}
+
+/** Rewrite the same text again, in the same style, without one saved prompt. */
+async function rerunWithout(id, title) {
+  if (cardState !== "ready" || !cardResult || cardStale || cardResult.direct || !id) return;
+  const excluded = [...(cardResult.excluded || []).filter((x) => x.id !== id), { id, title }];
+  await rerunDraft(STYLES.includes(cardResult.mode) ? cardResult.mode : currentMode, excluded);
+}
+
+/** A new version of this draft; the versions already made are kept. */
+async function rerunDraft(style, excluded = []) {
+  tipDone("card");   // they found the style buttons
   if (enhanceInFlight) {
     showToast("Already enhancing \u2014 hang on a moment.", "info");
     return;
@@ -3501,9 +3670,12 @@ async function rerunInStyle(style) {
   cardBasedOn = basedOn;
   try {
     if (route.route === "direct") await runDirectEnhance(original, route, style);
-    else await runBackendEnhance(original, {}, style);
+    else await runBackendEnhance(original, {
+      excludedIds: [...excluded.map((x) => x.id), ...(cardSubject ? [cardSubject.id] : [])],
+      excluded,
+    }, style);
   } catch (err) {
-    console.error("Prompt Memory: style rerun failed", err);
+    console.error("Prompt Memory: rerun failed", err);
     failStreamingModal(err?.message || "Enhancement failed. Please try again.");
   } finally {
     enhanceInFlight = false;
@@ -3549,6 +3721,7 @@ document.addEventListener("input", refreshCardStaleness, true);
 /** Write the rewrite into the composer. */
 async function acceptCard() {
   if (cardState !== "ready" || !cardResult) return;
+  if (cardSubject) { await acceptImprovement(); return; }
   if (cardStale || isStaleAgainstComposer()) {
     // The dangerous action. Accepting here would replace what the user just
     // typed with a rewrite of text that no longer exists — and it would report
@@ -3572,13 +3745,56 @@ async function acceptCard() {
   // asks how it was — in the object the user was already looking at, rather
   // than a toast beside a pill that had just collapsed.
   if (applied) showApplied(canRate ? result : null);
+  if (applied) {
+    tipDone("card");
+    statsBump("inserts");
+    maybeTipSave();
+  }
   if (applied && applyingEnhanced && result.log_id) {
     await approveEnhancement(result.log_id);
   }
 }
 
+/**
+ * Write an Improve draft back over the saved prompt it came from. The old
+ * text is one Undo away, and the chat box is not touched.
+ */
+async function acceptImprovement() {
+  const subject = cardSubject;
+  const result = cardResult;
+  if (cardShowingOriginal) {
+    closeCard();
+    showToast("Kept your saved prompt as it was.", "info");
+    return;
+  }
+  const ok = await updateSavedPrompt(subject.id, { content: result.enhanced });
+  if (!ok) {
+    // The draft stays, so nothing is lost: the user can retry or save as new.
+    showToast("Could not update the saved prompt. Try again, or save it as new.", "error");
+    return;
+  }
+  closeCard();
+  await fetchSavedPrompts();
+  if (result.log_id) approveEnhancement(result.log_id);
+  showToast(`Updated \u201c${clipText(subject.title, 40)}\u201d`, "success", {
+    label: "Undo",
+    run: async () => {
+      const back = await updateSavedPrompt(subject.id, { content: subject.content });
+      await fetchSavedPrompts();
+      showToast(back ? "Restored the earlier version." : "Could not restore it.", back ? "info" : "error");
+    },
+  });
+}
+
 async function saveCard() {
   if (!cardResult) return;
+  if (cardSubject) {
+    const outcome = await createSavedPrompt(cardResult.enhanced, `${cardSubject.title} (improved)`, []);
+    if (outcome === "saved") fetchSavedPrompts();
+    showToast(outcome === "saved" ? "Saved as a new prompt; the original is unchanged" : outcome === "duplicate" ? "Already in your library" : "Could not save",
+      outcome === "saved" ? "success" : outcome === "duplicate" ? "info" : "error");
+    return;
+  }
   const outcome = await createSavedPrompt(cardResult.enhanced, null, []);
   if (outcome === "duplicate") {
     showToast("Already in your library", "info");
@@ -3586,7 +3802,7 @@ async function saveCard() {
   }
   const saved = outcome === "saved";
   showToast(saved ? "Saved to your library" : "Could not save", saved ? "success" : "error");
-  if (saved) fetchSavedPrompts();
+  if (saved) { fetchSavedPrompts(); statsBump("saves"); tipDone("save"); }
 }
 
 // ── Keymap ──
@@ -3658,26 +3874,20 @@ function showSetupRequiredModal() {
       <button class="pm-header-close pm-modal-close-btn">×</button>
     </div>
     <div class="pm-modal-body">
-      <p class="pm-setup-intro">Prompt Memory needs an AI model to rewrite your prompts. Pick either option — both are free.</p>
+      <p class="pm-setup-intro">One step before your first rewrite: choose what does the rewriting. Both are free, and your draft stays as it is.</p>
 
       <div class="pm-setup-option pm-setup-option-primary">
-        <div class="pm-setup-badge">Recommended · no Prompt Memory sign-in</div>
-        <div class="pm-setup-title">Use your own free Groq key</div>
-        <div class="pm-setup-desc">
-          Takes about a minute. Your prompts go straight from your browser to
-          your chosen provider and never touch our server. Your usage allowance
-          depends on that provider, model, and account.
-        </div>
-        <button class="pm-btn pm-btn-primary" id="pm-setup-byok">Add my key</button>
+        <div class="pm-setup-badge">Quickest</div>
+        <div class="pm-setup-title">Sign in with Google</div>
+        <div class="pm-setup-desc">15 free rewrites a day, and your saved prompts and History on every computer.</div>
+        <button class="pm-btn pm-btn-primary" id="pm-setup-signin">Continue with Google</button>
       </div>
 
       <div class="pm-setup-option">
-        <div class="pm-setup-title">Or sign in with Google</div>
-        <div class="pm-setup-desc">
-          Uses our shared key — capped at 15 enhancements a day — and unlocks
-          saved prompts, history, and context from your past prompts.
-        </div>
-        <button class="pm-btn pm-btn-secondary" id="pm-setup-signin">Sign in</button>
+        <div class="pm-setup-badge">Most private</div>
+        <div class="pm-setup-title">Use your own free key</div>
+        <div class="pm-setup-desc">No account with us: your drafts go straight to the AI provider. Getting a free Groq key takes about a minute.</div>
+        <button class="pm-btn pm-btn-secondary" id="pm-setup-byok">Add a free key</button>
       </div>
     </div>
   `;
@@ -3692,11 +3902,11 @@ function showSetupRequiredModal() {
   // to set the product up.
   modal.querySelector("#pm-setup-byok")?.addEventListener("click", () => {
     closeModal();
-    openSettings();
+    openSettings("key");
   });
   modal.querySelector("#pm-setup-signin")?.addEventListener("click", () => {
     closeModal();
-    openSettings();
+    openSettings("signin");
   });
 
   // Without this the modal is built, inserted, wired up — and never shown.
@@ -3833,7 +4043,7 @@ function dismissToast(toast) {
 // The rating question after an accepted rewrite lives in the pill: see
 // showApplied() / ratePill().
 
-function showToast(message, type = "info") {
+function showToast(message, type = "info", action = null) {
   document.getElementById("pm-toast")?.remove();
 
   const stack = getOrCreateToastStack();
@@ -3841,6 +4051,15 @@ function showToast(message, type = "info") {
   toast.id = "pm-toast";
   toast.className = `pm-toast pm-toast-${type}`;
   toast.textContent = message;
+  // One optional action, such as Undo. It stays up longer, so it can be used.
+  if (action) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "pm-toast-action";
+    b.textContent = action.label;
+    b.addEventListener("click", () => { dismissToast(toast); action.run(); }, { once: true });
+    toast.appendChild(b);
+  }
 
   // Before the feedback toast when both are up, so the plain status line reads
   // first and the thing with buttons sits nearest the card.
@@ -3851,7 +4070,7 @@ function showToast(message, type = "info") {
     positionToasts();
   });
 
-  setTimeout(() => dismissToast(toast), 3000);
+  setTimeout(() => dismissToast(toast), action ? 8000 : 3000);
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -3934,7 +4153,7 @@ function showModal(title, body, buttons = []) {
       <span class="pm-modal-title">${escHtml(title)}</span>
       <button class="pm-header-close pm-modal-close-btn">×</button>
     </div>
-    <div class="pm-modal-body">${escHtml(body)}</div>
+    <div class="pm-modal-body pm-modal-text">${escHtml(body)}</div>
     <div class="pm-modal-footer">${footerBtns}</div>
   `;
 
@@ -3967,10 +4186,10 @@ async function ensureDataConsent() {
     modal.innerHTML = `
       <div class="pm-modal-header"><span class="pm-modal-title">How Prompt Memory handles your data</span></div>
       <div class="pm-modal-body pm-consent-body">
-        <p><strong>Only when you ask:</strong> Enhance sends your draft to an AI provider. When signed in, our server also receives it, saves the draft and rewrite in History, and includes up to six recent chat messages for context by default. You can switch that context off in Settings.</p>
+        <p><strong>Only when you ask:</strong> Enhance sends your draft to an AI provider. When signed in, our server also receives it, saves the draft and rewrite in History, and includes up to six recent chat messages for context by default. You can switch that context off in the Library: ⋯ → Privacy settings.</p>
         <p><strong>Your own key:</strong> Without sign-in, the draft goes directly from your browser to the provider. If you also sign in, the key is forwarded through our server for each enhancement request so memory features can work.</p>
         <p><strong>Other choices:</strong> Sign-in shares your Google email with us. Voice sends audio to our server and Groq when you record. Prompt Tracking logs submitted prompts only if you turn it on.</p>
-        <a href="https://github.com/siddhm11/prompt_engineering_skeleton/blob/main/website/privacy.html" target="_blank" rel="noreferrer">Read the full privacy policy</a>
+        <a href="https://prompt-engineering-skeleton-seven.vercel.app/privacy" target="_blank" rel="noreferrer">Read the full privacy policy</a>
       </div>
       <div class="pm-modal-footer">
         <button class="pm-btn pm-btn-secondary" id="pm-consent-cancel">Not now</button>
@@ -4075,6 +4294,7 @@ function getCurrentInputText() {
 }
 
 const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+const clipText = (s, n) => { const t = norm(s); return t.length > n ? t.slice(0, n - 1) + "\u2026" : t; };
 
 /**
  * Write text into the page's composer. Returns true only if it actually stuck.
@@ -4793,6 +5013,265 @@ function applyTheme(theme) {
 // INIT
 // ══════════════════════════════════════════════════════════════
 
+// ══════════════════════════════════════════════════════════════
+// FIRST-RUN TIPS
+// ══════════════════════════════════════════════════════════════
+//
+// New users did not know what to do: the only trace of the extension on a
+// chat page is a small ⊕ in the corner, and nothing ever said what it was or
+// what came next. A tip is a short note pinned to the pill, shown at the
+// moment it is useful:
+//
+//   meet   first visits, before any rewrite: what ⊕ does (or "set it up")
+//   card   inside the first rewrite's card: Replace, and the style buttons
+//   save   after the first Replace: how to keep and reuse a good prompt
+//   slash  signed in, with saved prompts, never used //: type // to insert
+//
+// Rules: one at a time; never while the card, the library or a dialog is up;
+// never takes focus; each retires when the user does the thing, dismisses
+// it, or has seen it TIP_MAX_SHOWS times. All tips can be switched off in the
+// popup or the library's Privacy settings. Stored locally only.
+
+const TIP_MAX_SHOWS = 3;
+const tips = { loaded: false, off: false, seen: {}, shows: {}, stats: {} };
+let activeTip = null;          // { id, el }
+let meetTimer = null;
+
+function loadTips() {
+  return new Promise((resolve) => {
+    storageGet(["pm_tips_off", "pm_tips", "pm_tip_shows", "pm_stats"], (r) => {
+      tips.off = r.pm_tips_off === true;
+      tips.seen = r.pm_tips || {};
+      tips.shows = r.pm_tip_shows || {};
+      tips.stats = r.pm_stats || {};
+      tips.loaded = true;
+      resolve();
+    });
+  });
+}
+
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.pm_tips_off) {
+      tips.off = changes.pm_tips_off.newValue === true;
+      if (tips.off) hideTip();
+    }
+    // "Show tips again" in the popup clears the record.
+    if (changes.pm_tips) tips.seen = changes.pm_tips.newValue || {};
+    if (changes.pm_tip_shows) tips.shows = changes.pm_tip_shows.newValue || {};
+    if (changes.pm_stats) tips.stats = changes.pm_stats.newValue || {};
+  });
+} catch (error) { onOrphaned(error); }
+
+/** Count something the user did, for the tips and the popup's "try it now". */
+function statsBump(key) {
+  tips.stats = { ...tips.stats, [key]: (tips.stats[key] || 0) + 1 };
+  storageSet({ pm_stats: tips.stats });
+}
+
+/** The user did what a tip was for, or dismissed it: it does not come back. */
+function tipDone(id) {
+  if (!tips.seen[id]) {
+    tips.seen = { ...tips.seen, [id]: Date.now() };
+    storageSet({ pm_tips: tips.seen });
+  }
+  if (activeTip?.id === id) hideTip();
+}
+
+function tipAllowed(id) {
+  return tips.loaded && !tips.off && !tips.seen[id] && (tips.shows[id] || 0) < TIP_MAX_SHOWS &&
+    !cardExpanded && !panelOpen && !slash && !overlayHasInput() &&
+    Boolean(document.getElementById("pm-trigger"));
+}
+
+const TIP_X_SVG = '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M2 2l8 8M10 2l-8 8"/></svg>';
+// What the rewrite shortcut really is, asked of the worker (content scripts
+// cannot read chrome.commands). "" when Chrome left it unassigned.
+let assignedShortcut = null;
+async function loadShortcut() {
+  const r = await askWorker({ type: "PM_GET_SHORTCUT" });
+  assignedShortcut = typeof r?.shortcut === "string" ? r.shortcut : null;
+}
+/** " (or <kbd>…</kbd>)", or "" when there is no shortcut to name. */
+function orShortcut() {
+  if (assignedShortcut === null) return ` (or <kbd>${IS_MAC ? "⌘⇧E" : "Ctrl+Shift+E"}</kbd>)`;
+  return assignedShortcut ? ` (or <kbd>${escHtml(assignedShortcut)}</kbd>)` : "";
+}
+
+/**
+ * Pin a tip to the pill. `actions`: [{ label, primary, run }]; running one
+ * retires the tip. × and Esc retire it too: "not now" is an answer.
+ */
+function showTip(id, { title, body, actions = [], autoHideMs = 0, hint = false }) {
+  hideTip();
+  const el = document.createElement("div");
+  el.id = "pm-tip";
+  el.className = "pm-tip";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-live", "polite");
+  el.setAttribute("aria-label", title);
+  el.dataset.tip = id;
+  el.innerHTML =
+    `<button type="button" class="pm-tip-x" aria-label="Dismiss this tip" title="Dismiss">${TIP_X_SVG}</button>` +
+    `<p class="pm-tip-title">${escHtml(title)}</p><p class="pm-tip-body">${body}</p>` +
+    (actions.length
+      ? `<div class="pm-tip-actions">${actions.map((a, i) =>
+          `<button type="button" class="pm-tip-btn${a.primary ? " pm-tip-primary" : ""}" data-i="${i}">${escHtml(a.label)}</button>`).join("")}</div>`
+      : "");
+  el.querySelector(".pm-tip-x").addEventListener("click", () => tipDone(id));
+  el.querySelectorAll(".pm-tip-btn").forEach((b) => b.addEventListener("click", () => {
+    const action = actions[Number(b.dataset.i)];
+    tipDone(id);
+    action?.run?.();
+  }));
+  el.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.stopPropagation(); tipDone(id); }
+  });
+  document.body.appendChild(el);
+  activeTip = { id, el, timer: autoHideMs ? setTimeout(() => { if (activeTip?.el === el) hideTip(); }, autoHideMs) : null };
+  tips.shows = { ...tips.shows, [id]: (tips.shows[id] || 0) + 1 };
+  storageSet({ pm_tip_shows: tips.shows });
+  if (hint) document.getElementById("pm-trigger")?.classList.add("pm-pill-hint");
+  positionTip();
+  requestAnimationFrame(() => el.classList.add("pm-tip-visible"));
+}
+
+function hideTip() {
+  if (!activeTip) return;
+  clearTimeout(activeTip.timer);
+  activeTip.el.remove();
+  activeTip = null;
+  document.getElementById("pm-trigger")?.classList.remove("pm-pill-hint");
+}
+
+/** Beside the pill: above it when there is room (it lives low on the page). */
+function positionTip() {
+  const el = activeTip?.el;
+  const pill = document.getElementById("pm-trigger");
+  if (!el || !pill) return;
+  const p = pill.getBoundingClientRect();
+  const w = el.offsetWidth, h = el.offsetHeight, gap = 12, m = 12;
+  const above = p.top - gap - h >= m || p.top > window.innerHeight / 2;
+  const top = above ? p.top - gap - h : p.bottom + gap;
+  // Aligned to the pill's edge on its docked side, so the tip grows inward.
+  let left = pillDock === "left" ? p.left : p.right - w;
+  left = Math.max(m, Math.min(left, window.innerWidth - w - m));
+  el.style.left = `${Math.round(left)}px`;
+  el.style.top = `${Math.round(Math.max(m, top))}px`;
+  el.dataset.side = above ? "above" : "below";
+  const arrow = Math.max(14, Math.min(w - 24, p.left + p.width / 2 - left - 5));
+  el.style.setProperty("--pm-tip-arrow", `${Math.round(arrow)}px`);
+}
+
+/** Tip 1: what the ⊕ is. Shown on a chat page until the first rewrite. */
+async function maybeTipMeet() {
+  if (!tipAllowed("meet") || (tips.stats.rewrites || 0) > 0 || cardState !== "idle" || !findComposer()) return;
+  const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (!route || !tipAllowed("meet") || cardState !== "idle") return;
+  const PLUS = "<b>⊕</b>";
+  if (route.route === "none" || route.route === "expired") {
+    showTip("meet", {
+      title: "Prompt Memory is ready to set up",
+      body: `It turns a rough draft into a clearer prompt when you press ${PLUS}. Choose Google or your own free key first, which takes about a minute.`,
+      actions: [{ label: "Set it up", primary: true, run: () => showSetupRequiredModal() }, { label: "Not now" }],
+      hint: true,
+    });
+    return;
+  }
+  const typed = norm(getCurrentInputText()).length >= 3;
+  showTip("meet", typed
+    ? {
+        title: "Want a clearer version of this?",
+        body: `Press ${PLUS}${orShortcut()}. You'll see the rewrite first; your draft only changes if you choose Replace.`,
+        actions: [{ label: "Rewrite it", primary: true, run: () => handleEnhance() }, { label: "Not now" }],
+        hint: true,
+      }
+    : {
+        title: "This is Prompt Memory",
+        body: `Type your prompt as usual, then press ${PLUS}${orShortcut()} for a clearer version. You review it before anything changes.` +
+          (assignedShortcut === "" ? " Its keyboard shortcut is not set yet: another extension may be using it." : ""),
+        actions: assignedShortcut === ""
+          ? [{ label: "Got it" }, { label: "Set a shortcut", run: () => askWorker({ type: "PM_OPEN_SHORTCUTS" }) }]
+          : [{ label: "Got it" }],
+        hint: true,
+      });
+}
+
+/** While the meet tip is up, keep its wording in step with the chat box. */
+function tipsOnComposerChanged() {
+  if (activeTip?.id === "meet") {
+    const typed = norm(getCurrentInputText()).length >= 3;
+    const says = activeTip.el.querySelector(".pm-tip-title")?.textContent || "";
+    if (typed !== says.startsWith("Want")) {
+      tips.shows = { ...tips.shows, meet: Math.max(0, (tips.shows.meet || 1) - 1) };   // same showing
+      maybeTipMeet();
+    }
+  }
+  if (!activeTip) maybeTipSlash();
+}
+
+/** Tip 2 (inside the card): the markup, or "" once it has done its job. */
+function cardTipHtml() {
+  if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
+  return `<div class="pm-card-tip" id="pm-card-tip"><span><b>Replace draft</b> puts this in your chat box. Not quite right? ` +
+    `The buttons below make another version, and every version is kept.</span>` +
+    `<button type="button" id="pm-card-tip-x" aria-label="Dismiss this tip" title="Dismiss">${TIP_X_SVG}</button></div>`;
+}
+
+/** Tip 3: after the first Replace, how to keep a prompt that worked. */
+function maybeTipSave() {
+  if ((tips.stats.inserts || 0) !== 1) return;
+  setTimeout(() => {
+    if (!tipAllowed("save")) return;
+    if (libSignedIn) {
+      showTip("save", {
+        title: "Keep the prompts that work",
+        body: `Press <kbd>${IS_MAC ? "⌘" : "Ctrl+"}S</kbd> on a rewrite to save it. Your saved prompts live in <b>Library</b>, beside ${"<b>⊕</b>"}.`,
+        actions: [{ label: "Got it" }],
+        autoHideMs: 16000,
+      });
+    } else {
+      showTip("save", {
+        title: "Keep the prompts that work",
+        body: "Sign in to save good prompts and reuse them in any chat by typing <b>//</b>. Your own key keeps working either way.",
+        actions: [{ label: "Sign in", primary: true, run: () => openSettings("signin") }, { label: "Not now" }],
+        autoHideMs: 16000,
+      });
+    }
+  }, 1600);
+}
+
+/** Tip 4: signed in, with saved prompts, and // never used. */
+let slashTipChecked = false;
+async function maybeTipSlash() {
+  if (!tipAllowed("slash") || !libSignedIn || !slashEnabled || (tips.stats.slash || 0) > 0 || cardState !== "idle") return;
+  if (!composerHasFocus() || norm(getCurrentInputText()).length > 40) return;
+  if (!promptsLoaded) {
+    if (slashTipChecked) return;
+    slashTipChecked = true;
+    await fetchSavedPrompts();
+  }
+  if (!savedPrompts.length || !tipAllowed("slash")) return;
+  showTip("slash", {
+    title: "Your saved prompts, one // away",
+    body: "Type <b>//</b> in the chat box, then a few letters of a saved prompt, and press Enter to drop it in where you are typing.",
+    actions: [{ label: "Got it" }],
+    autoHideMs: 16000,
+  });
+}
+
+function setupTips() {
+  Promise.all([loadTips(), loadShortcut()]).then(() => {
+    // A beat after the page settles, so the tip lands next to the pill in its
+    // final place rather than chasing it.
+    clearTimeout(meetTimer);
+    meetTimer = setTimeout(maybeTipMeet, 2200);
+  });
+  window.addEventListener("resize", () => positionTip());
+  document.addEventListener("focusin", () => { if (!activeTip) maybeTipSlash(); }, true);
+}
+
 async function init() {
   const auth = await getAuth();
   // The extension may have been reloaded while getAuth awaited storage. Do
@@ -4813,6 +5292,7 @@ async function init() {
   setupPassiveTracking();
   watchNavigation();
   restoreDraft();
+  setupTips();
 }
 
 if (document.readyState === "loading") {

@@ -80,10 +80,25 @@ class Settings:
     # Production backend URL (used by extension config)
     PROD_URL = os.getenv("PROD_URL", "https://siddhm11-prompt-engine.hf.space")
 
+    # The background prompt-quality judge runs one extra LLM call per rewrite,
+    # on top of the rewrite itself. Left on the shared pool it doubles the
+    # org-wide free-tier burn and, worse, bills a BYOK user's evaluation to the
+    # shared key — the opposite of what bringing your own key is for. So it
+    # gets its own Groq key and never falls back to the pool: unset, or spent,
+    # and the judge uses its heuristic instead. A score is worth less than
+    # everyone's rewrites.
+    PROMPT_EVAL_BYOK_KEY = os.getenv("PROMPT_EVAL_BYOK_KEY", "").strip()
+    PROMPT_EVAL_PROVIDER = os.getenv("PROMPT_EVAL_PROVIDER", "groq").strip()
+
     # Private builder dashboard. The dashboard page is intentionally not linked
     # from the public site; the API is disabled until this high-entropy secret
     # is configured and never accepts it in a query string.
-    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "3G82RP1aILlln7rMuxKW").strip()
+    #
+    # The default MUST stay empty. It is the whole lock: _require_builder_key()
+    # answers 404 while it is unset, so an unconfigured deployment exposes
+    # nothing. A default written here is a key shipped to everyone who can read
+    # the repository, which is the opposite of what the comment above promises.
+    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "").strip()
 
     # Dashboard queries are intentionally bounded. A private page must not be
     # able to read an unbounded prompt-log history into one application worker.

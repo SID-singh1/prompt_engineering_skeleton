@@ -1,759 +1,453 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Prompt Memory</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!--
+      One page, three screens, chosen by where the user is (popup.js render()):
+
+        welcome  first open: what it does, what gets sent, one consent button
+        setup    consented, nothing to rewrite with yet: Google or your own key
+        ready    set up: how to use it now, then account, key, tips, privacy
+
+      The same file is the toolbar popup (360px) and the tab that opens on
+      install / as the options page (body.pm-standalone, wider).
+      System fonts on purpose: no request leaves the extension to draw a page.
+    -->
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+        :root {
+            --bg: #0d0e12;
+            --surface: #15161c;
+            --surface-2: #1c1d25;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-strong: rgba(255, 255, 255, 0.14);
+            --text: #ececf1;
+            --text-2: #b3b3c0;
+            --muted: #7d7d8c;
+            --accent: #50c8a8;
+            --accent-ink: #062a22;
+            --accent-soft: rgba(80, 200, 168, 0.12);
+            --accent-border: rgba(80, 200, 168, 0.35);
+            --violet: #7b68ee;
+            --danger: #f08a8a;
+            --radius: 12px;
+            --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
+            --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            width: 340px;
+            width: 360px;
             max-height: 600px;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
-            background: #0d0e12;
-            color: #e8e8ed;
+            font: 13px/1.5 var(--font);
+            background: var(--bg);
+            color: var(--text);
             overflow-x: hidden;
             overflow-y: auto;
+            -webkit-font-smoothing: antialiased;
         }
 
-        /* ── Header ── */
-        .popup-header {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 18px 20px 14px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-        }
-
-        .popup-logo {
-            width: 32px;
-            height: 32px;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #50c8a8, #7b68ee);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 16px;
-            color: #fff;
-            flex-shrink: 0;
-        }
-
-        .popup-title {
-            font-size: 15px;
-            font-weight: 600;
-            color: #e8e8ed;
-        }
-
-        .popup-version {
-            font-size: 10px;
-            font-weight: 600;
-            color: #50c8a8;
-            background: rgba(80, 200, 168, 0.12);
-            padding: 2px 7px;
-            border-radius: 4px;
-            margin-left: auto;
-        }
-
-        /* ── Login Screen ── */
-        .login-section {
-            padding: 32px 24px 28px;
-            text-align: center;
-        }
-
-        .login-icon {
-            font-size: 40px;
-            margin-bottom: 12px;
-        }
-
-        .login-title {
-            font-size: 18px;
-            font-weight: 700;
-            margin-bottom: 6px;
-            background: linear-gradient(135deg, #50c8a8, #7b68ee);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .login-subtitle {
-            font-size: 13px;
-            color: #6b6b78;
-            margin-bottom: 24px;
-            line-height: 1.5;
-        }
-
-        .btn-google {
-            width: 100%;
-            padding: 12px 16px;
-            background: #fff;
-            color: #1a1a1e;
-            border: none;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            transition: background 180ms ease, transform 120ms ease, box-shadow 180ms ease;
-        }
-
-        .btn-google:hover {
-            background: #f5f5f5;
-            box-shadow: 0 4px 16px rgba(255, 255, 255, 0.08);
-        }
-
-        .btn-google:active {
-            transform: scale(0.97);
-        }
-
-        .btn-google svg {
-            flex-shrink: 0;
-        }
-
-        #status {
-            margin-top: 12px;
-            font-size: 12px;
-            color: #6b6b78;
-            text-align: center;
-            min-height: 16px;
-        }
-        #status:empty { display: none; }
-
-        .hidden {
-            display: none !important;
-        }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        button { font: inherit; color: inherit; cursor: pointer; }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
         [hidden] { display: none !important; }
 
-        body.pm-consent-pending > :not(#pm-consent) { display: none !important; }
-        #pm-consent { padding: 22px; width: 340px; max-width: 100%; }
-        .pm-consent-mark { font-size: 30px; margin-bottom: 9px; }
-        .pm-consent-title { font-size: 19px; font-weight: 700; margin: 0 0 9px; color: #e8e8ed; }
-        .pm-consent-copy { color: #b8b8c3; font-size: 12px; line-height: 1.55; margin: 0 0 12px; }
-        .pm-consent-list { padding-left: 18px; margin: 0 0 18px; color: #b8b8c3; font-size: 12px; line-height: 1.5; }
-        .pm-consent-list li { margin-bottom: 8px; }
-        .pm-consent-actions { display: flex; gap: 10px; align-items: center; }
-        .pm-consent-actions button { border: 0; border-radius: 8px; background: #50c8a8; color: #07130f; font-weight: 700; padding: 11px 14px; cursor: pointer; }
-        .pm-consent-actions a { color: #8fdcc6; font-size: 12px; }
-
-        /* ── Profile Screen ── */
-        .profile-section {
-            padding: 20px;
+        /* ── Header ── */
+        .head {
+            display: flex; align-items: center; gap: 10px;
+            padding: 14px 18px; border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; background: var(--bg); z-index: 2;
         }
-
-        .profile-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 16px;
-            margin-bottom: 14px;
+        .head svg { flex: none; }
+        .head-title { font-weight: 650; font-size: 14px; letter-spacing: -0.01em; }
+        .head-version { font: 11px var(--mono); color: var(--muted); }
+        .head-state {
+            margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11.5px; color: var(--text-2);
         }
+        .head-state i { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+        .head-state.on i { background: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+        .head-state.off i { background: #e0b35a; }
 
-        .profile-user-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
+        main { padding: 18px; display: flex; flex-direction: column; gap: 16px; }
+
+        h1 { font-size: 18px; line-height: 1.3; font-weight: 700; letter-spacing: -0.015em; }
+        h2 { font-size: 11px; font-weight: 650; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+        .lead { color: var(--text-2); }
+        .hl { color: var(--accent); }
+
+        /* ── How it works ── */
+        .steps { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+        .step {
+            display: flex; gap: 12px; align-items: flex-start;
+            padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface);
         }
-
-        .profile-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #50c8a8, #7b68ee);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 18px;
-            font-weight: 700;
-            color: #fff;
-            flex-shrink: 0;
-            text-transform: uppercase;
+        .step-n {
+            flex: none; width: 22px; height: 22px; border-radius: 50%;
+            display: grid; place-items: center; font-size: 11.5px; font-weight: 700;
+            background: var(--accent-soft); color: var(--accent); border: 1px solid var(--accent-border);
         }
-
-        .profile-info {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .profile-email {
-            font-size: 14px;
-            font-weight: 600;
-            color: #e8e8ed;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
-
-        .profile-status {
-            font-size: 11px;
-            color: #50c8a8;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            margin-top: 2px;
-        }
-
-        .profile-status-dot {
-            width: 6px;
-            height: 6px;
-            border-radius: 50%;
-            background: #50c8a8;
-            display: inline-block;
-        }
-
-        /* ── Shortcuts Card ── */
-        .shortcuts-card {
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 12px;
-            padding: 14px 16px;
-            margin-bottom: 14px;
-        }
-
-        .shortcuts-title {
-            font-size: 11px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            color: #6b6b78;
-            margin-bottom: 10px;
-        }
-
-        .shortcut-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 6px 0;
-        }
-
-        .shortcut-row + .shortcut-row {
-            border-top: 1px solid rgba(255, 255, 255, 0.04);
-        }
-
-        .shortcut-label {
-            font-size: 13px;
-            color: #9d9daa;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .shortcut-label-icon {
-            font-size: 14px;
-        }
-
+        .step b { display: block; font-weight: 600; }
+        .step span { color: var(--text-2); font-size: 12px; }
         kbd {
-            background: rgba(255, 255, 255, 0.08);
-            padding: 3px 8px;
-            border-radius: 5px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 11px;
-            font-family: inherit;
-            font-weight: 500;
-            color: #e8e8ed;
+            font: 11px var(--mono); padding: 1px 6px; border-radius: 5px;
+            border: 1px solid var(--border-strong); background: var(--surface-2); color: var(--text);
+            white-space: nowrap;
+        }
+        /* The plus button, drawn as the page draws it: a black disc, a ringed plus. */
+        .plus {
+            display: inline-grid; place-items: center; width: 1.35em; height: 1.35em; border-radius: 50%;
+            background: #000; color: var(--accent); border: 1px solid var(--border-strong);
+            vertical-align: -0.33em; white-space: nowrap;
+        }
+        .plus svg { width: 72%; height: 72%; }
+
+        /* ── Boxes ── */
+        .box { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; }
+        .box > * + * { margin-top: 8px; }
+        .box-title { font-weight: 650; font-size: 13.5px; }
+        .facts { list-style: none; display: flex; flex-direction: column; gap: 6px; color: var(--text-2); font-size: 12.5px; }
+        .facts li { position: relative; padding-left: 16px; }
+        .facts li::before { content: ""; position: absolute; left: 3px; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+        details.more > summary { cursor: pointer; color: var(--text-2); font-size: 12px; list-style: none; }
+        details.more > summary::-webkit-details-marker { display: none; }
+        details.more > summary::before { content: "▸ "; color: var(--muted); }
+        details.more[open] > summary::before { content: "▾ "; }
+        details.more .facts { margin-top: 8px; }
+        #key-form > * + * { margin-top: 12px; }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+            min-height: 38px; padding: 8px 16px; border-radius: 10px; border: 1px solid transparent;
+            font-weight: 600; font-size: 13px; transition: filter .15s ease, background .15s ease;
+        }
+        .btn:disabled { opacity: .55; cursor: default; }
+        .btn-primary { background: var(--accent); color: var(--accent-ink); }
+        .btn-primary:hover:not(:disabled) { filter: brightness(1.08); }
+        .btn-google { background: #fff; color: #1f1f1f; }
+        .btn-google:hover:not(:disabled) { filter: brightness(.95); }
+        .btn-quiet { background: var(--surface-2); border-color: var(--border-strong); }
+        .btn-quiet:hover:not(:disabled) { background: #24252f; }
+        .btn-danger { background: #8d3333; color: #fff; }
+        .btn-block { width: 100%; }
+        .btn-link { background: none; border: 0; color: var(--accent); padding: 0; min-height: 0; font-weight: 500; }
+        .btn-link:hover { text-decoration: underline; }
+        .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+        .note { color: var(--muted); font-size: 11.5px; }
+        .center { text-align: center; }
+        .nowrap { white-space: nowrap; }
+        .consent-actions { justify-content: space-between; }
+        /* In the 600px popup the welcome runs past the fold; the one button it
+           exists for stays in view. */
+        body:not(.pm-standalone) .consent-actions {
+            position: sticky; bottom: 0; z-index: 1; margin: 0 -18px -18px; padding: 12px 18px;
+            background: linear-gradient(to top, var(--bg) 78%, rgba(13, 14, 18, 0));
         }
 
-        /* ── Quick Tip ── */
-        .tip-card {
-            background: linear-gradient(135deg, rgba(80, 200, 168, 0.08), rgba(123, 104, 238, 0.08));
-            border: 1px solid rgba(80, 200, 168, 0.15);
-            border-radius: 12px;
-            padding: 12px 14px;
-            margin-bottom: 14px;
-            display: flex;
-            align-items: flex-start;
-            gap: 10px;
+        /* ── Choice cards (setup) ── */
+        .choices { display: flex; flex-direction: column; gap: 10px; }
+        .choice { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; }
+        .choice > * + * { margin-top: 10px; }
+        .choice-head { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
+        .choice-title { font-weight: 650; font-size: 14px; }
+        .badge {
+            white-space: nowrap; font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+            padding: 2px 7px; border-radius: 100px; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--accent-border);
         }
+        .choice-desc { color: var(--text-2); font-size: 12.5px; }
 
-        .tip-icon {
-            font-size: 16px;
-            flex-shrink: 0;
-            margin-top: 1px;
+        /* ── Key form ── */
+        .field { display: flex; flex-direction: column; gap: 5px; }
+        .field label { font-size: 11.5px; font-weight: 600; color: var(--text-2); }
+        .input, .select {
+            width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--border-strong);
+            background: #0a0b0e; color: var(--text); font: 13px var(--font);
         }
+        .input { font-family: var(--mono); font-size: 12px; }
+        .input:focus, .select:focus { outline: 2px solid var(--accent-border); border-color: var(--accent); }
+        .key-steps { list-style: none; counter-reset: k; display: flex; flex-direction: column; gap: 10px; }
+        .key-steps > li { counter-increment: k; display: grid; grid-template-columns: 20px 1fr; gap: 8px; }
+        .key-steps .field > span, .key-steps .field > label { font-size: 12.5px; font-weight: 600; color: var(--text); }
+        .key-steps > li::before {
+            content: counter(k); width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+            font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft);
+        }
+        .status { font-size: 12px; min-height: 0; }
+        .status:empty { display: none; }
+        .status.ok { color: var(--accent); }
+        .status.err { color: var(--danger); }
+        .status.busy { color: var(--text-2); }
 
-        .tip-text {
-            font-size: 12px;
-            color: #9d9daa;
-            line-height: 1.5;
+        /* ── Ready ── */
+        .ready {
+            border: 1px solid var(--accent-border); background: linear-gradient(180deg, rgba(80, 200, 168, .10), rgba(80, 200, 168, .03));
+            border-radius: var(--radius); padding: 14px;
         }
+        .ready > * + * { margin-top: 10px; }
+        /* Steps inside the ready card, and in the narrow popup: a plain list,
+           not boxes inside a box. */
+        .ready .step, body:not(.pm-standalone) .step { background: none; border: 0; padding: 2px 0; }
+        body:not(.pm-standalone) #screen-welcome .steps { gap: 10px; }
+        .ready-title { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 15px; }
+        .ready-title svg { color: var(--accent); }
+        .sites { display: flex; flex-wrap: wrap; gap: 6px; }
+        .site {
+            padding: 6px 11px; border-radius: 100px; font-size: 12.5px; font-weight: 600;
+            background: var(--surface-2); border: 1px solid var(--border-strong); color: var(--text);
+        }
+        .site:hover { border-color: var(--accent); text-decoration: none; }
+        .shortcut { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: var(--text-2); }
 
-        .tip-text strong {
-            color: #50c8a8;
-            font-weight: 600;
+        .list { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+        .item { display: flex; align-items: center; gap: 12px; padding: 12px 14px; }
+        .item + .item { border-top: 1px solid var(--border); }
+        .item-icon {
+            flex: none; width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+            background: var(--surface-2); color: var(--text-2); font-weight: 700; font-size: 13px;
         }
+        .item-icon.on { background: var(--accent-soft); color: var(--accent); }
+        .item-body { flex: 1; min-width: 0; }
+        .item-title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .item-sub { color: var(--muted); font-size: 11.5px; }
+        .item-panel { padding: 0 14px 14px; }
+        .item-panel > * + * { margin-top: 10px; }
 
-        /* ── Logout ── */
-        .btn-logout {
-            width: 100%;
-            padding: 10px;
-            background: transparent;
-            color: #6b6b78;
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 12px;
-            font-weight: 500;
-            cursor: pointer;
-            transition: background 180ms ease, color 180ms ease, border-color 180ms ease;
-        }
+        .switch { position: relative; width: 34px; height: 20px; flex: none; }
+        .switch input { opacity: 0; width: 100%; height: 100%; position: absolute; inset: 0; margin: 0; cursor: pointer; }
+        .switch span { position: absolute; inset: 0; border-radius: 100px; background: #34353f; transition: background .15s; pointer-events: none; }
+        .switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: #fff; transition: transform .15s; }
+        .switch input:checked + span { background: var(--accent); }
+        .switch input:checked + span::after { transform: translateX(14px); }
+        .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-        .btn-logout:hover {
-            background: rgba(239, 83, 80, 0.08);
-            color: #ef5350;
-            border-color: rgba(239, 83, 80, 0.2);
-        }
+        .danger { border: 1px solid #5a2e2e; background: #1d1214; border-radius: 10px; padding: 12px; }
+        .danger > * + * { margin-top: 8px; }
+        .danger p { font-size: 12px; color: #e1c3c3; }
 
-        .btn-logout:active {
-            transform: scale(0.97);
-        }
-        /* ── BYOK key card ── */
-        .key-divider {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 2px 24px 0;
-            color: #777b88;
-            font-size: 11px;
-        }
-        .key-divider::before, .key-divider::after {
-            content: "";
-            height: 1px;
-            flex: 1;
-            background: rgba(255, 255, 255, 0.12);
-        }
-        .key-section {
-            margin: 12px 20px 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 12px;
-            background: #17191f;
-            overflow: hidden;
-        }
-        .key-entry {
-            display: flex;
-            align-items: center;
-            gap: 11px;
-            padding: 14px;
-            color: #e8e8ed;
-            cursor: pointer;
-            list-style: none;
-        }
-        .key-entry:hover { background: rgba(255, 255, 255, 0.035); }
-        .key-entry::-webkit-details-marker { display: none; }
-        .key-entry:focus-visible { outline: 2px solid #50c8a8; outline-offset: -3px; }
-        .key-entry-icon {
-            width: 34px;
-            height: 34px;
-            flex: 0 0 34px;
-            display: grid;
-            place-items: center;
-            border-radius: 9px;
-            background: rgba(80, 200, 168, 0.12);
-            color: #77d8bc;
-            font-size: 19px;
-        }
-        .key-entry-copy { min-width: 0; flex: 1; }
-        .key-entry-title { display: block; font-size: 13px; font-weight: 600; }
-        .key-entry-subtitle { display: block; margin-top: 3px; font-size: 11px; color: #9699a5; line-height: 1.35; }
-        .key-entry-chevron {
-            width: 8px;
-            height: 8px;
-            flex: 0 0 8px;
-            border-right: 1.5px solid #9699a5;
-            border-bottom: 1.5px solid #9699a5;
-            transform: rotate(45deg);
-            transition: transform 160ms ease;
-        }
-        .key-section[open] .key-entry-chevron { transform: rotate(225deg); }
+        .notice { margin: 12px 18px 0; padding: 10px 12px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent-border); color: var(--accent); font-size: 12.5px; }
+        body.pm-standalone .notice { max-width: 572px; margin: 16px auto 0; }
+        .pin { display: flex; gap: 10px; align-items: flex-start; margin: 12px 18px 0; padding: 10px 12px; border-radius: 10px;
+               border: 1px solid var(--border-strong); background: var(--surface); color: var(--text-2); font-size: 12.5px; }
+        .pin svg { flex: none; margin-top: 2px; color: var(--accent); }
+        .pin b { color: var(--text); }
+        body.pm-standalone .pin { max-width: 572px; margin: 16px auto 0; }
+        html { scrollbar-width: thin; scrollbar-color: #3a3b46 transparent; }
+        footer { display: flex; gap: 14px; justify-content: center; padding: 4px 18px 18px; font-size: 12px; }
 
-        .key-card {
-            border-top: 1px solid rgba(255, 255, 255, 0.08);
-            padding: 16px 14px;
+        /* ── In a tab (on install, or as the options page) ── */
+        body.pm-standalone { width: auto; max-height: none; min-height: 100vh; font-size: 14px; }
+        body.pm-standalone .head { padding: 16px 28px; }
+        body.pm-standalone main, body.pm-standalone footer { max-width: 620px; margin: 0 auto; }
+        body.pm-standalone main { padding: 36px 24px 20px; gap: 20px; }
+        body.pm-standalone h1 { font-size: 28px; }
+        body.pm-standalone .lead { font-size: 15px; }
+        body.pm-standalone .steps { flex-direction: row; }
+        body.pm-standalone .step { flex: 1; flex-direction: column; gap: 8px; }
+        body.pm-standalone .choices { flex-direction: row; align-items: flex-start; }
+        body.pm-standalone .choice { flex: 1; }
+        @media (max-width: 640px) {
+            body.pm-standalone .steps, body.pm-standalone .choices { flex-direction: column; }
         }
-
-        .key-head {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 4px;
-        }
-
-        .key-title {
-            font-size: 13px;
-            font-weight: 600;
-            flex: 1;
-        }
-        .key-field-label {
-            display: block;
-            margin: 13px 0 6px;
-            color: #c9cbd2;
-            font-size: 11px;
-            font-weight: 600;
-        }
-        .key-field-label:first-of-type { margin-top: 0; }
-        .key-field-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-        .key-field-head .key-field-label { margin-bottom: 6px; }
-
-        .key-pill {
-            font-size: 10px;
-            font-weight: 600;
-            padding: 3px 8px;
-            border-radius: 999px;
-            letter-spacing: 0.02em;
-        }
-
-        .key-pill.on {
-            background: rgba(80, 200, 168, 0.15);
-            color: #50c8a8;
-        }
-
-        .key-pill.off {
-            background: rgba(255, 255, 255, 0.07);
-            color: #8b8b96;
-        }
-
-        .key-blurb {
-            font-size: 11px;
-            line-height: 1.5;
-            color: #a0a3ad;
-            margin-bottom: 4px;
-        }
-
-        .key-blurb strong {
-            color: #c9c9d4;
-            font-weight: 600;
-        }
-
-        .key-row {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 8px;
-        }
-
-        .key-input,
-        .key-select {
-            width: 100%;
-            background: #0e1015;
-            border: 1px solid rgba(255, 255, 255, 0.17);
-            border-radius: 8px;
-            padding: 10px 11px;
-            color: #e8e8ed;
-            font-size: 12px;
-            font-family: inherit;
-            outline: none;
-        }
-
-        .key-input:focus,
-        .key-select:focus {
-            border-color: #50c8a8;
-        }
-
-        .key-input::placeholder {
-            color: #55555f;
-        }
-
-        .key-actions {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            margin-top: 15px;
-        }
-
-        .btn-key {
-            flex: 1;
-            background: #50c8a8;
-            color: #07130f;
-            border: none;
-            border-radius: 8px;
-            padding: 11px;
-            font-size: 12px;
-            font-weight: 600;
-            font-family: inherit;
-            cursor: pointer;
-        }
-
-        .btn-key:hover {
-            filter: brightness(1.08);
-        }
-
-        .btn-key:disabled {
-            opacity: 0.55;
-            cursor: default;
-        }
-
-        .btn-key-ghost {
-            background: rgba(255, 255, 255, 0.06);
-            color: #c9c9d4;
-        }
-
-        .key-link {
-            display: inline-block;
-            font-size: 11px;
-            color: #87d9c2;
-            text-decoration: none;
-        }
-
-        .key-link:hover {
-            text-decoration: underline;
-        }
-
-        .key-status {
-            font-size: 11px;
-            line-height: 1.45;
-            margin-top: 8px;
-            min-height: 14px;
-        }
-
-        .key-status.ok {
-            color: #50c8a8;
-        }
-
-        .key-status.err {
-            color: #f0796f;
-        }
-
-        .key-status.busy {
-            color: #8b8b96;
-        }
-
-        .key-privacy {
-            font-size: 10px;
-            color: #9194a0;
-            line-height: 1.45;
-            margin-top: 8px;
-            padding-top: 8px;
-            border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .section-divider {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 14px 20px 0;
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.08em;
-            color: #55555f;
-        }
-
-        .section-divider::before,
-        .section-divider::after {
-            content: "";
-            flex: 1;
-            height: 1px;
-            background: rgba(255, 255, 255, 0.06);
-        }
-    
-        /* Opened as an options page or via the onboarding tab, this is a full
-           browser tab, not a 340px toolbar strip. Widen and centre it there —
-           the popup itself is unaffected. */
-        body.pm-standalone {
-            width: auto;
-            max-width: 560px;
-            max-height: none;
-            margin: 0 auto;
-            overflow: auto;
-            min-height: 100vh;
-        }
-
-        /* ── Backend switcher ── */
-        .backend-box {
-            margin: 14px 20px 18px;
-            padding: 12px 14px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 10px;
-            background: rgba(255, 255, 255, 0.02);
-        }
-        .backend-head {
-            display: flex; align-items: center; justify-content: space-between;
-            font-size: 11px; letter-spacing: .06em; text-transform: uppercase;
-            color: #8a8a99; font-weight: 600; margin-bottom: 8px;
-        }
-        .backend-pill {
-            font-size: 10px; padding: 2px 8px; border-radius: 100px;
-            background: rgba(120, 200, 150, .14); color: #7fd0a0; text-transform: none;
-            letter-spacing: 0;
-        }
-        .backend-pill.local { background: rgba(230, 180, 90, .16); color: #e6b45a; }
-        .backend-row { display: flex; gap: 6px; }
-        .backend-row button {
-            flex: 1; padding: 7px 6px; border-radius: 7px; cursor: pointer;
-            font-size: 11.5px; font-family: inherit;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(255, 255, 255, 0.04); color: #c9c9d4;
-        }
-        .backend-row button.active { background: #4f7cff; border-color: #4f7cff; color: #fff; }
-        .backend-url {
-            width: 100%; margin-top: 8px; padding: 7px 9px; font-size: 11px;
-            border-radius: 7px; border: 1px solid rgba(255, 255, 255, 0.1);
-            background: rgba(0, 0, 0, 0.25); color: #c9c9d4;
-            font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        }
-        .backend-note { font-size: 10.5px; color: #6f6f7d; margin-top: 7px; line-height: 1.45; }
-</style>
+        @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+    </style>
 </head>
 
-<body class="pm-consent-pending">
-    <section id="pm-consent" aria-labelledby="pm-consent-title">
-        <div class="pm-consent-mark">⊕</div>
-        <h1 class="pm-consent-title" id="pm-consent-title">Your prompts stay your choice</h1>
-        <p class="pm-consent-copy">Prompt Memory improves a draft only when you ask. Here is what happens when you use it:</p>
-        <ul class="pm-consent-list">
-            <li><strong>Enhance:</strong> Your draft goes to your chosen AI provider. If signed in, it goes through our server, is saved in your history, and up to six recent chat messages are sent for context by default. You can turn conversation context off in the sidebar.</li>
-            <li><strong>Your own key:</strong> Without sign-in, your draft goes directly from this browser to the provider. If you also sign in, your key is forwarded through our server for each enhancement request so memory features can work.</li>
-            <li><strong>Optional features:</strong> Google sign-in shares your email with us. Voice sends audio to our server and Groq for transcription when you record. Prompt Tracking, which logs submitted prompts, starts off and requires you to switch it on.</li>
-        </ul>
-        <div class="pm-consent-actions">
-            <button id="pm-consent-agree" type="button">Agree &amp; continue</button>
-            <a href="https://github.com/siddhm11/prompt_engineering_skeleton/blob/main/website/privacy.html" target="_blank" rel="noreferrer">Read privacy policy</a>
-        </div>
-    </section>
-    <!-- ═══ HEADER ═══ -->
-    <div class="popup-header">
-        <div class="popup-logo">⊕</div>
-        <span class="popup-title">Prompt Memory</span>
-        <span class="popup-version" id="popup-version">v4.6.2</span>
+<body>
+    <header class="head">
+        <svg width="26" height="26" viewBox="0 0 96 96" aria-hidden="true"><defs><linearGradient id="pmg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#38CDAF"/><stop offset=".5" stop-color="#4B97CA"/><stop offset="1" stop-color="#7159EB"/></linearGradient></defs><rect width="96" height="96" rx="22" fill="url(#pmg)"/><circle cx="48" cy="48" r="29.5" fill="none" stroke="#fff" stroke-width="8"/><path d="M48 34v28M34 48h28" stroke="#fff" stroke-width="8" stroke-linecap="round"/></svg>
+        <span class="head-title">Prompt Memory</span>
+        <span class="head-version" id="popup-version">v4.7.0</span>
+        <span class="head-state" id="head-state" role="status"><i></i><span id="head-state-text"></span></span>
+    </header>
+
+    <p class="notice" id="notice" role="status" hidden></p>
+    <!-- Chrome hides a new extension under the puzzle-piece menu (Windows and
+         Mac alike), so people finish setup and cannot find this page again. -->
+    <div class="pin" id="pin-hint" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/></svg>
+        <span><b>Pin Prompt Memory</b> so you can find this page again: click the puzzle-piece icon at the top right of Chrome, then the pin beside Prompt Memory.</span>
     </div>
 
-    <!-- ═══ LOGIN ═══ -->
-    <div id="login-section">
-        <div class="login-section">
-            <div class="login-icon">✨</div>
-            <div class="login-title">Make better prompts in one click</div>
-            <div class="login-subtitle">Sign in with Google to start with 15 enhancements a day. Save useful prompts and revisit your rewrites in History.</div>
-            <button class="btn-google" id="google-login-btn">
-                <svg width="18" height="18" viewBox="0 0 24 24">
-                    <path fill="#4285F4"
-                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
-                    <path fill="#34A853"
-                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path fill="#FBBC05"
-                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                    <path fill="#EA4335"
-                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-                </svg>
-                Continue with Google
-            </button>
-            <p id="status"></p>
+    <!-- ═══ 1. WELCOME: what it does, what is sent, one consent ═══ -->
+    <main id="screen-welcome" hidden>
+        <div>
+            <h1>Better prompts, <span class="hl">right where you chat</span></h1>
+            <p class="lead" style="margin-top:8px">Write a rough draft in ChatGPT, Claude, Gemini, Perplexity or Grok. Prompt Memory turns it into a clearer prompt, and you decide whether to use it.</p>
         </div>
-    </div>
 
-    <!-- ═══ PROFILE ═══ -->
-    <div id="profile-section" class="hidden">
-        <div class="profile-section">
-            <div class="profile-card">
-                <div class="profile-user-row">
-                    <div class="profile-avatar" id="profile-avatar">?</div>
-                    <div class="profile-info">
-                        <div class="profile-email" id="user-display"></div>
-                        <div class="profile-status">
-                            <span class="profile-status-dot"></span>
-                            <span>Connected</span>
-                        </div>
-                    </div>
-                </div>
+        <ol class="steps" aria-label="How it works">
+            <li class="step"><span class="step-n">1</span><div><b>Type as you normally would</b><span>A quick, messy draft is fine.</span></div></li>
+            <li class="step"><span class="step-n">2</span><div><b>Press <span class="plus" aria-label="the plus button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M8 5.5v5M5.5 8h5"/></svg></span> or <kbd data-shortcut>Ctrl+Shift+E</kbd></b><span>The button sits at the bottom corner of the chat.</span></div></li>
+            <li class="step"><span class="step-n">3</span><div><b>Review, then replace</b><span>Your draft only changes if you choose to.</span></div></li>
+        </ol>
+
+        <section class="box" aria-labelledby="sent-title">
+            <div class="box-title" id="sent-title">What gets sent, and when</div>
+            <ul class="facts">
+                <li>Nothing leaves your browser until you <span class="nowrap">press <span class="plus" aria-label="the plus button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M8 5.5v5M5.5 8h5"/></svg></span>.</span></li>
+                <li>With your own key, the draft goes straight to that AI provider. It never touches our server.</li>
+                <li>Signed in, the draft goes through our server and is kept in your History, with a few recent messages from the chat for context. You can turn context off.</li>
+                <li>Prompt tracking is off unless you turn it on.</li>
+            </ul>
+            <details class="more">
+                <summary>More detail</summary>
+                <ul class="facts">
+                    <li>If you are signed in and also use your own key, the key is forwarded through our server with each rewrite so saved prompts and History keep working. It is never stored there.</li>
+                    <li>Signing in with Google shares your email address with us.</li>
+                    <li>Voice input sends the recording to our server and Groq to be transcribed, only when you record.</li>
+                    <li>Conversation context sends up to six recent messages from the open chat with a signed-in rewrite. Turn it off in the Library: ⋯ → Privacy settings.</li>
+                </ul>
+            </details>
+        </section>
+
+        <div class="row consent-actions">
+            <button class="btn btn-primary" id="pm-consent-agree" type="button">Agree and continue</button>
+            <a href="https://prompt-engineering-skeleton-seven.vercel.app/privacy" target="_blank" rel="noreferrer">Read the privacy policy</a>
+        </div>
+    </main>
+
+    <!-- ═══ 2. SETUP: choose what does the rewriting ═══ -->
+    <main id="screen-setup" hidden>
+        <div>
+            <h1>Choose how it rewrites</h1>
+            <p class="lead" style="margin-top:6px">Both are free. You can add the other one later.</p>
+        </div>
+
+        <div class="choices">
+            <section class="choice" id="choice-google" aria-labelledby="choice-google-title">
+                <div class="choice-head"><span class="choice-title" id="choice-google-title">Sign in with Google</span><span class="badge">Quickest</span></div>
+                <p class="choice-desc">15 free rewrites a day. Keeps your saved prompts and History, on every computer.</p>
+                <button class="btn btn-google btn-block" id="google-login-btn" type="button">
+                    <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                    </svg>
+                    Continue with Google
+                </button>
+                <p class="status" id="status" role="status"></p>
+            </section>
+
+            <section class="choice" id="choice-key" aria-labelledby="choice-key-title">
+                <div class="choice-head"><span class="choice-title" id="choice-key-title">Use your own free key</span><span class="badge">Most private</span></div>
+                <p class="choice-desc">No account with us. Your drafts go straight from this browser to the AI provider, within its own free limits.</p>
+                <button class="btn btn-quiet btn-block" id="key-open" type="button" aria-expanded="false" aria-controls="key-form">Add a free key</button>
+                <div id="key-form-slot"></div>
+            </section>
+        </div>
+    </main>
+
+    <!-- ═══ 3. READY: use it now; then account, key, tips, privacy ═══ -->
+    <main id="screen-ready" hidden>
+        <section class="ready" id="ready-card" aria-labelledby="ready-title">
+            <div class="ready-title" id="ready-title">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+                <span id="ready-heading">You're ready. Try it now:</span>
             </div>
-
-            <div class="shortcuts-card">
-                <div class="shortcuts-title">Keyboard Shortcuts</div>
-                <div class="shortcut-row">
-                    <span class="shortcut-label">
-                        <span class="shortcut-label-icon">🎯</span>
-                        Enhance prompt
-                    </span>
-                    <kbd data-command="enhance-prompt">See Chrome shortcuts</kbd>
-                </div>
-                <div class="shortcut-row">
-                    <span class="shortcut-label">
-                        <span class="shortcut-label-icon">🎤</span>
-                        Voice to prompt
-                    </span>
-                    <kbd data-command="voice-prompt">See Chrome shortcuts</kbd>
-                </div>
+            <ol class="steps" aria-label="How to use it">
+                <li class="step"><span class="step-n">1</span><div><b>Open a chat</b><span>Any of these works:</span></div></li>
+                <li class="step"><span class="step-n">2</span><div><b>Type a draft, then press <span class="plus" aria-label="the plus button"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.6"/><path d="M8 5.5v5M5.5 8h5"/></svg></span></b><span>Bottom corner of the page, or <kbd data-shortcut>Ctrl+Shift+E</kbd></span></div></li>
+                <li class="step"><span class="step-n">3</span><div><b>Replace your draft, or keep it</b><span>Shorter, More detail and Open-ended give other versions.</span></div></li>
+            </ol>
+            <div class="sites" aria-label="Open a chat">
+                <a class="site" href="https://chatgpt.com/" target="_blank" rel="noreferrer">ChatGPT</a>
+                <a class="site" href="https://claude.ai/new" target="_blank" rel="noreferrer">Claude</a>
+                <a class="site" href="https://gemini.google.com/app" target="_blank" rel="noreferrer">Gemini</a>
+                <a class="site" href="https://www.perplexity.ai/" target="_blank" rel="noreferrer">Perplexity</a>
+                <a class="site" href="https://grok.com/" target="_blank" rel="noreferrer">Grok</a>
             </div>
-
-            <div class="tip-card">
-                <span class="tip-icon">💡</span>
-                <div class="tip-text">
-                    Open a supported AI chat, write a draft, then click <strong>⊕</strong> to enhance it. Use <strong>Library</strong> beside it for saved prompts. Review the rewrite before inserting; insertion does not send your message.
-                </div>
+            <div class="shortcut">
+                <span>Shortcut: <kbd data-command="enhance-prompt">Ctrl+Shift+E</kbd></span>
+                <button class="btn-link" id="shortcut-fix" type="button" hidden>Set it in Chrome</button>
             </div>
+        </section>
 
-            <button class="btn-logout" id="logout-btn">Sign Out</button>
-            <button class="btn-logout" id="delete-account-btn" style="margin-top:10px;color:#f2a2a2;">Delete account &amp; data</button>
-            <div id="delete-account-panel" hidden style="padding:14px;margin-top:10px;border:1px solid #884747;border-radius:10px;background:#241719;">
-                <p style="font-size:12px;line-height:1.5;margin:0 0 10px;color:#e1c3c3;">This deletes your account, enhancement history, saved prompts, feedback, and memory vectors from our servers. Your own API key stays on this device. Type <strong>DELETE</strong> to confirm.</p>
-                <input id="delete-account-input" aria-label="Type DELETE to confirm" autocomplete="off" style="width:100%;padding:9px;border-radius:7px;border:1px solid #885b5b;background:#120e10;color:#fff;">
-                <p id="delete-account-status" role="status" style="font-size:11px;color:#f2a2a2;margin:8px 0;"></p>
-                <div style="display:flex;gap:8px;">
-                    <button class="btn-logout" id="delete-account-cancel" style="flex:1;">Cancel</button>
-                    <button class="btn-logout" id="delete-account-confirm" style="flex:1;background:#8d3333;color:#fff;">Delete data</button>
-                </div>
+        <h2>Your setup</h2>
+        <div class="list">
+            <!-- Account -->
+            <div class="item" id="acct-in" hidden>
+                <span class="item-icon on" id="profile-avatar" aria-hidden="true">?</span>
+                <div class="item-body"><div class="item-title" id="user-display"></div><div class="item-sub">Signed in · saved prompts and History</div></div>
+                <button class="btn-link" id="logout-btn" type="button">Sign out</button>
+            </div>
+            <div class="item" id="acct-out" hidden>
+                <span class="item-icon" aria-hidden="true">G</span>
+                <div class="item-body"><div class="item-title">Not signed in</div><div class="item-sub">Sign in to save prompts and keep a History.</div></div>
+                <button class="btn-link" id="acct-signin" type="button">Sign in</button>
+            </div>
+            <!-- Key -->
+            <div class="item" id="key-row">
+                <span class="item-icon" id="key-icon" aria-hidden="true">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M11 12 20 3l1 1-2 2 2 2-3 3-2-2-2 2"/></svg>
+                </span>
+                <div class="item-body"><div class="item-title" id="key-title">Your own key</div><div class="item-sub" id="key-sub">Optional · use your provider's free limits</div></div>
+                <button class="btn-link" id="key-manage" type="button" aria-expanded="false" aria-controls="key-form">Add</button>
+            </div>
+            <div class="item-panel" id="key-panel-slot" hidden></div>
+            <!-- Tips -->
+            <div class="item">
+                <span class="item-icon" aria-hidden="true">?</span>
+                <div class="item-body"><div class="item-title">Tips on the page</div><div class="item-sub">Short hints the first time you use each feature.</div></div>
+                <label class="switch" title="Show tips on the chat page"><input type="checkbox" id="tips-toggle" aria-label="Show tips on the chat page"><span></span></label>
+            </div>
+            <div class="item" id="tips-reset-row" hidden>
+                <div class="item-body"><div class="item-sub">Seen them all? Start the tips from the beginning.</div></div>
+                <button class="btn-link" id="tips-reset" type="button">Show again</button>
             </div>
         </div>
-    </div>
 
-    <div class="key-divider" id="key-divider">or</div>
-
-    <!-- ═══ OPTIONAL API KEY ═══ -->
-    <details class="key-section" id="key-details">
-        <summary class="key-entry">
-            <span class="key-entry-icon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="8" cy="15" r="4"></circle>
-                    <path d="M11 12 20 3l1 1-2 2 2 2-3 3-2-2-2 2"></path>
-                </svg>
-            </span>
-            <span class="key-entry-copy">
-                <span class="key-entry-title" id="key-entry-title">Use your own API key</span>
-                <span class="key-entry-subtitle" id="key-entry-subtitle">No sign-in · Your provider's limits</span>
-            </span>
-            <span class="key-entry-chevron" aria-hidden="true"></span>
-        </summary>
-        <div class="key-card">
-            <div class="key-head">
-                <span class="key-title">Connect a provider</span>
-                <span class="key-pill off" id="key-pill">Not set</span>
-            </div>
-            <div class="key-blurb" id="key-blurb">
-                Get a key from your AI provider, then paste it here. You can enhance prompts without signing in.
-            </div>
-
-            <label class="key-field-label" for="key-provider">Provider</label>
-            <select class="key-select" id="key-provider">
-                <option value="groq">Groq</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="openrouter">OpenRouter</option>
-            </select>
-
-            <div class="key-field-head">
-                <label class="key-field-label" for="key-input">API key</label>
-                <a class="key-link" id="key-get-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Get a key ↗</a>
-            </div>
-            <div class="key-row">
-                <input class="key-input" id="key-input" type="password" autocomplete="off"
-                    spellcheck="false" placeholder="Paste your key here">
-            </div>
-
-            <label class="key-field-label" for="key-model">Model</label>
-            <select class="key-select" id="key-model"></select>
-
-            <div class="key-actions">
-                <button class="btn-key" id="key-save">Save &amp; test</button>
-                <button class="btn-key btn-key-ghost" id="key-clear" style="flex:0 0 auto;padding:9px 12px;">Clear</button>
-            </div>
-
-            <div class="key-status" id="key-status"></div>
-            <div class="key-privacy" id="key-privacy"></div>
+        <div id="danger-wrap" hidden>
+            <details class="more">
+                <summary>Delete account and data</summary>
+                <div class="danger" id="delete-account-panel" style="margin-top:10px">
+                    <p>This deletes your account, History, saved prompts, feedback and memory from our servers. Your own key stays on this device. Type <strong>DELETE</strong> to confirm.</p>
+                    <input class="input" id="delete-account-input" aria-label="Type DELETE to confirm" autocomplete="off">
+                    <p class="status err" id="delete-account-status" role="status"></p>
+                    <button class="btn btn-danger btn-block" id="delete-account-confirm" type="button">Delete my account and data</button>
+                </div>
+            </details>
         </div>
-    </details>
+    </main>
+
+    <!-- The key form, moved into whichever screen needs it (setup or ready). -->
+    <template id="key-form-template">
+        <div id="key-form" class="choice-body">
+            <ol class="key-steps">
+                <li><div class="field"><span>Get a free key. It takes about a minute.</span>
+                    <a class="btn btn-quiet" id="key-get-link" href="https://console.groq.com/keys" target="_blank" rel="noreferrer">Open the Groq console ↗</a></div></li>
+                <li><div class="field"><label for="key-input">Paste it here</label>
+                    <input class="input" id="key-input" type="password" autocomplete="off" spellcheck="false" placeholder="gsk_…"></div></li>
+                <li><div class="field"><span>Test it and save it on this computer.</span>
+                    <div class="row"><button class="btn btn-primary" id="key-save" type="button">Save and test</button>
+                    <button class="btn btn-quiet" id="key-clear" type="button" hidden>Remove key</button></div></div></li>
+            </ol>
+            <p class="status" id="key-status" role="status"></p>
+            <details class="more">
+                <summary>More options: provider and model</summary>
+                <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px">
+                    <div class="field"><label for="key-provider">Provider</label>
+                        <select class="select" id="key-provider">
+                            <option value="groq">Groq (recommended)</option>
+                            <option value="gemini">Google Gemini</option>
+                            <option value="openrouter">OpenRouter</option>
+                        </select></div>
+                    <div class="field"><label for="key-model">Model</label><select class="select" id="key-model"></select></div>
+                </div>
+            </details>
+            <p class="note" id="key-privacy"></p>
+        </div>
+    </template>
+
+    <footer>
+        <a href="https://prompt-engineering-skeleton-seven.vercel.app/privacy" target="_blank" rel="noreferrer">Privacy policy</a>
+        <button class="btn-link" id="open-shortcuts" type="button">Keyboard shortcuts</button>
+    </footer>
 
     <script src="popup.js"></script>
 </body>

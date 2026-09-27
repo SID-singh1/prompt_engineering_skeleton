@@ -19,7 +19,10 @@
       lastError: null,
       // Routes every enhancement to the direct path, which the port below fakes.
       sendMessage(msg, cb) {
-        const r = msg?.type === "PM_GET_ROUTE" ? { route: "direct", hasKey: true } : undefined;
+        // PM_GET_SHORTCUT: window.FAKE_SHORTCUT, "" for "Chrome left it unassigned".
+        const r = msg?.type === "PM_GET_ROUTE" ? { route: "direct", hasKey: true }
+          : msg?.type === "PM_GET_SHORTCUT" ? { shortcut: window.FAKE_SHORTCUT ?? "Ctrl+Shift+E" }
+          : undefined;
         if (cb) setTimeout(() => cb(r), 0); return Promise.resolve(r);
       },
       onMessage: { addListener() {} },
