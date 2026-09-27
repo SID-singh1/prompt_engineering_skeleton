@@ -1432,3 +1432,73 @@ def test_tips_hear_typing_in_a_textarea_composer():
     """A <textarea> changes its value, not its DOM: the MutationObserver is deaf to it."""
     listeners = _function_bodies(CONTENT_JS, r"setupLibraryListeners")["setupLibraryListeners"]
     assert "tipsOnComposerChanged()" in listeners
+
+
+# ── the shortcut sheet tells the truth ────────────────────────────────────
+# One page lists every key. Its only real failure mode is drift: a key moves
+# or is removed and the sheet keeps promising it. These tests tie the list to
+# the handlers.
+
+
+def _shortcuts_block() -> str:
+    start = CONTENT_JS.index("const SHORTCUTS = ()")
+    return CONTENT_JS[start:CONTENT_JS.index("\n];", start)]
+
+
+def test_the_shortcut_sheet_is_reachable_without_the_keyboard():
+    """A keyboard reference found only by a keystroke helps nobody who has
+    not found the keystroke."""
+    assert 'data-act="shortcuts"' in CONTENT_JS
+    assert 'case "shortcuts": libPage = "shortcuts"' in CONTENT_JS
+    assert "function libShortcutsHtml" in CONTENT_JS
+    assert 'if (libPage === "shortcuts") return libShortcutsHtml();' in CONTENT_JS
+
+
+def test_the_question_mark_never_eats_a_typed_character():
+    """The page's whole point is a text box; ? must still type there."""
+    handler = CONTENT_JS[CONTENT_JS.index('if (e.key !== "?"'):][:700]
+    assert "isTypingTarget(document.activeElement)" in handler
+    assert "e.metaKey || e.ctrlKey || e.altKey" in handler, "a chord must not count as the key"
+    assert "slash || overlayHasInput()" in handler, "? fires while another surface owns the keyboard"
+    typing = _function_bodies(CONTENT_JS, r"isTypingTarget")["isTypingTarget"]
+    for token in ("isContentEditable", "INPUT", "TEXTAREA", "SELECT"):
+        assert token in typing
+
+
+def test_the_shortcut_sheet_opens_when_signed_out():
+    """It is a reference, not account data."""
+    body = _function_bodies(CONTENT_JS, r"loadLibrary")["loadLibrary"]
+    assert 'if (libPage !== "shortcuts") libPage = "signin";' in body
+
+
+def test_every_listed_chord_is_one_the_code_answers():
+    listed = _shortcuts_block()
+    for chord, handler in (
+        ("${MOD_SHIFT}E", 'e.code === "KeyE"'),
+        ("${MOD_SHIFT}V", 'e.code === "KeyV"'),
+        ("${MOD_SHIFT}L", 'e.code === "KeyL"'),
+        ("${MOD_SHIFT}P", 'e.code === "KeyP"'),
+        ("${CMD_KEY}↵", 'e.key === "Enter"'),
+        ("${CMD_KEY}S", 'e.key.toLowerCase() === "s"'),
+    ):
+        assert chord in listed, f"{chord} is no longer listed on the sheet"
+        assert handler in CONTENT_JS, f"the sheet lists {chord} but nothing handles it"
+    assert '(e.key === "[" || e.key === "]")' in CONTENT_JS
+
+
+def test_the_sheet_does_not_promise_tab_to_insert():
+    """Tab went back to being navigation; the sheet must not resurrect it."""
+    listed = _shortcuts_block()
+    slash_rows = listed[listed.index("In the chat box"):listed.index("When a draft is waiting")]
+    assert '"Tab"' in slash_rows, "Tab attaches a saved prompt from the // list"
+    rest = listed.replace(slash_rows, "")
+    assert '"Tab"' not in rest, "Tab is listed outside the // list, where it does not insert"
+
+
+def test_the_chrome_shortcut_address_is_copied_not_linked():
+    """A content script cannot navigate to chrome://; a link there is dead."""
+    body = _function_bodies(CONTENT_JS, r"libShortcutsHtml")["libShortcutsHtml"]
+    assert "chrome://extensions/shortcuts" in body
+    assert '<a ' not in body, "a chrome:// link does nothing when clicked"
+    assert 'data-act="copyshortcuts"' in body
+    assert 'case "copyshortcuts":' in CONTENT_JS
