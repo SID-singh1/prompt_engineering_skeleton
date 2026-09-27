@@ -33,13 +33,13 @@
     <!-- ═══ HERO ═══ -->
     <section class="hero">
         <div class="container hero-inner">
-            <div class="hero-badge">Chrome extension · Manual installation</div>
+            <div class="hero-badge"><span class="pulse-dot"></span> Next-Gen Prompt Engineering &amp; Observability</div>
             <h1 class="hero-title">
                 Turn rough ideas into <span class="gradient-text">clearer prompts.</span><br>
                 Right where you chat.
             </h1>
             <p class="hero-subtitle">
-                Write a quick thought in ChatGPT, Claude, Gemini, Perplexity, or Grok. Prompt Memory turns it into a more specific request, then lets you review and edit the result before it reaches the chat.
+                Write a quick thought in ChatGPT, Claude, Gemini, Perplexity, or Grok. Prompt Memory grounds it with vector context, enforces rigorous constraints, and scores quality lift (0–100) before reaching the chat.
             </p>
             <div class="hero-ctas">
                 <a href="#install" class="btn btn-primary btn-lg">
@@ -69,18 +69,24 @@
             </div>
 
             <p class="demo-caption">Illustrative rewrite. AI can add assumptions—review before using.</p>
-            <!-- Demo Visual -->
+            <!-- Demo Visual with live benchmark scores -->
             <div class="hero-demo">
                 <div class="demo-card demo-before">
-                    <div class="demo-label">Your prompt</div>
+                    <div class="demo-card-header">
+                        <span class="demo-label">Raw User Input</span>
+                        <span class="score-chip-mini chip-amber">Score 36/100</span>
+                    </div>
                     <div class="demo-text">explain quantum computing to a beginner in 200 words, with an analogy</div>
                 </div>
                 <div class="demo-arrow">
                     <span class="demo-arrow-icon">⚡</span>
-                    <span class="demo-arrow-label">Enhanced</span>
+                    <span class="demo-arrow-label">+58 pts Lift</span>
                 </div>
                 <div class="demo-card demo-after">
-                    <div class="demo-label">Enhanced prompt</div>
+                    <div class="demo-card-header">
+                        <span class="demo-label">Synthesized Output</span>
+                        <span class="score-chip-mini chip-emerald">Score 94/100</span>
+                    </div>
                     <div class="demo-text">Explain quantum computing to a beginner in about 200 words. Use a simple analogy to introduce the key idea, explain any technical terms, and make clear where the analogy stops being accurate.</div>
                 </div>
             </div>

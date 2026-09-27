@@ -605,3 +605,47 @@ def test_streaming_enhancement_waits_for_acceptance_to_memorize(client, auth, mo
     assert calls == []
     assert client.post("/enhance/accept", json={"log_id": done["log_id"]}, headers=auth).status_code == 200
     assert len(calls) == 1
+
+
+def test_a_rewrite_is_evaluated_in_the_background_with_tracking_off(client, auth, monkeypatch):
+    """
+    The quality score hangs off the log, and the log is now always written, so
+    switching Prompt tracking off must not leave History with a blank score
+    column. Replaces two tests from main that asserted the opposite: that
+    tracking off writes no log at all. That was the bug — the daily limit counts
+    that log, so tracking off meant unlimited rewrites on the shared key.
+    """
+    _stub_llm(monkeypatch)
+    judged = []
+    monkeypatch.setattr(
+        prompts, "_async_evaluate_prompt",
+        lambda log_id, user_id, original, enhanced, context_str="": judged.append(log_id),
+    )
+    res = client.post(
+        "/enhance",
+        json={"prompt": "private prompt", "tracking_enabled": False},
+        headers=auth,
+    )
+    assert res.status_code == 200
+    log_id = res.json().get("log_id")
+    assert log_id, "the rewrite is logged whatever the tracking switch says"
+    assert len(in_memory_prompt_logs) == 1
+    assert judged == [log_id], "and it is still queued for evaluation"
+
+
+def test_delete_prompt_history_item_by_log_id(client, auth):
+    in_memory_prompt_logs.append({
+        "log_id": "3a5b7c9d1e2f3a4b5c6d7e8f9a0b1c2d",
+        "user_id": "integration-user",
+        "original": "prompt to be deleted",
+        "enhanced": "enhanced prompt to be deleted",
+    })
+    assert len(in_memory_prompt_logs) == 1
+    res = client.delete(
+        "/api/user/prompt-history/3a5b7c9d1e2f3a4b5c6d7e8f9a0b1c2d",
+        headers=auth,
+    )
+    assert res.status_code == 200
+    assert res.json()["status"] == "deleted"
+    assert len(in_memory_prompt_logs) == 0
+

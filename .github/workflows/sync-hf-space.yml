@@ -38,8 +38,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${HF_TOKEN}" ]; then
-            echo "::error::HF_TOKEN secret is not set. Add a write-scoped Hugging Face token under Settings → Secrets → Actions."
-            exit 1
+            echo "::warning::HF_TOKEN secret is not set in this repository. Skipping Space sync. (To enable automated sync to Hugging Face, add a write-scoped token under Settings → Secrets and variables → Actions)."
+            exit 0
           fi
           git clone --quiet "https://siddhm11:${HF_TOKEN}@huggingface.co/spaces/siddhm11/prompt-engine" space
           # Replace wholesale so files deleted on GitHub are deleted on the Space too.

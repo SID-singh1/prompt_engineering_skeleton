@@ -60,27 +60,38 @@ def _calculate_heuristic_evaluation(original: str, enhanced: str, context_ext: s
     enh_constraints = sum(1 for c in constraint_words if c in enhanced.lower())
     orig_constraints = sum(1 for c in constraint_words if c in original.lower())
 
-    # Baseline scores (0-25 per dimension)
-    c_orig = min(20, max(5, int(orig_structure_hits * 3 + min(orig_words, 30) / 2.5)))
-    c_enh = min(25, max(18, int(16 + enh_structure_hits * 1.5 + min(enh_words, 100) / 20)))
+    # Dynamic Clarity & Structure (0-25)
+    c_orig = min(18, max(4, int(orig_structure_hits * 3 + min(orig_words, 25) / 2.5)))
+    c_enh = min(25, max(15, int(13 + min(enh_structure_hits * 2.2, 7) + min(enh_words, 80) / 18)))
 
-    s_orig = min(18, max(4, int(orig_constraints * 3 + (10 if orig_words > 10 else 4))))
-    s_enh = min(25, max(19, int(18 + enh_constraints * 1.4)))
+    # Dynamic Specificity & Constraints (0-25)
+    s_orig = min(16, max(3, int(orig_constraints * 2.5 + (8 if orig_words > 8 else 3))))
+    s_enh = min(25, max(14, int(13 + min(enh_constraints * 2.5, 9) + (3 if ("avoid" in enhanced.lower() or "do not" in enhanced.lower()) else 0))))
 
-    ctx_has_data = bool(context_ext or context_sel)
-    g_orig = 6 if not ctx_has_data else 8
-    g_enh = 24 if ctx_has_data else 20
+    # Dynamic Context Grounding (0-25)
+    ctx_len = len((context_ext + " " + context_sel).strip())
+    if ctx_len > 150:
+        g_orig = 8
+        g_enh = min(25, max(21, 20 + int(min(ctx_len, 500) / 100)))
+    elif ctx_len > 0:
+        g_orig = 6
+        g_enh = min(23, max(17, 16 + int(ctx_len / 40)))
+    else:
+        g_orig = 5
+        g_enh = min(20, max(14, 14 + int(min(enh_words, 60) / 15)))
 
-    a_orig = min(18, max(5, int(c_orig * 0.5 + s_orig * 0.5)))
-    a_enh = min(25, max(19, int(c_enh * 0.45 + s_enh * 0.45 + 2)))
+    # Dynamic Actionability & Precision (0-25)
+    action_words = ["create", "generate", "build", "write", "analyze", "synthesize", "design", "return", "output"]
+    enh_actions = sum(1 for a in action_words if a in enhanced.lower())
+    a_orig = min(17, max(4, int(c_orig * 0.45 + s_orig * 0.45)))
+    a_enh = min(25, max(15, int(c_enh * 0.4 + s_enh * 0.4 + min(enh_actions, 4) * 1.5)))
 
     orig_total = c_orig + s_orig + g_orig + a_orig
     enh_total = c_enh + s_enh + g_enh + a_enh
-    enh_total = max(enh_total, orig_total + 15)
-    enh_total = min(98, enh_total)
+    enh_total = min(100, max(enh_total, orig_total + 10))
     orig_total = min(orig_total, 65)
 
-    delta = enh_total - orig_total
+    delta = max(0, enh_total - orig_total)
 
     return {
         "original_score": orig_total,
@@ -104,26 +115,28 @@ def _calculate_heuristic_evaluation(original: str, enhanced: str, context_ext: s
     }
 
 
-@router.post("/evaluate/prompt-improvement")
-def evaluate_prompt_improvement(body: PromptEvaluationRequest):
-    """
-    Evaluates original vs enhanced prompt using an LLM judge out of 100.
-    Breaks down Clarity, Specificity, Context Grounding, and Actionability.
-    """
-    orig = body.original_prompt.strip()
-    enh = body.enhanced_prompt.strip()
+def judge_prompt_improvement(
+    original_prompt: str,
+    enhanced_prompt: str,
+    extracted_context: str = "",
+    selected_context: str = "",
+    conversation_context: str = ""
+) -> dict:
+    """Core function to evaluate original vs enhanced prompt with LLM judge or heuristic fallback."""
+    orig = (original_prompt or "").strip()
+    enh = (enhanced_prompt or "").strip()
 
     if not orig or not enh:
-        raise HTTPException(status_code=400, detail="Both original_prompt and enhanced_prompt are required.")
+        return _calculate_heuristic_evaluation(orig, enh, extracted_context, selected_context)
 
     # Context info string
     context_desc = []
-    if body.extracted_context:
-        context_desc.append(f"Auto-Extracted Context: {body.extracted_context[:300]}")
-    if body.selected_context:
-        context_desc.append(f"User-Selected Context: {body.selected_context[:300]}")
-    if body.conversation_context:
-        context_desc.append(f"Conversation Context: {body.conversation_context[:200]}")
+    if extracted_context:
+        context_desc.append(f"Auto-Extracted Context: {extracted_context[:300]}")
+    if selected_context:
+        context_desc.append(f"User-Selected Context: {selected_context[:300]}")
+    if conversation_context:
+        context_desc.append(f"Conversation Context: {conversation_context[:200]}")
 
     context_str = "\n".join(context_desc) if context_desc else "None provided"
 
@@ -164,7 +177,7 @@ def evaluate_prompt_improvement(body: PromptEvaluationRequest):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_message}
             ],
-            temperature=0.5,
+            temperature=0.4,
             timeout=12.0,
         )
 
@@ -204,7 +217,28 @@ def evaluate_prompt_improvement(body: PromptEvaluationRequest):
 
     except Exception as e:
         logger.warning(f"⚠️ LLM evaluation fell back to heuristic: {e}")
-        return _calculate_heuristic_evaluation(orig, enh, body.extracted_context or "", body.selected_context or "")
+        return _calculate_heuristic_evaluation(orig, enh, extracted_context, selected_context)
+
+
+@router.post("/evaluate/prompt-improvement")
+def evaluate_prompt_improvement(body: PromptEvaluationRequest):
+    """
+    Evaluates original vs enhanced prompt using an LLM judge out of 100.
+    Breaks down Clarity, Specificity, Context Grounding, and Actionability.
+    """
+    orig = body.original_prompt.strip()
+    enh = body.enhanced_prompt.strip()
+
+    if not orig or not enh:
+        raise HTTPException(status_code=400, detail="Both original_prompt and enhanced_prompt are required.")
+
+    return judge_prompt_improvement(
+        original_prompt=orig,
+        enhanced_prompt=enh,
+        extracted_context=body.extracted_context or "",
+        selected_context=body.selected_context or "",
+        conversation_context=body.conversation_context or "",
+    )
 
 
 @router.get("/user/analytics")
@@ -277,20 +311,28 @@ def get_user_analytics(user_id: Optional[str] = Depends(_extract_user_id_optiona
 
         # Recent history items formatted
         recent_items = []
-        for l in logs[:15]:
+        for l in logs[:25]:
             orig = l.get("original", "")
             enh = l.get("enhanced", "")
-            heur = _calculate_heuristic_evaluation(orig, enh)
+            eval_data = l.get("evaluation")
+            if not isinstance(eval_data, dict) or not eval_data.get("enhanced_score"):
+                eval_data = _calculate_heuristic_evaluation(orig, enh)
+
             recent_items.append({
-                "id": str(l.get("_id", l.get("id", "mem"))),
+                "id": str(l.get("_id", l.get("id", l.get("log_id", "mem")))),
+                "log_id": l.get("log_id"),
                 "original": orig,
                 "enhanced": enh,
                 "platform": l.get("platform", "ChatGPT"),
                 "mode": l.get("mode", "deep"),
                 "latency": l.get("latency", 1.8),
-                "score": heur["enhanced_score"],
-                "delta": heur["improvement_delta"],
-                "original_score": heur["original_score"],
+                "score": eval_data.get("enhanced_score", 90),
+                "delta": eval_data.get("improvement_delta", 45),
+                "original_score": eval_data.get("original_score", 45),
+                "dimensions": eval_data.get("dimensions", {}),
+                "verdict": eval_data.get("verdict", "Enhanced prompt delivers structured instructions and contextual guidance."),
+                "key_improvements": eval_data.get("key_improvements", []),
+                "context_details": l.get("context_details"),
                 "timestamp": l.get("timestamp").isoformat() if isinstance(l.get("timestamp"), datetime) else None,
             })
 
@@ -338,6 +380,23 @@ def get_user_analytics(user_id: Optional[str] = Depends(_extract_user_id_optiona
             "score": 94,
             "delta": 56,
             "original_score": 38,
+            "dimensions": {
+                "clarity_structure": {"original": 10, "enhanced": 24, "delta": 14},
+                "specificity_constraints": {"original": 9, "enhanced": 23, "delta": 14},
+                "context_grounding": {"original": 8, "enhanced": 24, "delta": 16},
+                "actionability_precision": {"original": 11, "enhanced": 23, "delta": 12},
+            },
+            "verdict": "Transforms a generic inquiry into a modular, production-ready technical briefing tailored for engineers.",
+            "key_improvements": [
+                "Targeted software engineering audience boundary",
+                "Defined 4 clear pedagogical sections",
+                "Required post-quantum cryptography impact"
+            ],
+            "context_details": {
+                "extracted": "Software engineer persona, prefers technical analogies",
+                "selected": "Technical Explainer standard template",
+                "conversation": "Discussing RSA 2048 and Shor's algorithm"
+            },
             "timestamp": (now - timedelta(minutes=14)).isoformat(),
         },
         {
@@ -350,6 +409,23 @@ def get_user_analytics(user_id: Optional[str] = Depends(_extract_user_id_optiona
             "score": 92,
             "delta": 51,
             "original_score": 41,
+            "dimensions": {
+                "clarity_structure": {"original": 11, "enhanced": 24, "delta": 13},
+                "specificity_constraints": {"original": 10, "enhanced": 23, "delta": 13},
+                "context_grounding": {"original": 9, "enhanced": 22, "delta": 13},
+                "actionability_precision": {"original": 11, "enhanced": 23, "delta": 12},
+            },
+            "verdict": "Injected production libraries (httpx, Pydantic), retry mechanisms, and concrete validation rules.",
+            "key_improvements": [
+                "Specified httpx and BeautifulSoup4 instead of vague requests",
+                "Required Pydantic schemas and dual SQLite/CSV storage",
+                "Enforced exponential backoff and error handling"
+            ],
+            "context_details": {
+                "extracted": "Python 3.11 developer stack",
+                "selected": "Production Code Standard",
+                "conversation": "Setting up market analytics pipeline"
+            },
             "timestamp": (now - timedelta(hours=2)).isoformat(),
         },
         {
@@ -362,6 +438,23 @@ def get_user_analytics(user_id: Optional[str] = Depends(_extract_user_id_optiona
             "score": 89,
             "delta": 47,
             "original_score": 42,
+            "dimensions": {
+                "clarity_structure": {"original": 12, "enhanced": 23, "delta": 11},
+                "specificity_constraints": {"original": 11, "enhanced": 22, "delta": 11},
+                "context_grounding": {"original": 8, "enhanced": 21, "delta": 13},
+                "actionability_precision": {"original": 11, "enhanced": 23, "delta": 12},
+            },
+            "verdict": "Organized generic summary into a 4-quadrant executive briefing matrix with DRI assignments.",
+            "key_improvements": [
+                "Formatted with 3-sentence executive takeaway",
+                "Added structured DRI / Effort / Horizon action matrix",
+                "Required risk bottlenecks and mitigations"
+            ],
+            "context_details": {
+                "extracted": "Product manager persona",
+                "selected": "Leadership Briefing template",
+                "conversation": "Quarterly strategic review"
+            },
             "timestamp": (now - timedelta(hours=5)).isoformat(),
         },
         {
@@ -374,6 +467,23 @@ def get_user_analytics(user_id: Optional[str] = Depends(_extract_user_id_optiona
             "score": 96,
             "delta": 54,
             "original_score": 42,
+            "dimensions": {
+                "clarity_structure": {"original": 11, "enhanced": 25, "delta": 14},
+                "specificity_constraints": {"original": 11, "enhanced": 24, "delta": 13},
+                "context_grounding": {"original": 9, "enhanced": 24, "delta": 15},
+                "actionability_precision": {"original": 11, "enhanced": 23, "delta": 12},
+            },
+            "verdict": "Provides strict service dependency health checks, named volumes, and security hardening instructions.",
+            "key_improvements": [
+                "Added service_healthy ordering conditions",
+                "Injected persistent volume definitions and non-root users",
+                "Configured Nginx reverse proxy architecture"
+            ],
+            "context_details": {
+                "extracted": "Fullstack Docker workflow",
+                "selected": "DevOps Containerization Rule",
+                "conversation": "Setting up staging deployment"
+            },
             "timestamp": (now - timedelta(days=1)).isoformat(),
         }
     ]
@@ -419,11 +529,13 @@ def delete_prompt_history_item(log_id: str, user_id: str = Depends(verify_jwt)):
 
     if MongoDB.prompts_col is not None:
         try:
-            query = {"user_id": user_id}
+            or_clauses = [{"log_id": log_id}, {"id": log_id}]
             if ObjectId.is_valid(log_id):
-                query["_id"] = ObjectId(log_id)
-            else:
-                query["id"] = log_id
+                or_clauses.append({"_id": ObjectId(log_id)})
+            query = {
+                "user_id": user_id,
+                "$or": or_clauses,
+            }
             res = MongoDB.prompts_col.delete_one(query)
             deleted = res.deleted_count > 0
         except Exception as e:
@@ -434,7 +546,11 @@ def delete_prompt_history_item(log_id: str, user_id: str = Depends(verify_jwt)):
     initial_len = len(in_memory_prompt_logs)
     in_memory_prompt_logs[:] = [
         l for l in in_memory_prompt_logs
-        if not (l.get("user_id") == user_id and (str(l.get("_id", "")) == log_id or l.get("id") == log_id))
+        if not (l.get("user_id") == user_id and (
+            str(l.get("_id", "")) == log_id
+            or l.get("log_id") == log_id
+            or l.get("id") == log_id
+        ))
     ]
     if len(in_memory_prompt_logs) < initial_len:
         deleted = True
