@@ -487,12 +487,18 @@ def _resolve_chain(
     user_provider: Optional[str],
     user_key: Optional[str],
     user_model: Optional[str],
+    allow_shared_fallback: bool = True,
 ) -> list[tuple[ModelSpec, Optional[str]]]:
     """
     Produce [(spec, explicit_key_or_None), ...].
 
     A user-supplied (BYOK) key is tried first and its failures do not consume
     the shared server key, then the server chain runs as a safety net.
+
+    allow_shared_fallback=False drops that safety net, so an exhausted
+    explicit key raises NoProviderAvailable instead of quietly spending the
+    shared quota. Work the user is waiting on wants the net; background work
+    that has something cheaper to fall back to does not.
     """
     chain: list[tuple[ModelSpec, Optional[str]]] = []
 
@@ -515,8 +521,9 @@ def _resolve_chain(
                                  params={"max_completion_tokens": 1200})
             chain.append((spec, user_key))
 
-    for spec in DEFAULT_CHAIN:
-        chain.append((spec, None))
+    if allow_shared_fallback or not chain:
+        for spec in DEFAULT_CHAIN:
+            chain.append((spec, None))
 
     return [(s, k) for s, k in chain if s.label not in _dead_models]
 
@@ -532,6 +539,7 @@ def chat(
     user_provider: Optional[str] = None,
     user_key: Optional[str] = None,
     user_model: Optional[str] = None,
+    allow_shared_fallback: bool = True,
 ) -> dict:
     """
     Non-streaming completion, walking the fallback chain.
@@ -539,10 +547,15 @@ def chat(
     Returns {"content", "model", "provider", "usage", "attempts"}.
     Raises NoProviderAvailable when every rung fails — callers must surface
     that as an error rather than returning the user's text unchanged.
+
+    Pass allow_shared_fallback=False with an explicit key to keep the call off
+    the shared pool entirely; see _resolve_chain.
     """
     attempts: list[tuple[str, str]] = []
 
-    for spec, explicit_key in _resolve_chain(user_provider, user_key, user_model):
+    for spec, explicit_key in _resolve_chain(
+        user_provider, user_key, user_model, allow_shared_fallback
+    ):
         provider = PROVIDERS[spec.provider]
         key, key_index = (explicit_key, -1) if explicit_key else _pick_key(spec.provider)
         if not key:
