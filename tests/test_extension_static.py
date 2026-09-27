@@ -1561,6 +1561,33 @@ def test_the_library_height_is_read_before_the_chip_can_be_hidden():
     assert place.index("+ libH + 8") > hide, "and the stack is computed from the saved height"
 
 
+def test_the_shortcuts_chip_reports_expanded_only_on_its_own_page():
+    """
+    openShortcuts() sets libPage AFTER togglePanel(), and the ⋯ menu changes
+    page without touching the panel, so reading libPage at the open/close
+    moment alone reported collapsed whenever the list was actually showing.
+    """
+    assert "function syncHelpChipExpanded()" in CONTENT_JS
+    toggle = _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"]
+    assert "syncHelpChipExpanded()" in toggle
+    render = _function_bodies(CONTENT_JS, r"renderLibrary")["renderLibrary"]
+    assert "syncHelpChipExpanded()" in render, "a page change must update it too"
+
+
+def test_the_shortcuts_chip_is_laid_out_before_it_is_measured():
+    """
+    hidden is display:none, and a display:none element reports offsetWidth 0.
+    Measuring the chip while it is still hidden from a previous pass decides
+    whether it may come back from a 0x0 phantom box, so it can stay away or
+    reappear in the wrong place. Library is already cleared this way one block
+    up (`lib.hidden = panelOpen`); this chip has to be too.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    clear = place.index("hlp.hidden = false")
+    assert clear < place.index("hlp.offsetWidth"), "cleared before it is measured"
+    assert clear < place.index("hlp.hidden = lib.hidden"), "and before the new verdict"
+
+
 def test_the_composer_overlap_test_measures_the_chip_it_is_asked_about():
     """
     overlaps() used to close over the Library chip's width and height, so

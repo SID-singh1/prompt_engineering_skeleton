@@ -1187,6 +1187,11 @@ function placePill() {
       // composer on every one of these sites.
       const hlp = document.getElementById("pm-help-btn");
       if (hlp) {
+        // Laid out before it is measured, the way `lib.hidden = panelOpen`
+        // above clears Library before Library is measured. hidden is
+        // display:none, so a chip that went away once would measure 0x0 and
+        // then decide from that phantom box whether it may come back.
+        hlp.hidden = false;
         // libH is measured above, before lib.hidden may have zeroed it: a
         // display:none element reports offsetHeight 0, which would stack this
         // chip on the wrong row the moment Library came back.
@@ -1527,11 +1532,10 @@ function togglePanel(force) {
   lib.hidden = !open;
   const chip = document.getElementById("pm-library-btn");
   chip?.setAttribute("aria-expanded", String(open));
-  const helpChip = document.getElementById("pm-help-btn");
-  helpChip?.setAttribute("aria-expanded", String(open && libPage === "shortcuts"));
+  syncHelpChipExpanded();
   if (open) {
     chip?.classList.remove("pm-lib-reveal");
-    helpChip?.classList.remove("pm-lib-reveal");
+    document.getElementById("pm-help-btn")?.classList.remove("pm-lib-reveal");
   }
   if (open) {
     closeSlash();
@@ -1653,9 +1657,23 @@ function libVerb() {
   return norm(getCurrentInputText()) ? "Replace" : "Insert";
 }
 
+/**
+ * The Shortcuts chip is expanded only while its own page is showing — being
+ * open on the Saved list is the Library chip's business, not this one's.
+ *
+ * Called from both ends because neither alone sees every change: openShortcuts()
+ * sets libPage AFTER togglePanel() has run, and the ⋯ menu moves between pages
+ * without touching the panel at all.
+ */
+function syncHelpChipExpanded() {
+  document.getElementById("pm-help-btn")
+    ?.setAttribute("aria-expanded", String(panelOpen && libPage === "shortcuts"));
+}
+
 function renderLibrary() {
   const lib = document.getElementById("pm-library");
   if (!lib || !panelOpen) return;
+  syncHelpChipExpanded();
   const active = document.activeElement;
   const focusId = lib.contains(active) ? active.id : null;
   const caret = active?.id === "pm-lib-q" ? active.selectionStart : null;
