@@ -1,9 +1,12 @@
+import re
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
+from backend.core import config
 from backend.core.config import settings
 from backend.core.database import (
     MongoDB,
@@ -72,6 +75,49 @@ def test_dashboard_is_not_available_without_a_configured_key(client, monkeypatch
     monkeypatch.setattr(settings, "BUILDER_DASHBOARD_KEY", "")
     response = client.get("/builder/dashboard/summary")
     assert response.status_code == 404
+
+
+def test_no_generated_credential_is_hardcoded_in_the_config():
+    """
+    Secrets must default to empty. That default is the lock on the builder
+    dashboard: _require_builder_key() answers 404 while it is unset, so a
+    deployment that forgot the secret exposes nothing. A key written into the
+    source is handed to everyone who can read the repository — and to git
+    history, which rotating the environment variable cannot reach. One did
+    land on main (62a2465); this stops the next one.
+
+    The test looks for something that *is* a credential, not merely a setting
+    whose name contains KEY: a long mixed-case alphanumeric string, the shape
+    a generator produces. That deliberately clears two neighbours —
+    SHARED_KEY_DAILY_LIMIT, which is a number, and JWT_SECRET's
+    "unsafedefaultsecret", a placeholder that reads as one and that
+    Settings.validate() already refuses to start with in production.
+
+    Checked against the source, not the loaded value: the value is rightly
+    non-empty on any machine holding backend/.env, which is gitignored.
+    """
+    def looks_generated(value: str) -> bool:
+        return (
+            len(value) >= 16
+            and any(c.isdigit() for c in value)
+            and any(c.isupper() for c in value)
+            and any(c.islower() for c in value)
+        )
+
+    offenders = []
+    for line in Path(config.__file__).read_text().splitlines():
+        stripped = line.strip()
+        if stripped.startswith("#"):
+            continue
+        for match in re.finditer(r'os\.getenv\(\s*"([^"]+)"\s*,\s*"([^"]*)"', stripped):
+            name, default = match.group(1), match.group(2)
+            if looks_generated(default):
+                offenders.append(f"{name} defaults to {default[:4]}... in the source")
+
+    assert not offenders, (
+        "credentials must come from the environment, never from a default: "
+        + "; ".join(offenders)
+    )
 
 
 def test_dashboard_rejects_wrong_key(client):

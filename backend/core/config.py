@@ -83,7 +83,12 @@ class Settings:
     # Private builder dashboard. The dashboard page is intentionally not linked
     # from the public site; the API is disabled until this high-entropy secret
     # is configured and never accepts it in a query string.
-    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "3G82RP1aILlln7rMuxKW").strip()
+    #
+    # The default MUST stay empty. It is the whole lock: _require_builder_key()
+    # answers 404 while it is unset, so an unconfigured deployment exposes
+    # nothing. A default written here is a key shipped to everyone who can read
+    # the repository, which is the opposite of what the comment above promises.
+    BUILDER_DASHBOARD_KEY = os.getenv("BUILDER_DASHBOARD_KEY", "").strip()
 
     # Dashboard queries are intentionally bounded. A private page must not be
     # able to read an unbounded prompt-log history into one application worker.
