@@ -2128,6 +2128,64 @@
 }
 .pm-lib .pm-lib-lead { margin: 0; font-size: 14px; font-weight: 500; }
 .pm-lib .pm-lib-note { margin: 0; color: var(--pm-con-text-2); font-size: 12.5px; line-height: 1.5; }
+/* ── Keyboard shortcuts ──────────────────────────────────────────────────
+   A reference, so it is laid out to be scanned down the left and matched on
+   the right: what it does, then the key. Grouped by where each key works,
+   because the keymap really is context-gated.
+
+   The rows are a two-column grid rather than flex space-between: the keycaps
+   then line up in one column down the page, which is what makes a list of
+   fifteen of them readable at a glance instead of a ragged edge. */
+.pm-lib .pm-kb-page { gap: 18px; }
+.pm-lib .pm-kb-group { display: flex; flex-direction: column; gap: 7px; }
+.pm-lib .pm-kb-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: baseline;
+    gap: 12px;
+}
+.pm-lib .pm-kb-what { font-size: 12.5px; line-height: 1.45; color: var(--pm-con-text-2); }
+.pm-lib .pm-kb-note { display: block; color: var(--pm-con-muted); font-size: 11.5px; }
+.pm-lib .pm-kb-keys { display: flex; gap: 3px; flex: none; }
+/* Same keycap as the card's footer: one object family, one way of drawing a
+   key. The heavier bottom border is the edge of a physical key catching the
+   light — the detail that makes it read as a key rather than a code span. */
+.pm-lib .pm-kb {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10.5px;
+    line-height: 1.4;
+    color: var(--pm-con-text);
+    background: var(--pm-con-elev);
+    border: 1px solid var(--pm-con-border);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+.pm-lib .pm-kb-foot { display: flex; flex-direction: column; gap: 7px; }
+.pm-lib .pm-kb-urlrow { display: flex; align-items: center; gap: 8px; }
+.pm-lib .pm-kb-url {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11.5px;
+    color: var(--pm-con-text);
+    white-space: nowrap;
+}
+/* Chrome refuses navigation to chrome:// from a page, so the address is
+   copied rather than linked. */
+.pm-lib .pm-kb-copy {
+    flex: none;
+    padding: 1px 7px;
+    border-radius: 6px;
+    border: 1px solid var(--pm-con-border);
+    background: none;
+    color: var(--pm-con-text-2);
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+}
+.pm-lib .pm-kb-copy:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
+.pm-lib .pm-kb-copy:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+
 .pm-lib .pm-lib-primary {
     align-self: flex-start;
     height: 30px;
