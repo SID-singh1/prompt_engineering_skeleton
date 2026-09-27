@@ -76,6 +76,70 @@ console.log("Prompt Memory v4: loaded on", window.location.hostname);
 
 const IS_MAC = navigator.platform?.includes("Mac") || navigator.userAgent?.includes("Mac");
 const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
+// Mac writes chords as glyphs, Windows and Linux spell them out. CMD_KEY
+// alone renders "Ctrl+⇧E" off-platform, which is neither convention.
+const MOD_SHIFT = IS_MAC ? "⌘⇧" : "Ctrl+Shift+";
+
+/**
+ * Every shortcut this extension answers, grouped by WHERE it works.
+ *
+ * Grouped by context rather than by feature because the keymap really is
+ * context-gated: handleCardKeydown() ignores everything unless focus is in
+ * the chat box, the pill or the card, and save/redo/versions only answer
+ * inside the card. A flat list would promise keys that do nothing where the
+ * reader happens to be standing, which is how a reference loses their trust.
+ *
+ * This is the one place they are written down, so it has to stay true: if a
+ * key moves, it moves here too. tests/test_extension_static.py checks that
+ * every chord listed is one the code actually handles.
+ */
+const SHORTCUTS = () => [
+  {
+    where: "Anywhere on the page",
+    rows: [
+      { keys: [`${MOD_SHIFT}E`], what: "Rewrite what is in the chat box" },
+      { keys: [`${MOD_SHIFT}V`], what: "Start voice input" },
+      { keys: [`${MOD_SHIFT}L`], what: "Open the library" },
+      { keys: ["?"], what: "Show this list", note: "when you are not typing" },
+    ],
+  },
+  {
+    where: "In the chat box",
+    rows: slashEnabled
+      ? [
+          { keys: ["//"], what: "Open your saved prompts at the cursor" },
+          { keys: ["↑", "↓"], what: "Move through them" },
+          { keys: ["↵"], what: "Insert the one you picked" },
+          { keys: ["Tab"], what: "Attach it as context instead" },
+          { keys: ["Esc"], what: "Close the list" },
+        ]
+      : [{ keys: ["//"], what: "Saved prompts at the cursor", note: "switched off in Privacy" }],
+  },
+  {
+    where: "When a draft is waiting in the pill",
+    rows: [
+      { keys: [`${MOD_SHIFT}P`], what: "Show or hide its card" },
+      { keys: ["Esc"], what: "Put the card away", note: "stops a rewrite that is still writing" },
+    ],
+  },
+  {
+    where: "On the card",
+    rows: [
+      { keys: [`${CMD_KEY}↵`], what: "Rewrite it again" },
+      { keys: [`${CMD_KEY}S`], what: "Save the rewrite to your library" },
+      { keys: ["[", "]"], what: "Step through versions", note: "once there is more than one" },
+    ],
+  },
+  {
+    where: "In the library",
+    rows: [
+      { keys: ["↑", "↓"], what: "Move through the list" },
+      { keys: ["↵"], what: "Insert the selected prompt" },
+      { keys: [`${CMD_KEY}↵`], what: "Attach it as context instead" },
+      { keys: ["Esc"], what: "Go back, then close" },
+    ],
+  },
+];
 
 // ══════════════════════════════════════════════════════════════
 // STATE
@@ -778,16 +842,46 @@ function createTrigger() {
   // pill is docked left or has grown wide, and above it when beside would put
   // it on the chat box. Entering either one shows the chip; leaving both
   // hides it after a grace period long enough to cross any gap.
+  // Help, stacked above the Library chip in the same reveal.
+  //
+  // There is a "?" chord for this, and on a chat page it is close to useless:
+  // "?" has to stay typable, so it only answers when focus is NOT in a text
+  // box — and on ChatGPT the caret is in the composer essentially always. A
+  // key you must first click away from the thing you are typing in to press
+  // is not a shortcut, it is a puzzle. So the chord stays for pages where it
+  // does fire, and this is the way people actually find the list: in the same
+  // place, by the same gesture, as the Library they already found here.
+  const help = document.createElement("button");
+  help.id = "pm-help-btn";
+  help.className = "pm-help-btn";
+  help.type = "button";
+  help.innerHTML = `${LIB_ICON.help}<span>Shortcuts</span>`;
+  help.title = "Keyboard shortcuts";
+  help.setAttribute("aria-haspopup", "dialog");
+  help.setAttribute("aria-expanded", "false");
+  help.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openShortcuts();
+  });
+  document.body.appendChild(help);
+
   let libRevealTimer = null;
   const revealChip = () => {
     clearTimeout(libRevealTimer);
-    if (!panelOpen) lib.classList.add("pm-lib-reveal");
+    if (panelOpen) return;
+    lib.classList.add("pm-lib-reveal");
+    help.classList.add("pm-lib-reveal");
   };
   const concealChip = () => {
     clearTimeout(libRevealTimer);
-    libRevealTimer = setTimeout(() => lib.classList.remove("pm-lib-reveal"), 350);
+    libRevealTimer = setTimeout(() => {
+      lib.classList.remove("pm-lib-reveal");
+      help.classList.remove("pm-lib-reveal");
+    }, 350);
   };
-  for (const el of [btn, lib]) {
+  // Every member of the cluster both shows it and holds it open, so crossing
+  // from ⊕ to Library to Shortcuts never passes over a gap that hides it.
+  for (const el of [btn, lib, help]) {
     el.addEventListener("pointerenter", revealChip);
     el.addEventListener("pointerleave", concealChip);
   }
@@ -798,6 +892,7 @@ function createTrigger() {
     uiTheme = theme;
     btn.setAttribute("data-pm-theme", theme);
     lib.setAttribute("data-pm-theme", theme);
+    help.setAttribute("data-pm-theme", theme);
   });
 }
 
@@ -1069,10 +1164,12 @@ function placePill() {
         : window.innerWidth - beside - lib.offsetWidth;
       const libTop = window.innerHeight - bottom - (pill.offsetHeight + lib.offsetHeight) / 2;
       const cb = composer && c0(composer);
-      const overlaps = (left, top) => cb && left < cb.right && left + lib.offsetWidth > cb.left && top < cb.bottom && top + lib.offsetHeight > cb.top;
+      const overlaps = (left, top, w = lib.offsetWidth, h = lib.offsetHeight) =>
+        cb && left < cb.right && left + w > cb.left && top < cb.bottom && top + h > cb.top;
       const clearOfComposer = !overlaps(libLeft, libTop);
 
       lib.dataset.dock = pillDock;
+      const libH = lib.offsetHeight;
       const inline = clearOfComposer ? beside : inset;
       lib.style.top = "auto";
       lib.style.bottom = clearOfComposer
@@ -1083,8 +1180,41 @@ function placePill() {
       const finalLeft = pillDock === "left" ? inline : window.innerWidth - inline - lib.offsetWidth;
       const finalTop = clearOfComposer ? libTop : window.innerHeight - bottom - pill.offsetHeight - 8 - lib.offsetHeight;
       lib.hidden = Boolean(overlaps(finalLeft, finalTop)) || finalTop < PILL_MARGIN;
+
+      // Shortcuts sits directly on top of Library, sharing its edge offset, so
+      // the cluster reads as one column growing upward from ⊕ rather than as
+      // chips scattered around it. Above and not below because below is the
+      // composer on every one of these sites.
+      const hlp = document.getElementById("pm-help-btn");
+      if (hlp) {
+        // Laid out before it is measured, the way `lib.hidden = panelOpen`
+        // above clears Library before Library is measured. hidden is
+        // display:none, so a chip that went away once would measure 0x0 and
+        // then decide from that phantom box whether it may come back.
+        hlp.hidden = false;
+        // libH is measured above, before lib.hidden may have zeroed it: a
+        // display:none element reports offsetHeight 0, which would stack this
+        // chip on the wrong row the moment Library came back.
+        const hlpBottom = (parseFloat(lib.style.bottom) || 0) + libH + 8;
+        hlp.dataset.dock = pillDock;
+        hlp.style.top = "auto";
+        hlp.style.bottom = hlpBottom + "px";
+        hlp.style.left = pillDock === "left" ? inline + "px" : "auto";
+        hlp.style.right = pillDock === "right" ? inline + "px" : "auto";
+        const hlpW = hlp.offsetWidth, hlpH = hlp.offsetHeight;
+        const hlpLeft = pillDock === "left" ? inline : window.innerWidth - inline - hlpW;
+        const hlpTop = window.innerHeight - hlpBottom - hlpH;
+        // Hidden with Library, not merely alongside it: if there is no room
+        // for the chip this one stands on, a lone "?" floating over the page
+        // belongs to nothing.
+        hlp.hidden = lib.hidden
+          || Boolean(overlaps(hlpLeft, hlpTop, hlpW, hlpH))
+          || hlpTop < PILL_MARGIN;
+      }
     }
   }
+  const hlpOff = document.getElementById("pm-help-btn");
+  if (hlpOff && panelOpen) hlpOff.hidden = true;
   positionCard();
   positionToasts();
   positionLibrary();
@@ -1120,8 +1250,10 @@ function setupPillDrag(pill) {
     pill.style.left = left + "px";
     pill.style.top = top + "px";
     // The card and library button follow live, not just on release.
-    const lib = document.getElementById("pm-library-btn");
-    if (lib) lib.style.opacity = "0";
+    for (const id of ["pm-library-btn", "pm-help-btn"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.opacity = "0";
+    }
     positionCard();
   });
 
@@ -1130,8 +1262,10 @@ function setupPillDrag(pill) {
     try { pill.releasePointerCapture(e.pointerId); } catch { /* already released */ }
     start = null;
     pill.classList.remove("pm-pill-dragging");
-    const lib = document.getElementById("pm-library-btn");
-    if (lib) lib.style.opacity = "";
+    for (const id of ["pm-library-btn", "pm-help-btn"]) {
+      const el = document.getElementById(id);
+      if (el) el.style.opacity = "";
+    }
     if (!moved) return;
     pillSuppressClick = true;
 
@@ -1250,6 +1384,36 @@ function setupKeyboardShortcut() {
       togglePanel();
     }
   });
+
+  // "?" is the convention for "what can I press" — GitHub, Gmail, Linear all
+  // use it — and it needs no chord to remember. The whole trick is that on a
+  // page whose point is a text box, it must still be able to type a question
+  // mark: it only answers when the keystroke is not wanted as a character.
+  document.addEventListener("keydown", (e) => {
+    if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+    if (e.key !== "?" || e.isComposing || e.defaultPrevented) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;   // a chord is not the key
+    if (isTypingTarget(document.activeElement)) return;
+    if (slash || overlayHasInput()) return;           // something else owns the keyboard
+    e.preventDefault();
+    e.stopPropagation();
+    if (panelOpen && libPage === "shortcuts") closeLibrary();
+    else openShortcuts();
+  }, true);
+}
+
+/**
+ * Whether a keystroke belongs to whatever the user is editing.
+ *
+ * Covers the host's chat box, this extension's own inputs (the library
+ * search, the feedback form), and any other field on the page — a shortcut
+ * that eats a character someone was typing is worse than no shortcut.
+ */
+function isTypingTarget(el) {
+  if (!el) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -1280,12 +1444,15 @@ const LIB_ICON = {
   clip: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 5.5 6 10a1.4 1.4 0 0 0 2 2l5-5a2.8 2.8 0 0 0-4-4L4 8a4.2 4.2 0 0 0 6 6l3.5-3.5"/></svg>',
   back: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg>',
   shelf: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="4" rx="1.2"/><path d="M3.5 9.5h9M4.5 12.5h7"/></svg>',
+  // Drawn rather than typed, like the others: a "?" left to the host's font
+  // renders at a different weight and baseline on every site.
+  help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
 };
 
 // "recent" is the History tab: every rewrite, as the popup and the consent
 // notice call it. "Recent" read as "recently saved", the same thing as Saved.
 let libView = "saved";        // "saved" | "recent" (shown as History)
-let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
+let libPage = "list";         // "list" | "privacy" | "feedback" | "shortcuts" | "signin"
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
 let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
@@ -1345,7 +1512,7 @@ function createLibrary() {
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
 
@@ -1365,7 +1532,11 @@ function togglePanel(force) {
   lib.hidden = !open;
   const chip = document.getElementById("pm-library-btn");
   chip?.setAttribute("aria-expanded", String(open));
-  if (open) chip?.classList.remove("pm-lib-reveal");
+  syncHelpChipExpanded();
+  if (open) {
+    chip?.classList.remove("pm-lib-reveal");
+    document.getElementById("pm-help-btn")?.classList.remove("pm-lib-reveal");
+  }
   if (open) {
     closeSlash();
     libPage = "list";
@@ -1386,6 +1557,22 @@ function togglePanel(force) {
   placePill();
 }
 
+/**
+ * Open the sheet straight onto the shortcuts.
+ *
+ * togglePanel() resets libPage to "list" on open — that is right for the
+ * button and the chord, which mean "my library" — so the page is chosen
+ * afterwards rather than by widening togglePanel's contract.
+ */
+function openShortcuts() {
+  hideTip();
+  if (!panelOpen) togglePanel(true);
+  libPage = "shortcuts";
+  libMenu = false;
+  renderLibrary();
+  document.getElementById("pm-lib-back")?.focus({ preventScroll: true });
+}
+
 /** Close the sheet and hand the keyboard back to the chat box. */
 function closeLibrary() {
   togglePanel(false);
@@ -1396,7 +1583,12 @@ async function loadLibrary() {
   const auth = await getAuth();
   libSignedIn = Boolean(auth && !isTokenExpired(auth.token));
   if (!panelOpen) return;
-  if (!libSignedIn) { libPage = "signin"; renderLibrary(); return; }
+  if (!libSignedIn) {
+    // The shortcuts are a reference, not account data.
+    if (libPage !== "shortcuts") libPage = "signin";
+    renderLibrary();
+    return;
+  }
   if (!(await ensureDataConsent())) { togglePanel(false); return; }
   isLoadingTab = !promptsLoaded;
   renderLibrary();
@@ -1465,9 +1657,23 @@ function libVerb() {
   return norm(getCurrentInputText()) ? "Replace" : "Insert";
 }
 
+/**
+ * The Shortcuts chip is expanded only while its own page is showing — being
+ * open on the Saved list is the Library chip's business, not this one's.
+ *
+ * Called from both ends because neither alone sees every change: openShortcuts()
+ * sets libPage AFTER togglePanel() has run, and the ⋯ menu moves between pages
+ * without touching the panel at all.
+ */
+function syncHelpChipExpanded() {
+  document.getElementById("pm-help-btn")
+    ?.setAttribute("aria-expanded", String(panelOpen && libPage === "shortcuts"));
+}
+
 function renderLibrary() {
   const lib = document.getElementById("pm-library");
   if (!lib || !panelOpen) return;
+  syncHelpChipExpanded();
   const active = document.activeElement;
   const focusId = lib.contains(active) ? active.id : null;
   const caret = active?.id === "pm-lib-q" ? active.selectionStart : null;
@@ -1514,10 +1720,11 @@ function syncActiveDescendant() {
 
 function libHeadHtml() {
   const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>`;
-  if (libPage === "privacy" || libPage === "feedback") {
+  if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
+    const title = { privacy: "Privacy", feedback: "Send feedback", shortcuts: "Keyboard shortcuts" }[libPage];
     return `<div class="pm-lib-head pm-lib-head-sub">` +
       `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
-      `<span class="pm-lib-head-title">${libPage === "privacy" ? "Privacy" : "Send feedback"}</span>${more}</div>`;
+      `<span class="pm-lib-head-title">${title}</span>${more}</div>`;
   }
   if (libPage === "signin") {
     return `<div class="pm-lib-head pm-lib-head-sub"><span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
@@ -1554,6 +1761,7 @@ function libBodyHtml() {
       row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
+  if (libPage === "shortcuts") return libShortcutsHtml();
   if (libPage === "feedback") {
     return `<div class="pm-lib-page pm-lib-form">` +
       `<label class="pm-lib-field"><span>Kind</span><select id="pm-feedback-type" class="pm-lib-input">` +
@@ -1648,6 +1856,7 @@ function libMenuHtml() {
     `<div class="pm-lib-views pm-lib-views-wide" role="group" aria-label="Default rewrite style">${STYLES.map(style).join("")}</div></div>` +
     `<hr>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${CMD_KEY}⇧V</span></button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="shortcuts">Keyboard shortcuts<span>?</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
     (libSignedIn && usageData.known
@@ -1795,6 +2004,13 @@ function onLibraryClick(e) {
   switch (act) {
     case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
+    case "shortcuts": libPage = "shortcuts"; libMenu = false; renderLibrary(); return;
+    case "copyshortcuts":
+      navigator.clipboard?.writeText("chrome://extensions/shortcuts").then(
+        () => showToast("Address copied — paste it in a new tab.", "success"),
+        () => showToast("Could not copy. The address is chrome://extensions/shortcuts", "info"),
+      );
+      return;
     case "feedback":
       libPage = "feedback"; libMenu = false; renderLibrary();
       storageGet(["email"], (r) => { const el = document.getElementById("pm-feedback-email"); if (el && !el.value) el.value = r.email || ""; });
@@ -1833,7 +2049,9 @@ function onLibraryKeydown(e) {
   if (e.key === "Escape") {
     e.preventDefault(); e.stopPropagation();
     if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
-    if (libPage === "privacy" || libPage === "feedback") { libPage = "list"; renderLibrary(); focusLibrarySearch(); return; }
+    if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
+      libPage = "list"; renderLibrary(); focusLibrarySearch(); return;
+    }
     closeLibrary();
     return;
   }
@@ -1853,6 +2071,28 @@ function onLibraryKeydown(e) {
     if (!n) return;
     libAct(mod ? "attach" : "insert");
   }
+}
+
+// ── Keyboard shortcuts, a page of the sheet ──
+
+function libShortcutsHtml() {
+  const cap = (k) => `<kbd class="pm-kb">${escHtml(k)}</kbd>`;
+  const row = (r) =>
+    `<div class="pm-kb-row"><span class="pm-kb-what">${escHtml(r.what)}` +
+    (r.note ? `<span class="pm-kb-note">${escHtml(r.note)}</span>` : "") +
+    `</span><span class="pm-kb-keys">${r.keys.map(cap).join("")}</span></div>`;
+  const group = (g) =>
+    `<div class="pm-kb-group"><div class="pm-lib-menu-cap">${escHtml(g.where)}</div>${g.rows.map(row).join("")}</div>`;
+  return `<div class="pm-lib-page pm-kb-page">${SHORTCUTS().map(group).join("")}` +
+    // The two Chrome-level commands are the user's to rebind, and a content
+    // script cannot link to chrome:// — a link there does nothing when
+    // clicked. So the address is text they can copy.
+    `<div class="pm-kb-foot"><p class="pm-lib-note">${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(`${MOD_SHIFT}V`)} are Chrome shortcuts. ` +
+    `If another app has taken one, change it here:</p>` +
+    // Its own line: in a 330px sheet the address wraps mid-word inside a
+    // paragraph, and a broken address is one a reader cannot check.
+    `<div class="pm-kb-urlrow"><code class="pm-kb-url">chrome://extensions/shortcuts</code>` +
+    `<button type="button" class="pm-kb-copy" data-act="copyshortcuts">Copy</button></div></div></div>`;
 }
 
 // ── Feedback, now a page of the sheet ──
@@ -5004,6 +5244,7 @@ function applyTheme(theme) {
     document.getElementById("pm-card"),
     document.getElementById("pm-toast-stack"),
     document.getElementById("pm-library-btn"),
+    document.getElementById("pm-help-btn"),
   ].filter(Boolean);
   uiTheme = theme;
   els.forEach((el) => el.setAttribute("data-pm-theme", theme));

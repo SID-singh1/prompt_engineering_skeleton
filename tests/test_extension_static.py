@@ -795,11 +795,18 @@ def test_the_chip_survives_the_trip_from_the_plus():
     assert ".pm-trigger:hover ~ .pm-library-btn" not in STYLES_CSS
     assert ".pm-library-btn.pm-lib-reveal" in STYLES_CSS
     create = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
-    assert "for (const el of [btn, lib])" in create
+    # Every member of the cluster holds the reveal open, or crossing from one
+    # to the next passes over a gap that hides all of them.
+    assert "for (const el of [btn, lib, help])" in create
     assert 'addEventListener("pointerenter", revealChip)' in create
     assert 'addEventListener("pointerleave", concealChip)' in create
-    assert re.search(r"setTimeout\(\(\) => lib\.classList\.remove\(\"pm-lib-reveal\"\), \d{3}\)", create), \
-        "leaving must hide the chip after a grace period, not at once"
+    # The grace period, now hiding the whole cluster rather than one chip.
+    conceal = create[create.index("const concealChip"):]
+    conceal = conceal[:conceal.index("};")]
+    assert re.search(r"setTimeout\(.*?\}, \d{3}\)", conceal, re.S), \
+        "leaving must hide the cluster after a grace period, not at once"
+    assert conceal.count('classList.remove("pm-lib-reveal")') == 2, \
+        "both chips retire together, or one is left hanging alone"
 
 
 def test_the_primary_action_is_unchanged():
@@ -1432,3 +1439,188 @@ def test_tips_hear_typing_in_a_textarea_composer():
     """A <textarea> changes its value, not its DOM: the MutationObserver is deaf to it."""
     listeners = _function_bodies(CONTENT_JS, r"setupLibraryListeners")["setupLibraryListeners"]
     assert "tipsOnComposerChanged()" in listeners
+
+
+# ── the shortcut sheet tells the truth ────────────────────────────────────
+# One page lists every key. Its only real failure mode is drift: a key moves
+# or is removed and the sheet keeps promising it. These tests tie the list to
+# the handlers.
+
+
+def _shortcuts_block() -> str:
+    start = CONTENT_JS.index("const SHORTCUTS = ()")
+    return CONTENT_JS[start:CONTENT_JS.index("\n];", start)]
+
+
+def test_the_shortcut_sheet_is_reachable_without_the_keyboard():
+    """A keyboard reference found only by a keystroke helps nobody who has
+    not found the keystroke."""
+    assert 'data-act="shortcuts"' in CONTENT_JS
+    assert 'case "shortcuts": libPage = "shortcuts"' in CONTENT_JS
+    assert "function libShortcutsHtml" in CONTENT_JS
+    assert 'if (libPage === "shortcuts") return libShortcutsHtml();' in CONTENT_JS
+
+
+def test_the_question_mark_never_eats_a_typed_character():
+    """The page's whole point is a text box; ? must still type there."""
+    handler = CONTENT_JS[CONTENT_JS.index('if (e.key !== "?"'):][:700]
+    assert "isTypingTarget(document.activeElement)" in handler
+    assert "e.metaKey || e.ctrlKey || e.altKey" in handler, "a chord must not count as the key"
+    assert "slash || overlayHasInput()" in handler, "? fires while another surface owns the keyboard"
+    typing = _function_bodies(CONTENT_JS, r"isTypingTarget")["isTypingTarget"]
+    for token in ("isContentEditable", "INPUT", "TEXTAREA", "SELECT"):
+        assert token in typing
+
+
+def test_the_shortcut_sheet_opens_when_signed_out():
+    """It is a reference, not account data."""
+    body = _function_bodies(CONTENT_JS, r"loadLibrary")["loadLibrary"]
+    assert 'if (libPage !== "shortcuts") libPage = "signin";' in body
+
+
+def test_every_listed_chord_is_one_the_code_answers():
+    listed = _shortcuts_block()
+    for chord, handler in (
+        ("${MOD_SHIFT}E", 'e.code === "KeyE"'),
+        ("${MOD_SHIFT}V", 'e.code === "KeyV"'),
+        ("${MOD_SHIFT}L", 'e.code === "KeyL"'),
+        ("${MOD_SHIFT}P", 'e.code === "KeyP"'),
+        ("${CMD_KEY}↵", 'e.key === "Enter"'),
+        ("${CMD_KEY}S", 'e.key.toLowerCase() === "s"'),
+    ):
+        assert chord in listed, f"{chord} is no longer listed on the sheet"
+        assert handler in CONTENT_JS, f"the sheet lists {chord} but nothing handles it"
+    assert '(e.key === "[" || e.key === "]")' in CONTENT_JS
+
+
+def test_the_sheet_does_not_promise_tab_to_insert():
+    """Tab went back to being navigation; the sheet must not resurrect it."""
+    listed = _shortcuts_block()
+    slash_rows = listed[listed.index("In the chat box"):listed.index("When a draft is waiting")]
+    assert '"Tab"' in slash_rows, "Tab attaches a saved prompt from the // list"
+    rest = listed.replace(slash_rows, "")
+    assert '"Tab"' not in rest, "Tab is listed outside the // list, where it does not insert"
+
+
+def test_the_chrome_shortcut_address_is_copied_not_linked():
+    """A content script cannot navigate to chrome://; a link there is dead."""
+    body = _function_bodies(CONTENT_JS, r"libShortcutsHtml")["libShortcutsHtml"]
+    assert "chrome://extensions/shortcuts" in body
+    assert '<a ' not in body, "a chrome:// link does nothing when clicked"
+    assert 'data-act="copyshortcuts"' in body
+    assert 'case "copyshortcuts":' in CONTENT_JS
+
+
+# ── Shortcuts: a chip in the cluster, not only a chord ──────────────────
+
+def test_the_shortcuts_list_has_a_pointer_route_not_only_the_question_mark():
+    """
+    "?" has to stay typable, so it only fires when focus is NOT in a text box.
+    On ChatGPT the caret is in the composer essentially always, which made the
+    chord unreachable exactly where it was most wanted. The chip is the route
+    that works there; the chord stays for pages where it does fire.
+    """
+    create = _function_bodies(CONTENT_JS, r"createTrigger")["createTrigger"]
+    assert 'help.id = "pm-help-btn"' in create
+    assert "openShortcuts()" in create[create.index('help.id = "pm-help-btn"'):]
+    # And the chord is still there.
+    assert 'e.key !== "?"' in CONTENT_JS
+
+
+def test_the_shortcuts_chip_follows_the_trigger_in_the_dom():
+    """Keyboard reveal is a sibling selector, so order is load-bearing."""
+    assert CONTENT_JS.index('btn.id = "pm-trigger"') < CONTENT_JS.index('help.id = "pm-help-btn"')
+    assert ".pm-trigger:focus-visible ~ .pm-help-btn" in STYLES_CSS
+    assert ".pm-help-btn.pm-lib-reveal" in STYLES_CSS
+
+
+def test_the_shortcuts_chip_stands_on_the_library_chip():
+    """
+    It is positioned from placePill against the Library chip's own bottom and
+    edge offset, so the cluster stays one column whichever way the pill docks.
+    A fixed CSS offset would drift the moment the pill moved.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert 'document.getElementById("pm-help-btn")' in place
+    assert 'parseFloat(lib.style.bottom)' in place, "stacked on Library's real bottom"
+    assert "+ libH + 8" in place, "and on its height, measured before it can be hidden"
+    assert 'hlp.style.left = pillDock === "left"' in place
+
+
+def test_the_library_height_is_read_before_the_chip_can_be_hidden():
+    """
+    A display:none element reports offsetHeight 0. Reading it after lib.hidden
+    is set would stack Shortcuts on the wrong row the moment Library returned.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    # Against the overlap assignment specifically. `lib.hidden = panelOpen`
+    # runs earlier and is not the one that can zero the measurement: the block
+    # below it only runs when the panel is closed.
+    hide = place.index("lib.hidden = Boolean(overlaps(")
+    assert place.index("const libH = lib.offsetHeight") < hide
+    assert place.index("+ libH + 8") > hide, "and the stack is computed from the saved height"
+
+
+def test_the_shortcuts_chip_reports_expanded_only_on_its_own_page():
+    """
+    openShortcuts() sets libPage AFTER togglePanel(), and the ⋯ menu changes
+    page without touching the panel, so reading libPage at the open/close
+    moment alone reported collapsed whenever the list was actually showing.
+    """
+    assert "function syncHelpChipExpanded()" in CONTENT_JS
+    toggle = _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"]
+    assert "syncHelpChipExpanded()" in toggle
+    render = _function_bodies(CONTENT_JS, r"renderLibrary")["renderLibrary"]
+    assert "syncHelpChipExpanded()" in render, "a page change must update it too"
+
+
+def test_the_shortcuts_chip_is_laid_out_before_it_is_measured():
+    """
+    hidden is display:none, and a display:none element reports offsetWidth 0.
+    Measuring the chip while it is still hidden from a previous pass decides
+    whether it may come back from a 0x0 phantom box, so it can stay away or
+    reappear in the wrong place. Library is already cleared this way one block
+    up (`lib.hidden = panelOpen`); this chip has to be too.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    clear = place.index("hlp.hidden = false")
+    assert clear < place.index("hlp.offsetWidth"), "cleared before it is measured"
+    assert clear < place.index("hlp.hidden = lib.hidden"), "and before the new verdict"
+
+
+def test_the_composer_overlap_test_measures_the_chip_it_is_asked_about():
+    """
+    overlaps() used to close over the Library chip's width and height, so
+    asking it about the narrower Shortcuts chip tested the wrong box.
+    """
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert "const overlaps = (left, top, w = lib.offsetWidth, h = lib.offsetHeight)" in place
+    assert "overlaps(hlpLeft, hlpTop, hlpW, hlpH)" in place
+
+
+def test_the_shortcuts_chip_goes_when_the_library_chip_has_no_room():
+    """A lone "?" floating over the page belongs to nothing."""
+    place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert "hlp.hidden = lib.hidden" in place
+    assert "PILL_MARGIN" in place[place.index("hlp.hidden = lib.hidden"):]
+
+
+def test_the_shortcuts_chip_is_not_outside_the_ui():
+    """A click on it must not read as a click-elsewhere that closes the sheet."""
+    assert "#pm-library-btn, #pm-help-btn, #pm-trigger" in CONTENT_JS
+
+
+def test_the_whole_cluster_fades_while_the_pill_is_dragged():
+    assert CONTENT_JS.count('for (const id of ["pm-library-btn", "pm-help-btn"])') == 2
+
+
+def test_the_shortcuts_chip_defends_itself_from_host_button_css():
+    """
+    The Library chip needed width/padding pinned !important because a host's
+    own `button { width: … }` stretched it over ⊕ and took its clicks. The
+    same chip in the same place needs the same defence.
+    """
+    block = STYLES_CSS[STYLES_CSS.index(".pm-help-btn {"):]
+    block = block[:block.index("@media (prefers-reduced-motion: reduce) {\n    .pm-help-btn")]
+    for rule in ("width: auto !important", "min-width: 0 !important", "overflow: hidden"):
+        assert rule in block, rule
