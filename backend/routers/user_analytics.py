@@ -129,6 +129,13 @@ def judge_prompt_improvement(
     if not orig or not enh:
         return _calculate_heuristic_evaluation(orig, enh, extracted_context, selected_context)
 
+    # No dedicated key, no LLM judge. This call is not on the user's critical
+    # path — nobody is waiting on a score — so the shared pool, which every
+    # rewrite depends on, is never worth spending here. See
+    # Settings.PROMPT_EVAL_BYOK_KEY.
+    if not settings.PROMPT_EVAL_BYOK_KEY:
+        return _calculate_heuristic_evaluation(orig, enh, extracted_context, selected_context)
+
     # Context info string
     context_desc = []
     if extracted_context:
@@ -179,6 +186,9 @@ def judge_prompt_improvement(
             ],
             temperature=0.4,
             timeout=12.0,
+            user_provider=settings.PROMPT_EVAL_PROVIDER,
+            user_key=settings.PROMPT_EVAL_BYOK_KEY,
+            allow_shared_fallback=False,
         )
 
         content = res.get("content", "").strip()
