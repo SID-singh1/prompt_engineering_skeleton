@@ -2483,6 +2483,31 @@
 .pm-rail .pm-rail-chip button svg { width: 9px; height: 9px; }
 .pm-rail .pm-rail-chip button:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
 .pm-rail .pm-rail-add { padding: 0 10px; color: var(--pm-con-text-2); cursor: pointer; }
+/* On the console's own ground, like the chips: the rail floats over the host,
+   which may be white, and bare muted text there was unreadable. */
+.pm-rail .pm-rail-label {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 13px;
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    color: var(--pm-con-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: help;
+}
+@keyframes pm-rail-pop {
+    from { opacity: 0; transform: translateY(4px) scale(.85); }
+    to   { opacity: 1; transform: none; }
+}
+.pm-rail .pm-rail-new { animation: pm-rail-pop .22s cubic-bezier(.3, 1.4, .6, 1); }
+@media (prefers-reduced-motion: reduce) { .pm-rail .pm-rail-new { animation: none; } }
 .pm-rail .pm-rail-add:hover { color: var(--pm-con-text); border-color: var(--pm-con-border-hover); }
 
 /* ── // at the caret ──

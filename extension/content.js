@@ -2455,15 +2455,17 @@ function composerFrame(el) {
  * because the card sits on that same edge, and when the chat box is too near
  * the top of the window to leave room above it.
  */
+let railShown = new Set();     // ids on the rail at its last draw, to animate only newcomers
+
 function renderRail() {
   let rail = document.getElementById("pm-rail");
-  if (!selectedIds.size) { rail?.remove(); return; }
+  if (!selectedIds.size) { rail?.remove(); railShown = new Set(); return; }
   if (!rail) {
     rail = document.createElement("div");
     rail.id = "pm-rail";
     rail.className = "pm-rail";
     rail.setAttribute("role", "group");
-    rail.setAttribute("aria-label", "Attached as context for the next rewrite");
+    rail.setAttribute("aria-label", "Context for your next rewrite");
     rail.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -2475,11 +2477,17 @@ function renderRail() {
     });
     document.body.appendChild(rail);
   }
-  rail.innerHTML = [...selectedIds].map((id) => {
+  // Led by what the chips are for. They sit on the chat box, right over what
+  // is about to be sent, and read as if they were going with the message;
+  // they shape the ⊕ rewrite and are not sent on their own.
+  rail.innerHTML = `<span class="pm-rail-label" title="These saved prompts shape your next rewrite (⊕). They are not sent to the chat on their own.">Context for ⊕</span>` +
+    [...selectedIds].map((id) => {
     const title = attachTitles.get(id) || "Saved prompt";
-    return `<span class="pm-rail-chip" title="Attached as context: ${escHtml(title)}">${LIB_ICON.clip}<span>${escHtml(title)}</span>` +
+    const fresh = railShown.has(id) ? "" : " pm-rail-new";
+    return `<span class="pm-rail-chip${fresh}" title="Context for your next rewrite: ${escHtml(title)}">${LIB_ICON.clip}<span>${escHtml(title)}</span>` +
       `<button type="button" data-detach="${escHtml(String(id))}" aria-label="Detach ${escHtml(title)}">${PILL_X_SVG}</button></span>`;
   }).join("") + `<button type="button" class="pm-rail-add" data-act="railadd" aria-label="Attach another saved prompt">+ Context</button>`;
+  railShown = new Set(selectedIds);
   positionRail();
 }
 

@@ -231,6 +231,8 @@ def main():
         page.keyboard.press("Enter")
         check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
         check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
+        check(page.inner_text("#pm-rail .pm-rail-label").strip() == "Context for ⊕", "the rail says what the chips are for")
+        check(page.locator("#pm-rail .pm-rail-chip.pm-rail-new").count() == 1, "a newly ticked prompt pops onto the rail")
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
         foot = page.inner_text("#pm-lib-foot")
         check("1 in context" in foot, f"the foot says so, got {foot!r}")
