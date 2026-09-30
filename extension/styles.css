@@ -2225,6 +2225,36 @@
 .pm-lib .pm-save-status kbd + kbd { margin-left: 8px; }
 .pm-lib .pm-save-status.pm-save-error { color: var(--pm-danger, #ef6a60); }
 
+/* ── The bookmark beside a sent prompt ──
+   The host's own button CSS is not to be trusted with it: every property it
+   depends on is set here. */
+.pm-msg-save {
+    position: fixed;
+    z-index: var(--pm-z-trigger);
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    box-shadow: var(--pm-con-shadow);
+    color: var(--pm-con-text-2);
+    cursor: pointer;
+    animation: pm-peek-in .12s ease-out;
+}
+.pm-msg-save[hidden] { display: none; }
+.pm-msg-save svg { display: block; width: 14px; height: 14px; }
+.pm-msg-save:hover { color: #50c8a8; border-color: rgba(80, 200, 168, .45); }
+.pm-msg-save:focus-visible { outline: 2px solid #50c8a8; outline-offset: 2px; }
+
 /* ── The whole prompt, beside the sheet ── */
 .pm-lib.pm-peek { width: 360px; max-height: 520px; animation: pm-peek-in .12s ease-out; }
 @keyframes pm-peek-in { from { opacity: 0; } to { opacity: 1; } }

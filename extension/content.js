@@ -2130,6 +2130,113 @@ async function submitSaveForm() {
   if (panelOpen) renderLibrary();
 }
 
+// ── Save a prompt you already sent ──
+//
+// A prompt is worth keeping once its answer has been read, and by then it has
+// been sent and the chat box is empty. Resting the pointer on one of your own
+// messages shows a bookmark beside its words, which opens the save form.
+// One floating button, placed over the page rather than added to the host's
+// markup, so the host re-rendering its messages cannot break it or be broken
+// by it. The selectors are the ones each site marks the user's side with:
+// ChatGPT, Gemini, and Claude.
+
+const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], user-query, [data-testid="user-message"]';
+const BOOKMARK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.8l-3.5 2.7z"/></svg>';
+let msgSaveTarget = null;
+let msgSaveHideTimer = null;
+let msgSaveQueued = null;
+
+/** The element holding the words: Gemini wraps them inside its user-query. */
+function sentPromptWords(el) {
+  return el.querySelector?.(".query-text") || el;
+}
+
+function sentPromptText(el) {
+  return (sentPromptWords(el).innerText || "").trim();
+}
+
+/** Where the words are, which is not where the element is: ChatGPT's spans the column. */
+function sentPromptRect(el) {
+  const words = sentPromptWords(el);
+  const range = document.createRange();
+  range.selectNodeContents(words);
+  const r = range.getBoundingClientRect();
+  return r.width && r.height ? r : words.getBoundingClientRect();
+}
+
+function msgSaveButton() {
+  let b = document.getElementById("pm-msg-save");
+  if (!b) {
+    b = document.createElement("button");
+    b.id = "pm-msg-save";
+    b.type = "button";
+    b.className = "pm-msg-save";
+    b.title = "Save this prompt to your library";
+    b.setAttribute("aria-label", "Save this prompt to your library");
+    b.innerHTML = BOOKMARK_SVG;
+    b.hidden = true;
+    b.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const el = msgSaveTarget;
+      hideMsgSave();
+      if (el?.isConnected) openSaveForm({ text: sentPromptText(el), anchor: sentPromptRect(el) });
+    });
+    document.body.appendChild(b);
+  }
+  return b;
+}
+
+function showMsgSave(el) {
+  clearTimeout(msgSaveHideTimer);
+  msgSaveHideTimer = null;
+  msgSaveTarget = el;
+  const b = msgSaveButton();
+  const r = sentPromptRect(el);
+  const size = 28, gap = 8;
+  // Left of the words: the user's messages sit on the right on these sites,
+  // with the host's own buttons (copy, edit) under them, not beside.
+  let left = r.left - size - gap;
+  if (left < 8) left = Math.min(window.innerWidth - size - 8, r.right + gap);
+  b.style.left = Math.round(left) + "px";
+  b.style.top = Math.round(Math.max(8, r.top + Math.min(0, (r.height - size) / 2))) + "px";
+  b.hidden = false;
+}
+
+function hideMsgSave() {
+  clearTimeout(msgSaveHideTimer);
+  msgSaveHideTimer = null;
+  msgSaveTarget = null;
+  const b = document.getElementById("pm-msg-save");
+  if (b) b.hidden = true;
+}
+
+/** Pointer moved: over one of the user's sent messages, or on its way to the bookmark? */
+function trackSentPrompt(e) {
+  if (msgSaveQueued) { msgSaveQueued = e; return; }
+  msgSaveQueued = e;
+  requestAnimationFrame(() => {
+    const ev = msgSaveQueued;
+    msgSaveQueued = null;
+    if (!libSignedIn || saveForm) { if (msgSaveTarget) hideMsgSave(); return; }
+    const t = ev.target;
+    if (t.closest?.("#pm-msg-save")) { clearTimeout(msgSaveHideTimer); msgSaveHideTimer = null; return; }
+    const el = t.closest?.(SENT_PROMPT_SELECTOR);
+    if (el && !el.closest("[contenteditable='true'], textarea") && sentPromptText(el).length >= 3) {
+      if (el !== msgSaveTarget || document.getElementById("pm-msg-save")?.hidden) showMsgSave(el);
+      else { clearTimeout(msgSaveHideTimer); msgSaveHideTimer = null; }
+      return;
+    }
+    // Long enough to cross the gap between the words and the bookmark.
+    if (msgSaveTarget && !msgSaveHideTimer) msgSaveHideTimer = setTimeout(hideMsgSave, 300);
+  });
+}
+
+document.addEventListener("pointermove", trackSentPrompt, { capture: true, passive: true });
+// The page moved under it: the bookmark would point at the wrong message.
+window.addEventListener("scroll", (e) => {
+  if (msgSaveTarget && !(e.target instanceof Element && e.target.closest("#pm-library, #pm-caret, #pm-card, #pm-peek"))) hideMsgSave();
+}, true);
+
 async function undoSave(id) {
   if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return; }
   if (selectedIds.has(id)) toggleAttachment({ id });
