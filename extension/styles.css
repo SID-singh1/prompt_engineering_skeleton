@@ -2247,6 +2247,8 @@
     cursor: pointer;
 }
 .pm-lib .pm-lib-low { color: #e0b25a; }
+.pm-lib .pm-lib-foot-go { margin-left: auto; }
+.pm-lib .pm-lib-foot-note { margin-left: auto; color: var(--pm-con-muted); }
 
 /* ── ⋯ ── */
 .pm-lib .pm-lib-menu {

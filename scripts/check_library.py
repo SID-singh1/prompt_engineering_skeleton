@@ -232,7 +232,9 @@ def main():
         check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
         check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
-        check("1 attached as context" in page.inner_text("#pm-lib-foot"), "the foot says so")
+        foot = page.inner_text("#pm-lib-foot")
+        check("1 in context" in foot, f"the foot says so, got {foot!r}")
+        check("for your next ⊕ rewrite" in foot, "and what context is for, with the chat box empty")
         check(ev("[...selectedIds]") == ["p1"], "selected for the next rewrite")
         check(ev("JSON.parse(sessionStorage.getItem('pm')).pm_attached")[0]["title"] == "Code review template",
               "kept in session storage with its title")
@@ -263,6 +265,16 @@ def main():
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
+        check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
+        # The harness routes rewrites to its fake direct path; that the ticked
+        # ids ride with a server rewrite is checked in check_extension_e2e.py.
+        before = ev("FAKE.calls.length")
+        page.click("#pm-lib-foot [data-act='rewrite']")
+        page.wait_for_function(f"FAKE.calls.length > {before}")
+        check(ev("cardState") in ("streaming", "ready"), "Rewrite starts the rewrite of what is in the chat box")
+        check(not ev("panelOpen"), "and the sheet goes as the card comes up")
+        ev("closeCard()")
+        open_lib()
 
         # delete, with an inline confirm
         page.fill("#pm-lib-q", "spec")

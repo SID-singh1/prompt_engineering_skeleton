@@ -1881,12 +1881,21 @@ function libFootHtml() {
     parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : left === 1 ? "1 rewrite left today" : `${left} rewrites left today`}</span>`);
   }
   if (selectedIds.size) {
-    parts.push(`<span class="pm-lib-att-count">${selectedIds.size} attached as context</span>` +
+    const n = selectedIds.size, them = n === 1 ? "it" : "them";
+    parts.push(`<span class="pm-lib-att-count">${n} in context</span>` +
       `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
+    // What the ticks are for, said where they are ticked. Context shapes the
+    // ⊕ rewrite and is never sent to the chat on its own, so with text in the
+    // box the next step is offered here, and without it the foot says so.
+    parts.push(norm(getCurrentInputText()).length >= 3
+      ? `<button type="button" class="pm-lib-verb pm-lib-foot-go" data-act="rewrite" title="Rewrite what is in the chat box with ${them} as context">Rewrite with ${them}</button>`
+      : `<span class="pm-lib-foot-note">for your next ⊕ rewrite</span>`);
   }
   if (!parts.length) {
     const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
-    parts.push(`<span class="pm-lib-hints">${k("↵", libVerb().toLowerCase())}${k(CMD_KEY + "↵", "attach")}${slashEnabled ? k("//", "in the chat box") : k("esc", "close")}</span>`);
+    parts.push(`<span class="pm-lib-hints">` + (libView === "recent"
+      ? k("↵", libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
+      : k("↵", "add to context") + k(CMD_KEY + "↵", libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
   }
   return parts.join("");
 }
@@ -2070,6 +2079,7 @@ function onLibraryClick(e) {
     case "voice": closeLibrary(); toggleVoice(); return;
     case "signin": openSettings(); return;
     case "clear": clearAttachments(); return;
+    case "rewrite": closeLibrary(); handleEnhance(); return;
     case "sendfeedback": sendLibraryFeedback(); return;
   }
   const rowEl = e.target.closest("[data-i]");
