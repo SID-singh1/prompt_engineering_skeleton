@@ -1413,7 +1413,7 @@ function setupKeyboardShortcut() {
     if (slash || overlayHasInput()) return;           // something else owns the keyboard
     e.preventDefault();
     e.stopPropagation();
-    if (panelOpen && libPage === "shortcuts") closeLibrary();
+    if (keyMapOpen) closeKeyMap();
     else openShortcuts();
   }, true);
 }
@@ -1470,7 +1470,7 @@ const LIB_ICON = {
 // "recent" is the History tab: every rewrite, as the popup and the consent
 // notice call it. "Recent" read as "recently saved", the same thing as Saved.
 let libView = "saved";        // "saved" | "recent" (shown as History)
-let libPage = "list";         // "list" | "privacy" | "feedback" | "shortcuts" | "signin"
+let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
 let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
@@ -1545,7 +1545,7 @@ function createLibrary() {
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
   // So does turning the wheel over the conversation: the sheet is fixed to
@@ -1554,7 +1554,7 @@ function createLibrary() {
   // comes from the host's own auto-scroll as an answer streams in.
   document.addEventListener("wheel", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, { capture: true, passive: true });
 
@@ -1600,20 +1600,10 @@ function togglePanel(force) {
   placePill();
 }
 
-/**
- * Open the sheet straight onto the shortcuts.
- *
- * togglePanel() resets libPage to "list" on open — that is right for the
- * button and the chord, which mean "my library" — so the page is chosen
- * afterwards rather than by widening togglePanel's contract.
- */
+/** The chip, "?" and the ⋯ menu all come here: the keyboard map. See openKeyMap(). */
 function openShortcuts() {
   hideTip();
-  if (!panelOpen) togglePanel(true);
-  libPage = "shortcuts";
-  libMenu = false;
-  renderLibrary();
-  document.getElementById("pm-lib-back")?.focus({ preventScroll: true });
+  openKeyMap();
 }
 
 /** Close the sheet and hand the keyboard back to the chat box. */
@@ -1627,8 +1617,7 @@ async function loadLibrary() {
   libSignedIn = Boolean(auth && !isTokenExpired(auth.token));
   if (!panelOpen) return;
   if (!libSignedIn) {
-    // The shortcuts are a reference, not account data.
-    if (libPage !== "shortcuts") libPage = "signin";
+    libPage = "signin";
     renderLibrary();
     return;
   }
@@ -1701,17 +1690,9 @@ function libVerb() {
   return norm(getCurrentInputText()) ? "Replace" : "Insert";
 }
 
-/**
- * The Shortcuts chip is expanded only while its own page is showing — being
- * open on the Saved list is the Library chip's business, not this one's.
- *
- * Called from both ends because neither alone sees every change: openShortcuts()
- * sets libPage AFTER togglePanel() has run, and the ⋯ menu moves between pages
- * without touching the panel at all.
- */
+/** The Shortcuts chip is expanded while the map it opens is up. */
 function syncHelpChipExpanded() {
-  document.getElementById("pm-help-btn")
-    ?.setAttribute("aria-expanded", String(panelOpen && libPage === "shortcuts"));
+  document.getElementById("pm-help-btn")?.setAttribute("aria-expanded", String(keyMapOpen));
 }
 
 function renderLibrary() {
@@ -1770,8 +1751,8 @@ function libHeadHtml() {
   // the way out was esc or a click somewhere else, and neither is on screen.
   const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
     `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" title="Close (esc)">${LIB_ICON.close}</button>`;
-  if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
-    const title = { privacy: "Privacy", feedback: "Send feedback", shortcuts: "Keyboard shortcuts" }[libPage];
+  if (libPage === "privacy" || libPage === "feedback") {
+    const title = { privacy: "Privacy", feedback: "Send feedback" }[libPage];
     return `<div class="pm-lib-head pm-lib-head-sub">` +
       `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
       `<span class="pm-lib-head-title">${title}</span>${more}</div>`;
@@ -1812,7 +1793,6 @@ function libBodyHtml() {
       row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
-  if (libPage === "shortcuts") return libShortcutsHtml();
   if (libPage === "feedback") {
     return `<div class="pm-lib-page pm-lib-form">` +
       `<label class="pm-lib-field"><span>Kind</span><select id="pm-feedback-type" class="pm-lib-input">` +
@@ -2352,13 +2332,9 @@ function onLibraryClick(e) {
     case "close": closeLibrary(); return;
     case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
-    case "shortcuts": libPage = "shortcuts"; libMenu = false; renderLibrary(); return;
-    case "copyshortcuts":
-      navigator.clipboard?.writeText("chrome://extensions/shortcuts").then(
-        () => showToast("Address copied — paste it in a new tab.", "success"),
-        () => showToast("Could not copy. The address is chrome://extensions/shortcuts", "info"),
-      );
-      return;
+    // The search first: the map gives the keyboard back to whatever had it,
+    // and the menu item that was clicked is gone once the menu closes.
+    case "shortcuts": libMenu = false; renderLibrary(); focusLibrarySearch(); openShortcuts(); return;
     case "feedback":
       libPage = "feedback"; libMenu = false; renderLibrary();
       storageGet(["email"], (r) => { const el = document.getElementById("pm-feedback-email"); if (el && !el.value) el.value = r.email || ""; });
@@ -2400,7 +2376,7 @@ function onLibraryKeydown(e) {
     e.preventDefault(); e.stopPropagation();
     if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
     if (libPeek !== null) { hidePeek(); return; }
-    if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
+    if (libPage === "privacy" || libPage === "feedback") {
       libPage = "list"; renderLibrary(); focusLibrarySearch(); return;
     }
     closeLibrary();
@@ -2578,26 +2554,120 @@ function positionPeek() {
   else { peek.style.bottom = (window.innerHeight - r.bottom) + "px"; peek.style.top = "auto"; }
 }
 
-// ── Keyboard shortcuts, a page of the sheet ──
+// ── Keyboard shortcuts: a map over the page ──
+//
+// It was a page at the back of the 368px sheet: five groups in a narrow
+// column that had to be scrolled, reached through the library. It is now a
+// wide panel over the page with the groups side by side and each key drawn
+// as a key. The keymap is context-gated (see SHORTCUTS), so the group for
+// where the user is standing is lit and labelled: that is the part they came
+// for. Chip, "?" and the ⋯ menu open it; esc, × or a click outside close it
+// and put the keyboard back where it was.
 
-function libShortcutsHtml() {
-  const cap = (k) => `<kbd class="pm-kb">${escHtml(k)}</kbd>`;
-  const row = (r) =>
-    `<div class="pm-kb-row"><span class="pm-kb-what">${escHtml(r.what)}` +
-    (r.note ? `<span class="pm-kb-note">${escHtml(r.note)}</span>` : "") +
-    `</span><span class="pm-kb-keys">${r.keys.map(cap).join("")}</span></div>`;
-  const group = (g) =>
-    `<div class="pm-kb-group"><div class="pm-lib-menu-cap">${escHtml(g.where)}</div>${g.rows.map(row).join("")}</div>`;
-  return `<div class="pm-lib-page pm-kb-page">${SHORTCUTS().map(group).join("")}` +
+let keyMapOpen = false;
+let keyMapReturn = null;
+
+/** Which SHORTCUTS group applies where the user is right now. */
+function keyMapHere() {
+  const card = document.getElementById("pm-card");
+  if (panelOpen) return "In the library";
+  if (card && card.contains(document.activeElement)) return "On the card";
+  if (slash || composerHasFocus()) return "In the chat box";
+  if (cardState !== "idle") return "When a draft is waiting in the pill";
+  return "Anywhere on the page";
+}
+
+const KEYMAP_HERE_LINE = {
+  "Anywhere on the page": "These work wherever you are",
+  "In the chat box": "You are in the chat box",
+  "When a draft is waiting in the pill": "A draft is waiting in the pill",
+  "On the card": "You are on the rewrite card",
+  "In the library": "You are in the library",
+};
+
+/** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too. */
+function keyCaps(key) {
+  if (key.length > 1 && key.includes("+")) return key.split("+").filter(Boolean);
+  if (/^[⌘⇧⌥⌃]/.test(key)) return Array.from(key);
+  return [key];
+}
+
+function keyMapHtml(here) {
+  const cap = (k) => keyCaps(k).map((c) => `<kbd class="pm-kb">${escHtml(c)}</kbd>`).join("");
+  const chord = (keys) => keys.map(cap).join('<span class="pm-kb-gap"></span>');
+  const row = (r) => {
+    // The rewrite key is Chrome's to assign, and it may have gone to another
+    // extension: the map must not promise a key that does nothing.
+    const unset = r.keys[0] === `${MOD_SHIFT}E` && assignedShortcut === "";
+    return `<div class="pm-kb-row${unset ? " pm-kb-unset" : ""}"><span class="pm-kb-what">${escHtml(r.what)}` +
+      (unset ? `<span class="pm-kb-note">Not set: another extension has this key. Change it below.</span>`
+        : r.note ? `<span class="pm-kb-note">${escHtml(r.note)}</span>` : "") +
+      `</span><span class="pm-kb-keys">${unset ? `<span class="pm-kb-none">not set</span>` : chord(r.keys)}</span></div>`;
+  };
+  const group = (g) => {
+    const on = g.where === here;
+    return `<section class="pm-kb-group${on ? " pm-kb-here" : ""}"${on ? ' aria-current="true"' : ""}>` +
+      `<div class="pm-kb-cap"><span>${escHtml(g.where)}</span>${on ? "<em>you are here</em>" : ""}</div>` +
+      g.rows.map(row).join("") + `</section>`;
+  };
+  return `<div class="pm-keys-head"><div><div class="pm-keys-title" id="pm-keys-title">Keyboard shortcuts</div>` +
+    `<div class="pm-keys-here">${escHtml(KEYMAP_HERE_LINE[here] || "")}</div></div>` +
+    `<button type="button" class="pm-lib-icon" data-act="close" aria-label="Close the shortcuts" title="Close (esc)">${LIB_ICON.close}</button></div>` +
+    `<div class="pm-keys-grid">${SHORTCUTS().map(group).join("")}</div>` +
     // The two Chrome-level commands are the user's to rebind, and a content
     // script cannot link to chrome:// — a link there does nothing when
-    // clicked. So the address is text they can copy.
-    `<div class="pm-kb-foot"><p class="pm-lib-note">${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(`${MOD_SHIFT}V`)} are Chrome shortcuts. ` +
-    `If another app has taken one, change it here:</p>` +
-    // Its own line: in a 330px sheet the address wraps mid-word inside a
-    // paragraph, and a broken address is one a reader cannot check.
+    // clicked. So the address is text they can copy, on its own line: a
+    // broken address is one a reader cannot check.
+    `<div class="pm-keys-foot"><p>${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(`${MOD_SHIFT}V`)} are Chrome shortcuts. If another app has taken one, change it here:</p>` +
     `<div class="pm-kb-urlrow"><code class="pm-kb-url">chrome://extensions/shortcuts</code>` +
-    `<button type="button" class="pm-kb-copy" data-act="copyshortcuts">Copy</button></div></div></div>`;
+    `<button type="button" class="pm-kb-copy" data-act="copyshortcuts">Copy</button></div></div>`;
+}
+
+function openKeyMap() {
+  if (keyMapOpen) { document.querySelector("#pm-keys [data-act='close']")?.focus({ preventScroll: true }); return; }
+  const here = keyMapHere();
+  keyMapReturn = document.activeElement;
+  keyMapOpen = true;
+  const scrim = document.createElement("div");
+  scrim.id = "pm-keys";
+  scrim.className = "pm-keys-scrim";
+  scrim.innerHTML = `<div class="pm-lib pm-keys" role="dialog" aria-modal="true" aria-labelledby="pm-keys-title">${keyMapHtml(here)}</div>`;
+  scrim.addEventListener("click", (e) => {
+    if (e.target === scrim) { closeKeyMap(); return; }
+    const act = e.target.closest("button")?.dataset.act;
+    if (act === "close") closeKeyMap();
+    else if (act === "copyshortcuts") {
+      navigator.clipboard?.writeText("chrome://extensions/shortcuts").then(
+        () => showToast("Address copied — paste it in a new tab.", "success"),
+        () => showToast("Could not copy. The address is chrome://extensions/shortcuts", "info"),
+      );
+    }
+  });
+  scrim.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeKeyMap(); }
+  });
+  document.body.appendChild(scrim);
+  requestAnimationFrame(() => scrim.classList.add("pm-keys-in"));
+  scrim.querySelector("[data-act='close']")?.focus({ preventScroll: true });
+  // Whether Chrome gave the rewrite its key: the row says so if it did not.
+  if (assignedShortcut === null) loadShortcut().then(() => {
+    const box = document.querySelector("#pm-keys .pm-keys");
+    if (box && keyMapOpen) {
+      const focused = box.contains(document.activeElement) ? document.activeElement.dataset.act : null;
+      box.innerHTML = keyMapHtml(here);
+      if (focused) box.querySelector(`[data-act='${focused}']`)?.focus({ preventScroll: true });
+    }
+  });
+  syncHelpChipExpanded();
+}
+
+function closeKeyMap() {
+  if (!keyMapOpen) return;
+  keyMapOpen = false;
+  document.getElementById("pm-keys")?.remove();
+  syncHelpChipExpanded();
+  if (keyMapReturn?.isConnected) keyMapReturn.focus({ preventScroll: true });
+  keyMapReturn = null;
 }
 
 // ── Feedback, now a page of the sheet ──
@@ -4048,7 +4118,7 @@ function hideCard() {
 // pointer passes on its way to the chat box.
 
 /** What counts as "the page" and not the extension's own surfaces. */
-const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-caret, #pm-rail, " +
+const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-keys, #pm-caret, #pm-rail, " +
   "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
 
 function renderStrip() {
