@@ -2387,6 +2387,11 @@ function renderSlash() {
   }
   const items = slashItems();
   slashSel = Math.max(0, Math.min(slashSel, items.length - 1));
+  // Redrawn on every keystroke and caret move. A list the user has scrolled
+  // keeps its place while the query is the same; a new query starts at the top.
+  const oldList = menu.querySelector(".pm-caret-list");
+  const keepTop = oldList && menu.dataset.q === slash.q ? oldList.scrollTop : 0;
+  menu.dataset.q = slash.q;
   const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
   let body;
   if (!promptsLoaded) body = `<div class="pm-caret-empty">Loading your saved prompts…</div>`;
@@ -2399,7 +2404,22 @@ function renderSlash() {
       `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" tabindex="-1" aria-label="Attach as context">${LIB_ICON.clip}</button></div>`;
   }).join("");
   menu.innerHTML = head + `<div class="pm-caret-list">${body}</div>`;
+  placeSlash();
+  const list = menu.querySelector(".pm-caret-list");
+  list.scrollTop = keepTop;
+}
 
+/**
+ * Put the menu by the caret, without redrawing it.
+ *
+ * Separate from renderSlash() so a page scroll only moves the menu. Redrawing
+ * on scroll threw the list back to its top: the scroll listener is on window
+ * in the capture phase, so it also heard the menu's own list scrolling, and
+ * every turn of the wheel reset it.
+ */
+function placeSlash() {
+  const menu = document.getElementById("pm-caret");
+  if (!slash || !menu) return;
   const rect = caretRect(slash.el);
   const width = Math.min(340, window.innerWidth - 24);
   menu.style.width = width + "px";
@@ -2574,7 +2594,13 @@ function setupLibraryListeners() {
       if (slash && !slash.el.contains(document.activeElement) && document.activeElement !== slash.el) closeSlash();
     }, 0);
   }, true);
-  window.addEventListener("scroll", () => { positionRail(); if (slash) renderSlash(); }, true);
+  // Capture phase: a scroll anywhere, the page's or a panel's, may have moved
+  // the chat box. The menu's own list scrolling is not one of those.
+  window.addEventListener("scroll", (e) => {
+    if (e.target instanceof Element && e.target.closest("#pm-caret")) return;
+    positionRail();
+    placeSlash();
+  }, true);
   window.addEventListener("resize", () => { positionRail(); positionLibrary(); closeSlash(); });
 
   // Sign-in state and attachments can change in another tab or the popup.
