@@ -832,7 +832,8 @@ function createTrigger() {
   lib.className = "pm-library-btn";
   // Drawn, like ⊕: a typed ☰ rendered in whatever font the host fell back to.
   lib.innerHTML = `${LIB_ICON.shelf}<span>Library</span><span class="pm-library-count" hidden></span>`;
-  lib.title = `Your saved prompts (${CMD_KEY}\u21e7L)`;
+  lib.dataset.pmTip = "Your saved prompts";
+  lib.dataset.pmKey = `${MOD_SHIFT}L`;
   lib.setAttribute("aria-haspopup", "dialog");
   lib.setAttribute("aria-expanded", "false");
   lib.addEventListener("click", (e) => {
@@ -863,7 +864,8 @@ function createTrigger() {
   help.className = "pm-help-btn";
   help.type = "button";
   help.innerHTML = `${LIB_ICON.help}<span>Shortcuts</span>`;
-  help.title = "Keyboard shortcuts";
+  help.dataset.pmTip = "Keyboard shortcuts";
+  help.dataset.pmKey = "?";
   help.setAttribute("aria-haspopup", "dialog");
   help.setAttribute("aria-expanded", "false");
   help.addEventListener("click", (e) => {
@@ -1750,7 +1752,7 @@ function libHeadHtml() {
   // where the Library chip was, so the chip cannot be its toggle; without this
   // the way out was esc or a click somewhere else, and neither is on screen.
   const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
-    `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" title="Close (esc)">${LIB_ICON.close}</button>`;
+    `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" data-pm-tip="Close" data-pm-key="Esc">${LIB_ICON.close}</button>`;
   if (libPage === "privacy" || libPage === "feedback") {
     const title = { privacy: "Privacy", feedback: "Send feedback" }[libPage];
     return `<div class="pm-lib-head pm-lib-head-sub">` +
@@ -1860,7 +1862,7 @@ function libRowsHtml() {
       `<span class="pm-lib-tick" aria-hidden="true">${LIB_ICON.tick}</span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
       `<div class="pm-lib-acts">` +
       `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
-      `<button type="button" class="pm-lib-verb" data-act="insert" title="${verb} into the chat box (${CMD_KEY}↵)">${verb}</button></div></div>`;
+      `<button type="button" class="pm-lib-verb" data-act="insert" data-pm-tip="${verb} into the chat box" data-pm-key="${CMD_KEY}↵">${verb}</button></div></div>`;
     if (libRowMenu === p.id) {
       row += `<div class="pm-lib-rowmenu"><button type="button" data-act="improve" data-i="${i}" title="Rewrite this saved prompt, then update it or save a new one">Improve</button>` +
         `<button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;
@@ -2585,6 +2587,68 @@ const KEYMAP_HERE_LINE = {
   "In the library": "You are in the library",
 };
 
+// ── Keys where they act: a tooltip with the keycaps ──
+//
+// The map lists every key; this teaches them one at a time, on the control
+// the key stands for, which is how shortcuts are actually learned. Any of
+// our controls with data-pm-tip (and data-pm-key) gets one, in place of a
+// native title: that one comes after a second, unstyled, and cannot draw a
+// key. 300ms of rest brings it; moving to the next control while one is up
+// brings the next at once. Keyboard focus brings it too.
+
+const KEYTIP_DELAY_MS = 300;
+const KEYTIP_WARM_MS = 400;   // how long after one closes the next skips the wait
+let keytipTimer = null;
+let keytipFor = null;
+let keytipWarmUntil = 0;
+
+function showKeytip(el) {
+  clearTimeout(keytipTimer);
+  keytipFor = el;
+  let tip = document.getElementById("pm-keytip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.id = "pm-keytip";
+    tip.className = "pm-keytip";
+    tip.setAttribute("role", "tooltip");
+    document.body.appendChild(tip);
+  }
+  const key = el.dataset.pmKey || "";
+  tip.innerHTML = `<span>${escHtml(el.dataset.pmTip)}</span>` +
+    (key ? `<span class="pm-keytip-keys">${keyCaps(key).map((c) => `<kbd>${escHtml(c)}</kbd>`).join("")}</span>` : "");
+  tip.hidden = false;
+  const r = el.getBoundingClientRect();
+  const w = tip.offsetWidth, h = tip.offsetHeight, m = 8, gap = 6;
+  tip.style.left = Math.round(Math.max(m, Math.min(r.left + r.width / 2 - w / 2, window.innerWidth - w - m))) + "px";
+  tip.style.top = Math.round(r.top - gap - h >= m ? r.top - gap - h : r.bottom + gap) + "px";
+}
+
+function hideKeytip() {
+  clearTimeout(keytipTimer);
+  const tip = document.getElementById("pm-keytip");
+  if (tip && !tip.hidden) { tip.hidden = true; keytipWarmUntil = Date.now() + KEYTIP_WARM_MS; }
+  keytipFor = null;
+}
+
+document.addEventListener("pointerover", (e) => {
+  const el = e.target.closest?.("[data-pm-tip]");
+  if (el === keytipFor) return;
+  if (!el) { if (keytipFor) hideKeytip(); else clearTimeout(keytipTimer); return; }
+  const tip = document.getElementById("pm-keytip");
+  const warm = (tip && !tip.hidden) || Date.now() < keytipWarmUntil;
+  hideKeytip();
+  if (warm) showKeytip(el);
+  else { keytipFor = el; keytipTimer = setTimeout(() => el.isConnected && showKeytip(el), KEYTIP_DELAY_MS); }
+}, true);
+document.addEventListener("focusin", (e) => {
+  const el = e.target.closest?.("[data-pm-tip]");
+  if (el && el.matches(":focus-visible")) showKeytip(el); else if (keytipFor) hideKeytip();
+}, true);
+// Anything the user does next makes the tip old news.
+for (const type of ["pointerdown", "keydown", "wheel"]) {
+  document.addEventListener(type, () => { if (keytipFor || document.getElementById("pm-keytip")?.hidden === false) hideKeytip(); }, { capture: true, passive: true });
+}
+
 /** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too. */
 function keyCaps(key) {
   if (key.length > 1 && key.includes("+")) return key.split("+").filter(Boolean);
@@ -2612,7 +2676,7 @@ function keyMapHtml(here) {
   };
   return `<div class="pm-keys-head"><div><div class="pm-keys-title" id="pm-keys-title">Keyboard shortcuts</div>` +
     `<div class="pm-keys-here">${escHtml(KEYMAP_HERE_LINE[here] || "")}</div></div>` +
-    `<button type="button" class="pm-lib-icon" data-act="close" aria-label="Close the shortcuts" title="Close (esc)">${LIB_ICON.close}</button></div>` +
+    `<button type="button" class="pm-lib-icon" data-act="close" aria-label="Close the shortcuts" data-pm-tip="Close" data-pm-key="Esc">${LIB_ICON.close}</button></div>` +
     `<div class="pm-keys-grid">${SHORTCUTS().map(group).join("")}</div>` +
     // The two Chrome-level commands are the user's to rebind, and a content
     // script cannot link to chrome:// — a link there does nothing when
@@ -4146,7 +4210,7 @@ function renderStrip() {
     `<span class="pm-card-strip-label">${escHtml(label)}</span>` +
     `<span class="pm-card-strip-gist">${escHtml(norm(gist))}</span>` +
     (verb ? `<button type="button" class="pm-card-strip-verb" data-act="verb">${verb}</button>` : "") +
-    `<button type="button" class="pm-card-strip-open" data-act="open" aria-label="Show the whole rewrite" title="Show the whole rewrite (${MOD_SHIFT}P)">` +
+    `<button type="button" class="pm-card-strip-open" data-act="open" aria-label="Show the whole rewrite" data-pm-tip="Show the whole rewrite" data-pm-key="${MOD_SHIFT}P">` +
     `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 6 4.5l3 3"/></svg></button>`;
   if (!strip._pmWired) {
     strip._pmWired = true;
@@ -4253,7 +4317,7 @@ function cardHead(title, kind = "") {
     `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
     `<span class="pm-card-title">${title}</span>` +
     `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
-    `<button class="pm-card-min" type="button" id="pm-card-min" title="Minimize to the pill (esc)" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
+    `<button class="pm-card-min" type="button" id="pm-card-min" data-pm-tip="Minimize to the pill" data-pm-key="Esc" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
   `</div>`;
 }
 
