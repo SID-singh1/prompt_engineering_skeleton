@@ -854,20 +854,29 @@ def test_the_data_call_does_not_raise_its_own_toast():
 
 
 def test_a_duplicate_save_is_not_reported_as_a_save():
-    card = _function_bodies(CONTENT_JS, r"saveCard")["saveCard"]
-    assert '"duplicate"' in card, "saveCard cannot tell a duplicate from a write"
-    assert card.index('"duplicate"') < card.index("Saved to your library"), \
+    """Every route to saving ends in one form, and it tells a duplicate from a write."""
+    body = _function_bodies(CONTENT_JS, r"submitSaveForm")["submitSaveForm"]
+    assert '"duplicate"' in body, "the form cannot tell a duplicate from a write"
+    assert body.index('"duplicate"') < body.index("to your library"), \
         "the duplicate case falls through to the success message"
 
 
 def test_a_duplicate_save_from_the_library_is_not_reported_as_a_save():
-    """The Save tab's form is now the library's Save row. A duplicate must say
-    so, and must not refetch as though something had been written."""
-    body = _function_bodies(CONTENT_JS, r"libSaveText")["libSaveText"]
-    saved = body[body.index('if (outcome === "saved")'):body.index("} else {")]
-    assert "fetchSavedPrompts" in saved
-    rest = body[body.index("} else {"):]
-    assert "Already in your library" in rest and "fetchSavedPrompts" not in rest
+    """A duplicate must say so, and must not refetch as though something had been written."""
+    body = _function_bodies(CONTENT_JS, r"submitSaveForm")["submitSaveForm"]
+    dup = body[body.index('if (outcome === "duplicate")'):body.index("const id = lastSavedPromptId")]
+    assert "Already in your library" in dup and "fetchSavedPrompts" not in dup
+    assert "fetchSavedPrompts" in body[body.index("const id = lastSavedPromptId"):]
+
+
+def test_every_route_to_saving_goes_through_the_form():
+    """The card, the Save row and History all used to write at once, unnamed."""
+    for fn in ("saveCard", "libSaveText"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert "openSaveForm(" in body and "createSavedPrompt(" not in body, f"{fn} saves without the form"
+    submit = _function_bodies(CONTENT_JS, r"submitSaveForm")["submitSaveForm"]
+    assert "createSavedPrompt(" in submit
+    assert 'label: "Undo"' in submit, "a save can be taken back from its toast"
 
 
 # ── the pill: the draft outlives the composer ─────────────────────────────
