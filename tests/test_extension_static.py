@@ -1076,7 +1076,11 @@ def test_every_pill_state_carries_one_verb():
     body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
     assert 'verb = "Retry"' in body and 'verb = "Redo"' in body
     # "Apply" said nothing about what would happen to the text already there.
-    assert '"Replace" : "Insert"' in body
+    # The pill and the tucked card's strip share one choice of verb.
+    assert "verb = draftVerb();" in body
+    assert '"Replace" : "Insert"' in _function_bodies(CONTENT_JS, r"draftVerb")["draftVerb"]
+    strip = _function_bodies(CONTENT_JS, r"renderStrip")["renderStrip"]
+    assert "draftVerb()" in strip and 'verb = "Retry"' in strip and '"Redo"' in strip
     dispatch = _function_bodies(CONTENT_JS, r"pillVerb")["pillVerb"]
     assert "insertDraft()" in dispatch and "redoCard()" in dispatch and "handleEnhance()" in dispatch
     for state in ("stale", "error"):
