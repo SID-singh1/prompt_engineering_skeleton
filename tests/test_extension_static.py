@@ -1467,11 +1467,13 @@ def _shortcuts_block() -> str:
 
 def test_the_shortcut_sheet_is_reachable_without_the_keyboard():
     """A keyboard reference found only by a keystroke helps nobody who has
-    not found the keystroke."""
+    not found the keystroke. It is a map over the page now, not a page of
+    the sheet, and the ⋯ menu still opens it."""
     assert 'data-act="shortcuts"' in CONTENT_JS
-    assert 'case "shortcuts": libPage = "shortcuts"' in CONTENT_JS
-    assert "function libShortcutsHtml" in CONTENT_JS
-    assert 'if (libPage === "shortcuts") return libShortcutsHtml();' in CONTENT_JS
+    assert 'case "shortcuts": libMenu = false; renderLibrary(); focusLibrarySearch(); openShortcuts(); return;' in CONTENT_JS
+    assert "openKeyMap()" in _function_bodies(CONTENT_JS, r"openShortcuts")["openShortcuts"]
+    assert "function keyMapHtml" in CONTENT_JS
+    assert 'libPage === "shortcuts"' not in CONTENT_JS, "the old page is gone, not half kept"
 
 
 def test_the_question_mark_never_eats_a_typed_character():
@@ -1486,9 +1488,10 @@ def test_the_question_mark_never_eats_a_typed_character():
 
 
 def test_the_shortcut_sheet_opens_when_signed_out():
-    """It is a reference, not account data."""
-    body = _function_bodies(CONTENT_JS, r"loadLibrary")["loadLibrary"]
-    assert 'if (libPage !== "shortcuts") libPage = "signin";' in body
+    """It is a reference, not account data: nothing on its way asks who is signed in."""
+    for fn in ("openShortcuts", "openKeyMap"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert "getAuth" not in body and "libSignedIn" not in body
 
 
 def test_every_listed_chord_is_one_the_code_answers():
@@ -1530,11 +1533,11 @@ def test_the_sheet_does_not_promise_tab_to_insert():
 
 def test_the_chrome_shortcut_address_is_copied_not_linked():
     """A content script cannot navigate to chrome://; a link there is dead."""
-    body = _function_bodies(CONTENT_JS, r"libShortcutsHtml")["libShortcutsHtml"]
+    body = _function_bodies(CONTENT_JS, r"keyMapHtml")["keyMapHtml"]
     assert "chrome://extensions/shortcuts" in body
     assert '<a ' not in body, "a chrome:// link does nothing when clicked"
     assert 'data-act="copyshortcuts"' in body
-    assert 'case "copyshortcuts":' in CONTENT_JS
+    assert 'act === "copyshortcuts"' in _function_bodies(CONTENT_JS, r"openKeyMap")["openKeyMap"]
 
 
 # ── Shortcuts: a chip in the cluster, not only a chord ──────────────────
@@ -1588,16 +1591,11 @@ def test_the_library_height_is_read_before_the_chip_can_be_hidden():
 
 
 def test_the_shortcuts_chip_reports_expanded_only_on_its_own_page():
-    """
-    openShortcuts() sets libPage AFTER togglePanel(), and the ⋯ menu changes
-    page without touching the panel, so reading libPage at the open/close
-    moment alone reported collapsed whenever the list was actually showing.
-    """
-    assert "function syncHelpChipExpanded()" in CONTENT_JS
-    toggle = _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"]
-    assert "syncHelpChipExpanded()" in toggle
-    render = _function_bodies(CONTENT_JS, r"renderLibrary")["renderLibrary"]
-    assert "syncHelpChipExpanded()" in render, "a page change must update it too"
+    """The chip is expanded while the map it opens is up, and not otherwise."""
+    sync = _function_bodies(CONTENT_JS, r"syncHelpChipExpanded")["syncHelpChipExpanded"]
+    assert "String(keyMapOpen)" in sync
+    for fn in ("openKeyMap", "closeKeyMap"):
+        assert "syncHelpChipExpanded()" in _function_bodies(CONTENT_JS, fn)[fn], f"{fn} leaves the chip's state stale"
 
 
 def test_the_shortcuts_chip_is_laid_out_before_it_is_measured():
@@ -1650,3 +1648,25 @@ def test_the_shortcuts_chip_defends_itself_from_host_button_css():
     block = block[:block.index("@media (prefers-reduced-motion: reduce) {\n    .pm-help-btn")]
     for rule in ("width: auto !important", "min-width: 0 !important", "overflow: hidden"):
         assert rule in block, rule
+
+
+def test_the_map_lights_where_the_user_is_and_admits_an_unset_key():
+    """The keymap is context-gated, so the map says which group applies here;
+    and the rewrite key is Chrome's to assign, so the map must not promise it
+    when Chrome gave it to someone else."""
+    here = _function_bodies(CONTENT_JS, r"keyMapHere")["keyMapHere"]
+    groups = [g for g in ("In the library", "On the card", "In the chat box",
+                          "When a draft is waiting in the pill", "Anywhere on the page")]
+    listed = _shortcuts_block()
+    for g in groups:
+        assert f'"{g}"' in here, f"keyMapHere never names {g}"
+        assert f'where: "{g}"' in listed, f"{g} is not a group of SHORTCUTS"
+    html = _function_bodies(CONTENT_JS, r"keyMapHtml")["keyMapHtml"]
+    assert 'assignedShortcut === ""' in html and "Not set" in html
+
+
+def test_the_map_gives_the_keyboard_back():
+    close = _function_bodies(CONTENT_JS, r"closeKeyMap")["closeKeyMap"]
+    assert "keyMapReturn.focus(" in close
+    opener = _function_bodies(CONTENT_JS, r"openKeyMap")["openKeyMap"]
+    assert 'e.key === "Escape"' in opener and 'aria-modal="true"' in opener
