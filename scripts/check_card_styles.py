@@ -265,6 +265,20 @@ def main():
         check(not card_open(), "a click on the pill still folds the card (the pill is its handle)")
         ev("closeCard()")
 
+        # ── the card on the chat box takes at most 45% of the window ──
+        LONG = " ".join(["Explain each step, name the trade-off, and show the code for it."] * 30)
+        ev("FAKE.calls = []; H.type(H.ORIG)")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        ev(f"showDiffModal({{ enhanced: {LONG!r}, original: H.ORIG, mode: 'deep' }})")
+        page.wait_for_timeout(100)
+        h = ev("document.getElementById('pm-card').getBoundingClientRect().height")
+        check(h <= 900 * 0.45 + 1, f"a long rewrite keeps the card to 45% of the window, got {h}px")
+        check(ev("(() => { const t = document.querySelector('#pm-card .pm-card-text'); return t.scrollHeight > t.clientHeight; })()"),
+              "and scrolls inside it")
+        shot("5-capped")
+        ev("closeCard()")
+
         # ── screenshots, dark and light host ──
         if args.shots:
             ev("FAKE.calls = []; H.type(H.ORIG)")

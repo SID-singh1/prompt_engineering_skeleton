@@ -3555,6 +3555,8 @@ function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
  * top, because a rewrite has to be judged against the text it belongs to and
  * cannot be judged while covering it.
  */
+const CARD_MAX_SHARE = 0.45;   // of the window's height, for a card on the chat box
+
 function positionCard() {
   const card = document.getElementById("pm-card");
   const pill = document.getElementById("pm-trigger");
@@ -3651,12 +3653,18 @@ function positionCard() {
 
   let room, top;
   const MIN_TEXT = 88;
+  // The whole card, frame included, takes at most this much of the window.
+  // The text alone was capped at 40vh, and the frame around it (title, style
+  // row, context used, the first-run tip, the foot) came on top: a long Deep
+  // rewrite covered two thirds of the window and the conversation behind it.
+  // The rewrite scrolls inside instead.
+  const cap = Math.max(MIN_TEXT + frame + textPad, Math.round(window.innerHeight * CARD_MAX_SHARE));
   if (useAbove) {
     // The card's bottom edge: just above whatever it sits on, and never over
     // the composer.
     let floor = (onComposer ? box.top : pillBox.top) - gap;
     if (overlapsComposer && box.top - gap < floor) floor = box.top - gap;
-    room = floor - margin;
+    room = Math.min(floor - margin, cap);
     // Give the rewrite whatever is left over, rather than letting the card grow
     // past the space it has. Clamping the card's TOP against the viewport
     // instead would walk it down over the composer exactly when the head made
@@ -3668,7 +3676,7 @@ function positionCard() {
     let ceiling = pillBox.bottom + gap;
     let floor = window.innerHeight - margin;
     if (overlapsComposer && box.top > ceiling) floor = box.top - gap;
-    room = floor - ceiling;
+    room = Math.min(floor - ceiling, cap);
     card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame - textPad) + "px");
     top = ceiling;
   }
