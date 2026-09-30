@@ -289,8 +289,7 @@ def main():
         def tucked():
             return ev("cardTucked && document.getElementById('pm-card').classList.contains('pm-card-tucked')")
 
-        text_box = page.locator("#pm-card .pm-card-text").bounding_box()
-        page.mouse.move(text_box["x"] + 30, text_box["y"] + 30)
+        page.locator("#pm-card .pm-card-text").hover()   # waits out a redraw
         page.mouse.wheel(0, 120)
         page.wait_for_timeout(100)
         check(not tucked(), "the wheel inside the card scrolls the rewrite and leaves the card open")
