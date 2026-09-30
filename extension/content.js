@@ -1446,6 +1446,7 @@ const LIB_ICON = {
   shelf: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="4" rx="1.2"/><path d="M3.5 9.5h9M4.5 12.5h7"/></svg>',
   // Drawn rather than typed, like the others: a "?" left to the host's font
   // renders at a different weight and baseline on every site.
+  close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
   help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
 };
 
@@ -1719,7 +1720,11 @@ function syncActiveDescendant() {
 }
 
 function libHeadHtml() {
-  const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>`;
+  // × on every page, last in the row where a window keeps it. The sheet sits
+  // where the Library chip was, so the chip cannot be its toggle; without this
+  // the way out was esc or a click somewhere else, and neither is on screen.
+  const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
+    `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" title="Close (esc)">${LIB_ICON.close}</button>`;
   if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
     const title = { privacy: "Privacy", feedback: "Send feedback", shortcuts: "Keyboard shortcuts" }[libPage];
     return `<div class="pm-lib-head pm-lib-head-sub">` +
@@ -2002,6 +2007,7 @@ function onLibraryClick(e) {
   if (act === "menu") { libMenu = !libMenu; renderLibrary(); return; }
   if (libMenu && !e.target.closest(".pm-lib-menu")) { libMenu = false; renderLibrary(); if (!act) return; }
   switch (act) {
+    case "close": closeLibrary(); return;
     case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
     case "shortcuts": libPage = "shortcuts"; libMenu = false; renderLibrary(); return;
