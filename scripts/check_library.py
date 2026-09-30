@@ -302,6 +302,39 @@ def main():
                           document.getElementById('composer').dispatchEvent(e); return e.defaultPrevented; })()""")
         check(prevented is False and page.locator("#pm-caret").count() == 0, "with nothing to pick, Enter is the host's (sends)")
 
+        # ── // with more prompts than fit: it scrolls, and lists every match ──
+        ev("""FAKE_API.prompts.push(...Array.from({ length: 10 }, (_, k) => ({ id: 'x' + k, title: 'Extra prompt ' + (k + 1),
+                content: 'Extra body number ' + (k + 1) + '.', tags: ['extra'] }))); fetchSavedPrompts()""")
+        page.wait_for_function("savedPrompts.length === 15")
+        set_box("x ")
+        page.keyboard.type("//extra")
+        page.wait_for_selector("#pm-caret .pm-caret-row")
+        check(page.locator("#pm-caret .pm-caret-row").count() == 10, "every match is listed, not the first six")
+        check("10" in page.inner_text("#pm-caret .pm-caret-head b"), "the head counts the matches")
+        check(ev("(() => { const l = document.querySelector('#pm-caret .pm-caret-list'); return l.scrollHeight > l.clientHeight; })()"),
+              "ten rows overflow the menu, so it has to scroll")
+        box = page.locator("#pm-caret .pm-caret-list").bounding_box()
+        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        page.mouse.wheel(0, 160)
+        page.wait_for_timeout(250)
+        top = ev("document.querySelector('#pm-caret .pm-caret-list').scrollTop")
+        check(top > 0, f"the wheel scrolls the list and it stays scrolled (scrollTop {top})")
+        ev("window.dispatchEvent(new Event('scroll'))")
+        check(ev("document.querySelector('#pm-caret .pm-caret-list').scrollTop") == top,
+              "a page scroll moves the menu without redrawing it back to the top")
+        for _ in range(9):
+            page.keyboard.press("ArrowDown")
+        sel_in_view = ev("""(() => { const l = document.querySelector('#pm-caret .pm-caret-list').getBoundingClientRect();
+                              const r = document.querySelector('#pm-caret .pm-caret-row.pm-sel').getBoundingClientRect();
+                              return r.top >= l.top - 1 && r.bottom <= l.bottom + 1; })()""")
+        check(sel_in_view, "↓ past the fold keeps the highlighted row in view")
+        check("Extra prompt 10" in page.inner_text("#pm-caret .pm-caret-row.pm-sel"), "↓×9 reaches the tenth prompt")
+        page.keyboard.press("Enter")
+        page.wait_for_timeout(200)
+        check(composer() == "x Extra body number 10.", f"↵ inserts the tenth prompt, got {composer()!r}")
+        ev("FAKE_API.prompts = FAKE_API.prompts.filter((p) => !String(p.id).startsWith('x')); fetchSavedPrompts()")
+        page.wait_for_function("savedPrompts.length === 5")
+
         # ── the rail ──
         set_box("")
         page.wait_for_selector("#pm-rail:not([hidden])")
