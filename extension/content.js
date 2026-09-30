@@ -5158,23 +5158,39 @@ window.addEventListener("scroll", () => positionToasts(), true);
 function positionToasts() {
   const stack = document.getElementById("pm-toast-stack");
   if (!stack || !stack.firstChild) return;
+  const gap = 10, margin = 12;
+  const vw = window.innerWidth, vh = window.innerHeight;
 
-  const gap = 10;
-  const margin = 12;
-
-  // The HIGHEST of the two, not just the card. On the empty-chat layout the
-  // card renders BELOW the composer, so anchoring to the card alone would drop
-  // the toast straight onto the composer.
-  const tops = [document.getElementById("pm-card"), findComposer()]
-    .filter(Boolean)
-    .map((el) => el.getBoundingClientRect().top);
-
+  // Beside the pill, on its side of the window: the notice is about the
+  // extension's own action, and it belongs by the extension. Centred over
+  // the chat box it sat on the context chips and the last lines of the
+  // conversation (a tester called it out as covering what they were reading).
+  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  const right = !pill || pill.left + pill.width / 2 > vw / 2;
+  stack.style.transform = "none";
+  stack.style.alignItems = right ? "flex-end" : "flex-start";
+  stack.style.left = right ? "auto" : Math.max(margin, Math.round(pill.left)) + "px";
+  stack.style.right = right ? Math.max(margin, Math.round(vw - (pill ? pill.right : vw - margin))) + "px" : "auto";
+  const width = stack.offsetWidth || 320;
+  const colLeft = right ? vw - parseFloat(stack.style.right) - width : parseFloat(stack.style.left);
   const height = stack.offsetHeight || 44;
-  const top = tops.length
-    ? Math.min(...tops) - gap - height
-    : window.innerHeight - 80 - height;
 
-  stack.style.top = Math.max(margin, top) + "px";
+  // Above the pill, and above whatever of ours or the chat box stands in
+  // that column: the card, the open library, the save form, the chips, the
+  // box itself. Highest first wins, so it clears the whole stack.
+  let floor = pill ? pill.top : vh - 80;
+  const obstacles = [document.getElementById("pm-card"), document.getElementById("pm-library"),
+    document.getElementById("pm-save"), document.getElementById("pm-rail")]
+    .filter((el) => el && !el.hidden).map((el) => el.getBoundingClientRect());
+  const box = composerFrame(findComposer());
+  if (box) obstacles.push(box);
+  for (let pass = 0; pass < obstacles.length; pass++) {
+    for (const o of obstacles) {
+      if (!o.width || o.right <= colLeft || o.left >= colLeft + width) continue;
+      if (o.top < floor && o.bottom > floor - height - gap) floor = o.top;
+    }
+  }
+  stack.style.top = Math.max(margin, Math.round(floor - gap - height)) + "px";
 }
 
 /** Fade a toast out and take it out of the stack. */

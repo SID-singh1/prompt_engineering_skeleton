@@ -537,8 +537,9 @@ def test_toasts_are_placed_above_the_card_not_over_it():
     body = _function_bodies(CONTENT_JS, r"positionToasts")["positionToasts"]
     assert "findComposer()" in body and "pm-card" in body, \
         "positionToasts does not consider both anchors"
-    assert "Math.min(...tops)" in body, \
-        "the stack is not placed above the highest of card and composer"
+    for surface in ("pm-library", "pm-save", "pm-rail", "pm-trigger"):
+        assert surface in body, f"a toast can land on {surface}"
+    assert "floor = o.top" in body, "the stack is not placed above what stands in its column"
 
 
 # ── where sign-in puts you ────────────────────────────────────────────────
