@@ -2572,12 +2572,23 @@ function watchComposer() {
   composerObserver.observe(el, { subtree: true, childList: true, characterData: true });
 }
 
+/**
+ * The user went back to typing in the chat box: the library is done with.
+ *
+ * Only while the chat box has focus, so a change made from code (our own
+ * Insert, the host restoring a draft) does not count as the user leaving.
+ */
+function closeLibraryOnTyping() {
+  if (panelOpen && composerHasFocus()) togglePanel(false);
+}
+
 /** The chat box's text changed. Batched: one keystroke can be many mutations. */
 function onComposerChanged() {
   if (composerChangeQueued) return;
   composerChangeQueued = true;
   Promise.resolve().then(() => {
     composerChangeQueued = false;
+    closeLibraryOnTyping();
     checkSlash();
     refreshCardStaleness();
     positionRail();
@@ -2590,6 +2601,7 @@ function setupLibraryListeners() {
   document.addEventListener("input", (e) => {
     const composer = findComposer();
     if (composer && (e.target === composer || composer.contains(e.target))) {
+      closeLibraryOnTyping();
       checkSlash();
       requestAnimationFrame(positionRail);
       // A <textarea> composer changes its value, not its DOM, so the
