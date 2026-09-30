@@ -4601,23 +4601,18 @@ async function acceptImprovement() {
   });
 }
 
-async function saveCard() {
+/** ⌘S or Save on the card: the save form, on the card. */
+function saveCard() {
   if (!cardResult) return;
-  if (cardSubject) {
-    const outcome = await createSavedPrompt(cardResult.enhanced, `${cardSubject.title} (improved)`, []);
-    if (outcome === "saved") fetchSavedPrompts();
-    showToast(outcome === "saved" ? "Saved as a new prompt; the original is unchanged" : outcome === "duplicate" ? "Already in your library" : "Could not save",
-      outcome === "saved" ? "success" : outcome === "duplicate" ? "info" : "error");
-    return;
-  }
-  const outcome = await createSavedPrompt(cardResult.enhanced, null, []);
-  if (outcome === "duplicate") {
-    showToast("Already in your library", "info");
-    return;
-  }
-  const saved = outcome === "saved";
-  showToast(saved ? "Saved to your library" : "Could not save", saved ? "success" : "error");
-  if (saved) { fetchSavedPrompts(); statsBump("saves"); tipDone("save"); }
+  const card = document.getElementById("pm-card");
+  openSaveForm({
+    text: cardResult.enhanced,
+    // An improved saved prompt is saved as a new one beside the original, and
+    // its name says which it came from.
+    title: cardSubject ? `${cardSubject.title} (improved)` : "",
+    anchor: card?.getBoundingClientRect(),
+    successMessage: cardSubject ? "Saved as a new prompt; the original is unchanged" : "",
+  });
 }
 
 // ── Keymap ──
