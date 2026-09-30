@@ -423,6 +423,18 @@ def main():
         page.click(".pm-toast .pm-toast-action")
         page.wait_for_function(f"FAKE_API.calls.some(c => c.method === 'DELETE' && c.path === '/saved-prompts/{new_id}')", timeout=3000)
         check(True, "Undo on its toast deletes what was just saved")
+        # the way ChatGPT marks the user's side now, and Gemini with its hidden "You said"
+        for sel, words in (("[data-markdown-text-tone='user-message'] p", "and how long should I use it each day"),
+                           ("user-query .query-text", "which one is cheaper per week")):
+            page.hover(sel)
+            page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+            page.hover("#pm-msg-save")
+            page.click("#pm-msg-save")
+            page.wait_for_selector("#pm-save")
+            snip = page.inner_text("#pm-save .pm-save-snip").strip()
+            check(snip == words, f"the bookmark reads {sel.split()[0]}'s words and nothing else, got {snip!r}")
+            page.keyboard.press("Escape")
+            page.wait_for_selector("#pm-save", state="detached")
 
         # ⋯: default style, count, privacy, feedback
         page.click("#pm-trigger")

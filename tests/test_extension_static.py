@@ -1683,3 +1683,18 @@ def test_every_key_a_tooltip_shows_is_one_the_map_lists():
     for k in keys:
         assert f'"{k}"' in listed or f"`{k}`" in listed, f"a tooltip shows {k}, which the map does not list"
     assert 'title="Close (esc)"' not in CONTENT_JS, "a native title would double the tooltip"
+
+
+def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
+    """ChatGPT dropped data-message-author-role (seen live on 2026-10-01).
+    Conversation context and the sent-prompt bookmark read both markings."""
+    scrape = _function_bodies(CONTENT_JS, r"scrapeConversation")["scrapeConversation"]
+    for mark in ("[data-message-author-role]", "[data-markdown-text-tone='user-message']",
+                 "[data-markdown-text-style='assistant-message']"):
+        assert mark in scrape, f"the conversation reader misses {mark}"
+    assert "data-user-message-bubble" in CONTENT_JS and 'data-markdown-text-tone="user-message"' in CONTENT_JS
+
+
+def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
+    body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
+    assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS

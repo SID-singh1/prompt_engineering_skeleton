@@ -555,8 +555,17 @@ function scrapeConversation() {
 
   try {
     if (hostname === "chatgpt.com") {
-      document.querySelectorAll("[data-message-author-role]").forEach((el) => {
-        const role = el.getAttribute("data-message-author-role");
+      // ChatGPT dropped data-message-author-role (seen live, 2026-10-01): the
+      // two sides are now marked on their text, as a user "tone" and an
+      // assistant "style". Both markings are read, in page order, and an
+      // element inside one already taken is not counted twice.
+      const sel = "[data-message-author-role], [data-markdown-text-tone='user-message'], [data-markdown-text-style='assistant-message']";
+      const taken = [];
+      document.querySelectorAll(sel).forEach((el) => {
+        if (taken.some((t) => t.contains(el))) return;
+        taken.push(el);
+        const role = el.getAttribute("data-message-author-role") ||
+          (el.getAttribute("data-markdown-text-tone") === "user-message" ? "user" : "assistant");
         const text = el.innerText?.trim();
         if (text && text.length > 2) {
           messages.push(`[${role}]: ${text.substring(0, 500)}`);
@@ -2122,7 +2131,14 @@ async function submitSaveForm() {
 // by it. The selectors are the ones each site marks the user's side with:
 // ChatGPT, Gemini, and Claude.
 
-const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], user-query, [data-testid="user-message"]';
+// ChatGPT marks the user's side two ways depending on the build: the old
+// author role, and (live since 2026-10) a bubble with a user-toned text inside.
+const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], [data-user-message-bubble], ' +
+  '[data-markdown-text-tone="user-message"], user-query, [data-testid="user-message"]';
+const SENT_PROMPT_WORDS = '[data-markdown-text-tone="user-message"], .query-text';
+// Text a screen reader hears and the eye does not: Gemini starts every one of
+// your messages with a hidden "You said", which is not part of the prompt.
+const VISUALLY_HIDDEN = '.cdk-visually-hidden, .sr-only, [class*="visually-hidden"]';
 const BOOKMARK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.8l-3.5 2.7z"/></svg>';
 let msgSaveTarget = null;
 let msgSaveHideTimer = null;
@@ -2130,11 +2146,17 @@ let msgSaveQueued = null;
 
 /** The element holding the words: Gemini wraps them inside its user-query. */
 function sentPromptWords(el) {
-  return el.querySelector?.(".query-text") || el;
+  return (el.matches?.(SENT_PROMPT_WORDS) ? el : el.querySelector?.(SENT_PROMPT_WORDS)) || el;
 }
 
 function sentPromptText(el) {
-  return (sentPromptWords(el).innerText || "").trim();
+  const words = sentPromptWords(el);
+  let text = (words.innerText || "").trim();
+  for (const hidden of words.querySelectorAll(VISUALLY_HIDDEN)) {
+    const h = (hidden.textContent || "").trim();
+    if (h && text.startsWith(h)) text = text.slice(h.length).trim();
+  }
+  return text;
 }
 
 /** Where the words are, which is not where the element is: ChatGPT's spans the column. */
