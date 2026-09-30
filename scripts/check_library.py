@@ -194,8 +194,9 @@ def main():
         page.wait_for_timeout(100)
         check(not ev("panelOpen"), "turning the wheel over the conversation closes it")
         open_lib()
-        box = page.locator("#pm-lib-list").bounding_box()
-        page.mouse.move(box["x"] + 40, box["y"] + 40)
+        # hover() waits for a list that is not being redrawn: the sheet draws
+        # again when the saved prompts and the usage count arrive.
+        page.locator("#pm-lib-list").hover()
         page.mouse.wheel(0, 60)
         page.wait_for_timeout(100)
         check(ev("panelOpen"), "the wheel inside the sheet only scrolls it")
