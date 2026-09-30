@@ -2391,8 +2391,11 @@ function renderSlash() {
   // Redrawn on every keystroke and caret move. A list the user has scrolled
   // keeps its place while the query is the same; a new query starts at the top.
   const oldList = menu.querySelector(".pm-caret-list");
-  const keepTop = oldList && menu.dataset.q === slash.q ? oldList.scrollTop : 0;
+  const sameList = Boolean(oldList) && menu.dataset.q === slash.q;
+  const keepTop = sameList ? oldList.scrollTop : 0;
+  const moved = !sameList || menu.dataset.sel !== String(slashSel);
   menu.dataset.q = slash.q;
+  menu.dataset.sel = String(slashSel);
   const count = promptsLoaded && items.length > 1 ? `<i>${items.length}</i>` : "";
   const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}${count}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
   let body;
@@ -2409,6 +2412,10 @@ function renderSlash() {
   placeSlash();
   const list = menu.querySelector(".pm-caret-list");
   list.scrollTop = keepTop;
+  // ↑↓ can walk past the fold; the highlight follows into view, as in the
+  // sheet. Only when it moved: a redraw for a caret move must not undo a
+  // scroll the user just made with the wheel.
+  if (moved) list.querySelector(".pm-caret-row.pm-sel")?.scrollIntoView({ block: "nearest" });
 }
 
 /**
