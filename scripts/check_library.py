@@ -110,10 +110,18 @@ def main():
         page.wait_for_function("!document.querySelector('#pm-library .pm-lib-skeleton')")
         check(page.get_attribute("#pm-library-btn", "aria-expanded") == "true", "chip reports the sheet open")
         check(ev("document.activeElement.id") == "pm-lib-q", "search has focus on open")
-        check(rows() == ["Code review template", "You are my writing editor", "Explain like a teacher",
-                         "Bug report triage", "Product spec critic"], f"saved prompts listed, got {rows()}")
-        previews = page.locator("#pm-library .pm-lib-row .pm-lib-preview").all_inner_texts()
-        check(previews[1].startswith("Cut every sentence"), f"untitled prompt's preview skips its title, got {previews[1]!r}")
+        check(rows() == ["Code review template",
+                         "You are my writing editor. Cut every sentence that does not earn its place and keep my voice.",
+                         "Explain like a teacher", "Bug report triage", "Product spec critic"],
+              f"saved prompts listed, an untitled one by its own words, got {rows()}")
+        check(ev("""(() => { const r = document.querySelectorAll('#pm-library .pm-lib-row')[0];
+                     const p = r.querySelector('.pm-lib-preview'); return getComputedStyle(p).webkitLineClamp === '2'
+                       && p.textContent.startsWith('Review this diff'); })()"""), "a named prompt shows two lines of its text")
+        check(ev("""getComputedStyle(document.querySelector('#pm-library .pm-lib-untitled')).webkitLineClamp === '3'"""),
+              "an unnamed one shows three lines of its own words")
+        check(page.inner_text("#pm-library .pm-lib-row >> nth=0").count("#") == 2, "tags show under the words")
+        check(page.locator("#pm-library .pm-lib-row >> nth=1").locator(".pm-lib-preview").count() == 0,
+              "an untitled prompt is not split into a made-up title and the rest")
         check(page.get_attribute("#pm-lib-q", "placeholder") == "Search 5 saved prompts", "placeholder counts prompts")
         lib, box, send = rect("#pm-library"), rect("form"), rect(".send")
         check(not overlaps(lib, send), "the sheet stays off the chat box's send button")
@@ -126,7 +134,7 @@ def main():
         page.keyboard.type("bug")
         check(rows() == ["Bug report triage"], f"search by text, got {rows()}")
         page.fill("#pm-lib-q", "#writ")
-        check(rows() == ["You are my writing editor"], f"#tag search, got {rows()}")
+        check(rows()[0].startswith("You are my writing editor") and len(rows()) == 1, f"#tag search, got {rows()}")
         page.fill("#pm-lib-q", "zzz")
         check("Nothing matches" in page.inner_text("#pm-library .pm-lib-list"), "no-match message")
         page.fill("#pm-lib-q", "")

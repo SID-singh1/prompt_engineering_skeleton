@@ -1484,6 +1484,16 @@ function promptPreview(p) {
   return p.title ? text : text.slice(promptHeadLength(text)).trim() || text;
 }
 
+/**
+ * What a saved row says under its words: its tags, then how old it is.
+ * Nothing when there is neither, so a bare prompt is not given an empty line.
+ */
+function promptMetaHtml(p) {
+  const tags = (p.tags || []).slice(0, 3).map((t) => `<span class="pm-lib-tag">#${escHtml(t)}</span>`);
+  const age = p.created_at ? `<span>${escHtml(getTimeAgo(p.created_at))}</span>` : "";
+  return tags.length || age ? `<div class="pm-lib-meta">${tags.join("")}${age}</div>` : "";
+}
+
 // ── The sheet ──
 
 function createLibrary() {
@@ -1814,8 +1824,8 @@ function libRowsHtml() {
     if (it.kind === "recent") {
       const h = it.h;
       const ago = h.timestamp ? getTimeAgo(h.timestamp) : "";
-      let row = `<div class="pm-lib-row${sel}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
-        `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text"><div class="pm-lib-title">${escHtml(norm(h.enhanced))}</div>` +
+      let row = `<div class="pm-lib-row pm-lib-row-recent${sel}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
+        `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text"><div class="pm-lib-title pm-lib-clamp">${escHtml(norm(h.enhanced))}</div>` +
         `<div class="pm-lib-preview">from “${escHtml(norm(h.original))}”${ago ? " · " + ago : ""}</div></div>` +
         `<div class="pm-lib-acts"><button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === "r" + i}">${LIB_ICON.more}</button>` +
         `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
@@ -1830,9 +1840,14 @@ function libRowsHtml() {
         `<button type="button" data-act="keepit" data-i="${i}">Keep</button><button type="button" class="pm-lib-danger" data-act="del" data-i="${i}" id="pm-lib-del">Delete</button></div>`;
     }
     const att = selectedIds.has(p.id);
+    // A prompt the user named leads with that name and two lines of its text.
+    // One they did not name leads with its own words, three lines of them: a
+    // title cut from its first sentence read as a name nobody had given it.
+    const words = p.title
+      ? `<div class="pm-lib-title">${escHtml(p.title)}</div><div class="pm-lib-preview pm-lib-clamp">${escHtml(norm(p.content))}</div>`
+      : `<div class="pm-lib-title pm-lib-untitled">${escHtml(norm(p.content))}</div>`;
     let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
-      `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text"><div class="pm-lib-title">${escHtml(promptTitle(p))}</div>` +
-      `<div class="pm-lib-preview">${escHtml(promptPreview(p))}</div></div>` +
+      `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
       `<div class="pm-lib-acts">` +
       `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" aria-label="${att ? "Detach" : "Attach as context"}" title="${att ? "Attached as context" : "Attach as context"} (${CMD_KEY}↵)">${LIB_ICON.clip}</button>` +
       `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
