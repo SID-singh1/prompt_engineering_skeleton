@@ -3016,7 +3016,15 @@ function positionRail() {
   if (hide) return;
   rail.style.left = Math.max(8, Math.round(r.left)) + "px";
   rail.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
-  rail.style.maxWidth = Math.max(180, Math.round(r.width)) + "px";
+  let maxWidth = Math.max(180, Math.round(r.width));
+  // The pill steps up onto the box's top corner when it would sit on the box
+  // (a draft makes it wide), which is this same row: on Claude the chips ran
+  // under it (seen live). They stop short of it and wrap upward instead.
+  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  if (pill && pill.bottom > r.top - 40 && pill.top < r.top && pill.left > r.left) {
+    maxWidth = Math.min(maxWidth, Math.max(180, Math.round(pill.left - r.left - 8)));
+  }
+  rail.style.maxWidth = maxWidth + "px";
 }
 
 // ── // in the chat box ──
