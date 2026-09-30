@@ -184,6 +184,33 @@ def main():
         page.set_viewport_size({"width": 1440, "height": 900})
         page.fill("#pm-lib-q", "")
 
+        # ── ways out, every one of them on screen or in the user's hands ──
+        page.click("#pm-lib-close")
+        check(not ev("panelOpen") and ev("document.activeElement.id") == "composer",
+              "× closes the sheet and hands the keyboard back to the chat box")
+        open_lib()
+        page.mouse.move(700, 200)
+        page.mouse.wheel(0, 200)
+        page.wait_for_timeout(100)
+        check(not ev("panelOpen"), "turning the wheel over the conversation closes it")
+        open_lib()
+        box = page.locator("#pm-lib-list").bounding_box()
+        page.mouse.move(box["x"] + 40, box["y"] + 40)
+        page.mouse.wheel(0, 60)
+        page.wait_for_timeout(100)
+        check(ev("panelOpen"), "the wheel inside the sheet only scrolls it")
+        ev("document.getElementById('composer').focus()")      # focus moved without a click
+        page.keyboard.type("x")
+        page.wait_for_timeout(50)
+        check(not ev("panelOpen"), "typing in the chat box closes it")
+        set_box("")
+        open_lib()
+        ev("H.stream()")
+        page.wait_for_timeout(50)
+        check(not ev("panelOpen") and page.locator("#pm-card").count() == 1, "a rewrite card coming up closes it")
+        ev("closeCard()")
+        open_lib()
+
         # search and keys
         page.keyboard.type("bug")
         check(rows() == ["Bug report triage"], f"search by text, got {rows()}")
