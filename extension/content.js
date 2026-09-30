@@ -2754,7 +2754,10 @@ function handleSlashKeydown(e) {
     renderSlash();
   } else if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
     // With nothing to pick, Enter is the user's: it sends what they typed.
-    if (!items.length) { closeSlash(); return; }
+    // Muted, as esc mutes it: the //query is still at the caret until the
+    // host clears the box, and a selectionchange still queued from the typing
+    // reopened the menu over a message that had just been sent.
+    if (!items.length) { slashMuted = true; closeSlash(); return; }
     slashInsert();
   } else if (e.key === "Tab" && !e.shiftKey) {
     if (!items.length) return;
