@@ -134,6 +134,7 @@ const SHORTCUTS = () => [
     where: "In the library",
     rows: [
       { keys: ["↑", "↓"], what: "Move through the list" },
+      { keys: ["→"], what: "Read the whole prompt", note: "← puts it away" },
       { keys: ["↵"], what: "Insert the selected prompt" },
       { keys: [`${CMD_KEY}↵`], what: "Attach it as context instead" },
       { keys: ["Esc"], what: "Go back, then close" },

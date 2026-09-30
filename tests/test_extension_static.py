@@ -1491,6 +1491,9 @@ def test_every_listed_chord_is_one_the_code_answers():
         assert chord in listed, f"{chord} is no longer listed on the sheet"
         assert handler in CONTENT_JS, f"the sheet lists {chord} but nothing handles it"
     assert '(e.key === "[" || e.key === "]")' in CONTENT_JS
+    assert 'e.key === "ArrowRight" && e.target.selectionStart === e.target.value.length' in CONTENT_JS, \
+        "the sheet lists → for the whole prompt"
+    assert 'e.key === "ArrowLeft" && libPeek !== null' in CONTENT_JS
 
 
 def test_the_sheet_does_not_promise_tab_to_insert():
