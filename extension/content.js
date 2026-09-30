@@ -2332,9 +2332,10 @@ function checkSlash() {
 function slashItems() {
   if (!slash) return [];
   const q = slash.q.toLowerCase();
+  // Every match: the list scrolls. It used to stop at six, and a seventh
+  // prompt could only be reached by typing enough of it to filter the rest out.
   return savedPrompts
-    .filter((p) => !q || [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q.replace(/^#/, "")))
-    .slice(0, 6);
+    .filter((p) => !q || [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q.replace(/^#/, "")));
 }
 
 function closeSlash() {
@@ -2392,7 +2393,8 @@ function renderSlash() {
   const oldList = menu.querySelector(".pm-caret-list");
   const keepTop = oldList && menu.dataset.q === slash.q ? oldList.scrollTop : 0;
   menu.dataset.q = slash.q;
-  const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
+  const count = promptsLoaded && items.length > 1 ? `<i>${items.length}</i>` : "";
+  const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}${count}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
   let body;
   if (!promptsLoaded) body = `<div class="pm-caret-empty">Loading your saved prompts…</div>`;
   else if (!items.length) body = `<div class="pm-caret-empty">${savedPrompts.length ? `No saved prompt matches “${escHtml(slash.q)}”` : "No saved prompts yet. Open the library to save one."}</div>`;
