@@ -3615,7 +3615,10 @@ function positionCard() {
   // The first cut hung the card off the pill and then pushed it up to clear
   // the composer, which left it 450px from the pill and aligned to nothing.
   // With no composer on the page it hangs off the pill instead.
-  const box = composer ? composer.getBoundingClientRect() : null;
+  // The chat box as drawn, not the editable inside it: hosts pad the text
+  // within a rounded frame, and a card fitted to the editable sat 9px down
+  // over that frame and short of its edges.
+  const box = composer ? composerFrame(composer) : null;
   const onComposer = Boolean(box) && box.width >= 240 && box.top > margin + 120;
   let width, left;
   if (onComposer) {
