@@ -336,6 +336,20 @@ def main():
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
 
+        # ── a centred chat box holding a long draft (ChatGPT's new chat, seen live) ──
+        ev("""document.body.classList.add('center');
+              const c = document.getElementById('composer');
+              c.innerHTML = Array.from({ length: 6 }, (_, k) => '<div>line ' + (k + 1) + ' of a long draft in the chat box</div>').join('');""")
+        page.wait_for_timeout(100)
+        open_lib()
+        lib, send, box = rect("#pm-library"), rect(".send"), rect("form")
+        check(lib["b"] - lib["t"] >= 400, f"the sheet keeps its height beside a tall centred box, got {lib['b'] - lib['t']:.0f}px")
+        check(not overlaps(lib, send), "and still stays off the Send button")
+        check(lib["t"] >= 0, "and inside the window")
+        page.keyboard.press("Escape")
+        ev("document.body.classList.remove('center'); document.getElementById('composer').textContent = ''")
+        page.wait_for_timeout(100)
+
         # ── keys where they act: tooltips with keycaps ──
         open_lib()
         page.hover("#pm-lib-close")
