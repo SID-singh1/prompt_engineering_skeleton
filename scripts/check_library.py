@@ -232,6 +232,9 @@ def main():
         check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
         check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
         check(page.inner_text("#pm-rail .pm-rail-label").strip() == "Context for ⊕", "the rail says what the chips are for")
+        check(page.is_visible("#pm-trigger .pm-pill-ctx") and page.inner_text("#pm-trigger .pm-pill-ctx") == "1",
+              "⊕ counts the context its next rewrite carries")
+        check("with 1 saved prompt as context" in page.get_attribute("#pm-trigger", "aria-label"), "and says so to a screen reader")
         check(page.locator("#pm-rail .pm-rail-chip.pm-rail-new").count() == 1, "a newly ticked prompt pops onto the rail")
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
         foot = page.inner_text("#pm-lib-foot")

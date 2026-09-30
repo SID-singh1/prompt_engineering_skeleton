@@ -756,7 +756,10 @@ function createTrigger() {
       `<button class="pm-pill-up" type="button" title="Good rewrite" aria-label="Good rewrite">${PILL_THUMB_SVG(false)}</button>` +
       `<button class="pm-pill-down" type="button" title="Bad rewrite" aria-label="Bad rewrite">${PILL_THUMB_SVG(true)}</button>` +
     `</span>` +
-    `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>`;
+    `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>` +
+    // How many saved prompts the next rewrite will carry: ⊕ is where context
+    // is used, so it counts it, as the Library chip does.
+    `<span class="pm-pill-ctx" aria-hidden="true" hidden></span>`;
   btn.title = "Enhance this prompt\nShift-click for your library";
   // Click runs the thing people came for. This used to open the panel, which
   // meant the primary action sat two clicks deep behind a tab bar; the library
@@ -1001,7 +1004,7 @@ function renderPill() {
     label = pillApplied.thanked ? "Thanks" : "Inserted";
   }
 
-  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}`;
+  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
   if (sig === pillSignature) return;
   pillSignature = sig;
 
@@ -1028,8 +1031,12 @@ function renderPill() {
   xEl.title = state === "streaming" ? "Cancel the rewrite" : state === "error" ? "Dismiss" : "Discard this draft";
   xEl.setAttribute("aria-label", xEl.title);
 
+  const ctx = selectedIds.size;
+  const ctxBadge = pill.querySelector(".pm-pill-ctx");
+  if (ctxBadge) { ctxBadge.hidden = !ctx || state !== "idle"; ctxBadge.textContent = String(ctx); }
+  const withCtx = ctx ? ` with ${ctx} saved prompt${ctx === 1 ? "" : "s"} as context` : "";
   pill.setAttribute("aria-label", {
-    idle: "Enhance this prompt",
+    idle: "Enhance this prompt" + withCtx,
     streaming: "Rewriting your prompt",
     ready: "Enhanced prompt ready. Click to review or use Insert.",
     stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
@@ -1037,7 +1044,7 @@ function renderPill() {
     applied: "Rewrite inserted.",
   }[state]);
   pill.title = state === "idle"
-    ? "Enhance this prompt\nShift-click for your library"
+    ? `Enhance this prompt${withCtx}\nShift-click for your library`
     : state === "applied" ? "" : "Click to review the draft \u00b7 drag to move";
 
   // The pill's width just changed, so everything that hangs off it moves.
@@ -2417,6 +2424,7 @@ function reconcileAttachments() {
 }
 
 function renderChipCount() {
+  renderPill();   // ⊕ counts the context it will use
   const cnt = document.querySelector("#pm-library-btn .pm-library-count");
   if (!cnt) return;
   cnt.textContent = selectedIds.size ? String(selectedIds.size) : "";

@@ -235,6 +235,26 @@
 
 .pm-trigger:active { transform: translateY(0) scale(0.985); }
 
+/* The count of saved prompts the next rewrite carries, on ⊕'s shoulder. */
+.pm-pill-ctx {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    border: 1.5px solid #0c0f0e;
+    background: var(--pm-accent);
+    color: #06201a;
+    font: 700 9.5px/13px var(--pm-font);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+.pm-pill-ctx[hidden] { display: none; }
+
 .pm-trigger:focus-visible {
     outline: 2px solid var(--pm-accent);
     outline-offset: 3px;
