@@ -1646,6 +1646,8 @@ function focusLibrarySearch() {
   if (q && document.activeElement !== q) q.focus({ preventScroll: true });
 }
 
+const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
+
 /** Where the sheet goes: on the pill's side, above it if there is room, else below. */
 function positionLibrary() {
   const lib = document.getElementById("pm-library");
@@ -1662,9 +1664,27 @@ function positionLibrary() {
   // it sideways: the host's send button lives on that box's edge, and a sheet
   // resting on it is a sheet that swallows the click meant for Send.
   const left = onRight ? vw - parseFloat(lib.style.right) - width : parseFloat(lib.style.left);
-  const frame = composerFrame(findComposer());
+  const composer = findComposer();
+  const frame = composerFrame(composer);
   const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
-  const ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  let ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  // A tall or centred chat box (ChatGPT's new chat with a draft in it) left
+  // too little room above it, and the sheet came out two rows high at the
+  // top of the window, nowhere near the pill (seen live, 2026-10-01). It may
+  // then come down over the box's text, but still not over its row of
+  // buttons, where Send is.
+  if (overlapsBox && ceiling - gap - m < LIB_ROOM_WANTED) {
+    const controls = composerControlsTop(composer);
+    if (controls !== null) ceiling = Math.min(p.top, Math.max(ceiling, controls));
+  }
+  // Nor over the context chips: they are where a click on a row shows up.
+  const rail = document.getElementById("pm-rail");
+  if (rail && !rail.hidden) {
+    const rr = rail.getBoundingClientRect();
+    if (rr.width && left < rr.right && left + width > rr.left && rr.top < ceiling && rr.bottom > ceiling - 400) {
+      ceiling = Math.min(ceiling, rr.top);
+    }
+  }
   const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
   const up = above >= 260 || above >= below;
   lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
@@ -2877,9 +2897,14 @@ function renderChipCount() {
  * and visibly drawn (a background, a border or rounded corners).
  */
 function composerFrame(el) {
+  return composerFrameBox(el)?.rect || null;
+}
+
+/** composerFrame(), with the element that draws it. */
+function composerFrameBox(el) {
   if (!el) return null;
   const inner = el.getBoundingClientRect();
-  let frame = inner;
+  let box = { node: el, rect: inner };
   let node = el.parentElement;
   for (let i = 0; node && i < 6; i++, node = node.parentElement) {
     const r = node.getBoundingClientRect();
@@ -2887,9 +2912,30 @@ function composerFrame(el) {
     const cs = getComputedStyle(node);
     const drawn = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderRadius) >= 8 ||
       (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent");
-    if (drawn) frame = r;
+    if (drawn) box = { node, rect: r };
   }
-  return frame;
+  return box;
+}
+
+/**
+ * Where the chat box's own buttons begin, on the side the sheet comes from:
+ * the row with Send in it. Buttons level with the text's first line (an
+ * expand icon in the corner) do not count; a box whose buttons all sit
+ * beside the text has no row below it, and gives null.
+ */
+function composerControlsTop(el) {
+  const box = composerFrameBox(el);
+  if (!box || box.node === el) return null;
+  const text = el.getBoundingClientRect(), frame = box.rect;
+  let top = null;
+  for (const b of box.node.querySelectorAll("button, [role='button']")) {
+    if (el.contains(b)) continue;
+    const r = b.getBoundingClientRect();
+    if (!r.width || !r.height || r.left + r.width / 2 < frame.left + frame.width * 0.6) continue;
+    if (r.top < text.top + 20) continue;
+    top = top === null ? r.top : Math.min(top, r.top);
+  }
+  return top;
 }
 
 /**
