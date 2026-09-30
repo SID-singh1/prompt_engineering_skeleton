@@ -3438,6 +3438,10 @@ function openCard(innerHTML) {
   const card = getOrCreateCard();
   const focusedId = card.contains(document.activeElement) ? document.activeElement.id : null;
   card._pmEndGesture?.();
+  // A card coming up means the user moved on from the library (⊕ with
+  // prompts ticked, the shortcut, a draft reopened): the sheet would sit
+  // over the card's top edge, so it goes.
+  if (!cardExpanded && panelOpen) togglePanel(false);
   card.innerHTML = innerHTML +
     `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" aria-expanded="false" aria-controls="pm-card-layout" title="Drag to resize, or click to move and size with buttons"></button>`;
   cardExpanded = true;
