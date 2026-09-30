@@ -336,6 +336,35 @@ def main():
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
 
+        # ── save a prompt already sent, from the conversation ──
+        msg = page.locator("[data-message-author-role='user'] >> nth=0")
+        msg.hover()
+        page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+        shot("6-bookmark")
+        b = rect("#pm-msg-save")
+        words = ev("""(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector("[data-message-author-role='user']"));
+                       const b = r.getBoundingClientRect(); return { l: b.left, t: b.top }; })()""")
+        check(b["r"] <= words["l"] and abs(b["t"] - words["t"]) <= 8, f"resting on a sent prompt shows a bookmark beside its words ({b} vs {words})")
+        page.mouse.move(300, 150)
+        page.wait_for_timeout(450)
+        check(page.is_hidden("#pm-msg-save"), "and it goes when the pointer does")
+        msg.hover()
+        page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+        page.hover("#pm-msg-save")
+        page.wait_for_timeout(400)
+        check(page.is_visible("#pm-msg-save"), "crossing to the bookmark keeps it")
+        page.click("#pm-msg-save")
+        page.wait_for_selector("#pm-save")
+        check("whitening gel" in page.inner_text("#pm-save .pm-save-snip"), "it opens the save form on that prompt")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#pm-save", state="detached", timeout=3000)
+        post = calls("POST", "/saved-prompts")[-1]["body"]
+        check(post["content"] == "can you check this whitening gel, is it safe for enamel", f"and saves its words, got {post}")
+        new_id = ev("FAKE_API.prompts[0].id")
+        page.click(".pm-toast .pm-toast-action")
+        page.wait_for_function(f"FAKE_API.calls.some(c => c.method === 'DELETE' && c.path === '/saved-prompts/{new_id}')", timeout=3000)
+        check(True, "Undo on its toast deletes what was just saved")
+
         # ⋯: default style, count, privacy, feedback
         page.click("#pm-trigger")
         open_lib()
