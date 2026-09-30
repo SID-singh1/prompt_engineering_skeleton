@@ -1516,6 +1516,15 @@ function createLibrary() {
     if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
+  // So does turning the wheel over the conversation: the sheet is fixed to
+  // the pill and would float over messages the user is trying to read.
+  // Wheel, not scroll, because only a wheel is the user; a scroll event also
+  // comes from the host's own auto-scroll as an answer streams in.
+  document.addEventListener("wheel", (e) => {
+    if (!panelOpen) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, .pm-modal-overlay, #pm-toast-stack")) return;
+    togglePanel(false);
+  }, { capture: true, passive: true });
 
   storageGet(["pm_slash"], (r) => { slashEnabled = r.pm_slash !== false; });
 }
