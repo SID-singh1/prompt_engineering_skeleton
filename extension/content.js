@@ -353,6 +353,8 @@ async function fetchSavedPrompts() {
  * unrepresentable: there is no longer a value that means both "fine" and
  * "nothing happened".
  */
+let lastSavedPromptId = null;
+
 async function createSavedPrompt(content, title, tags) {
   const body = { content };
   if (title && title.trim()) body.title = title.trim();
@@ -363,6 +365,7 @@ async function createSavedPrompt(content, title, tags) {
   });
   if (!res || !res.ok) return "failed";
   const data = await res.json();
+  lastSavedPromptId = data.id ?? null;   // for Undo; the outcome stays a plain string
   return data.duplicate ? "duplicate" : "saved";
 }
 
@@ -1542,7 +1545,7 @@ function createLibrary() {
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
   // So does turning the wheel over the conversation: the sheet is fixed to
@@ -1551,7 +1554,7 @@ function createLibrary() {
   // comes from the host's own auto-scroll as an answer streams in.
   document.addEventListener("wheel", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, { capture: true, passive: true });
 
@@ -1842,7 +1845,7 @@ function libRowsHtml() {
     if (it.kind === "save") {
       return `<div class="pm-lib-row pm-lib-row-save${sel}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
         `<span class="pm-lib-dot" aria-hidden="true">+</span><div class="pm-lib-text"><div class="pm-lib-title">Save “${escHtml(it.text.slice(0, 44))}${it.text.length > 44 ? "…" : ""}”</div>` +
-        `<div class="pm-lib-preview">From the chat box · rename it any time</div></div>` +
+        `<div class="pm-lib-preview">From the chat box</div></div>` +
         `<div class="pm-lib-acts"><button type="button" class="pm-lib-verb" data-act="save">Save</button></div></div>`;
     }
     if (it.kind === "recent") {
@@ -1970,17 +1973,183 @@ async function libInsert(text, logId) {
   }
 }
 
-async function libSaveText(text) {
-  const outcome = await createSavedPrompt(text, "", []);
-  if (outcome === "saved") {
-    statsBump("saves");
-    tipDone("save");
-    await fetchSavedPrompts();
-    showToast("Saved to your library", "success");
-  } else {
-    showToast(outcome === "duplicate" ? "Already in your library" : "Could not save", outcome === "duplicate" ? "info" : "error");
+/** Save from the sheet: the Save row, or a History rewrite. The form sits on the row. */
+function libSaveText(text, rowEl) {
+  const lib = document.getElementById("pm-library");
+  openSaveForm({
+    text,
+    anchor: (rowEl || lib)?.getBoundingClientRect(),
+    onClose: () => { if (panelOpen) { renderLibrary(); focusLibrarySearch(); } },
+  });
+}
+
+// ── Saving: one small form, wherever a prompt can be saved from ──
+//
+// There were four ways to save and none asked for anything: the library's
+// Save row, ⌘S on the card, History's "Save to library" and Improve's save as
+// new. Each wrote at once and named the prompt after its first sentence, so
+// the library filled with names nobody gave. Every route now opens this form
+// by the thing being saved: a name, left empty unless the user types one (an
+// unnamed prompt is shown by its own words), tags they already use one click
+// away, and the text itself. ↵ saves, so saving is still one keystroke.
+
+let saveForm = null;   // { text, busy, tags: Set, onClose, successMessage, returnFocus }
+
+/** The user's own tags, most used first: the ones worth a single click. */
+function savedTagSuggestions(limit = 6) {
+  const counts = new Map();
+  for (const p of savedPrompts) for (const t of p.tags || []) counts.set(t, (counts.get(t) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([t]) => t);
+}
+
+async function openSaveForm({ text, title = "", anchor = null, onClose = null, successMessage = "" }) {
+  closeSaveForm(false);
+  text = String(text || "").trim();
+  if (!text) return;
+  const auth = await getAuth();
+  if (!auth || isTokenExpired(auth.token)) {
+    showToast("Sign in to save prompts to your library.", "info", { label: "Sign in", run: () => openSettings() });
+    return;
   }
-  renderLibrary();
+  if (!(await ensureDataConsent())) return;
+  saveForm = { text, busy: false, tags: new Set(), onClose, successMessage, returnFocus: document.activeElement };
+  const el = document.createElement("div");
+  el.id = "pm-save";
+  el.className = "pm-lib pm-save";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", "Save to your library");
+  el.innerHTML =
+    `<div class="pm-save-head">Save to your library</div>` +
+    `<label class="pm-save-field"><span>Name</span><input id="pm-save-title" class="pm-lib-input" type="text" autocomplete="off" spellcheck="false" maxlength="120"` +
+    ` value="${escHtml(title)}" placeholder="Optional. Unnamed prompts show their words"></label>` +
+    `<div class="pm-save-field"><span>Tags</span><div class="pm-save-tags" id="pm-save-tags"></div>` +
+    `<input id="pm-save-newtags" class="pm-lib-input" type="text" autocomplete="off" spellcheck="false" placeholder="New tags, comma separated" aria-label="New tags"></div>` +
+    `<div class="pm-save-snip">${escHtml(norm(text))}</div>` +
+    `<div class="pm-save-foot"><span class="pm-save-status" id="pm-save-status" role="status"><kbd>↵</kbd>save<kbd>esc</kbd>cancel</span>` +
+    `<button type="button" class="pm-lib-verb pm-lib-verb-quiet" data-act="cancel">Cancel</button>` +
+    `<button type="button" class="pm-lib-verb" data-act="save" id="pm-save-go">Save</button></div>`;
+  document.body.appendChild(el);
+  el.addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.dataset.tag !== undefined) {
+      const t = b.dataset.tag;
+      if (saveForm.tags.has(t)) saveForm.tags.delete(t); else saveForm.tags.add(t);
+      renderSaveTags();
+    } else if (b.dataset.act === "cancel") closeSaveForm();
+    else if (b.dataset.act === "save") submitSaveForm();
+  });
+  el.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    // Stopped here: esc and ↵ belong to this form, not to the sheet or the
+    // card it opened from, nor to the host page behind them.
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); closeSaveForm(); }
+    else if (e.key === "Enter" && e.target.tagName === "INPUT") { e.preventDefault(); e.stopPropagation(); submitSaveForm(); }
+  });
+  renderSaveTags();
+  if (!promptsLoaded) fetchSavedPrompts().then(renderSaveTags);
+  positionSaveForm(anchor);
+  const input = document.getElementById("pm-save-title");
+  input.focus({ preventScroll: true });
+  input.select();
+}
+
+// A press anywhere else cancels the form, as it closes the sheet.
+document.addEventListener("pointerdown", (e) => {
+  if (saveForm && !e.target.closest?.("#pm-save")) closeSaveForm(false);
+}, true);
+
+function renderSaveTags() {
+  const box = document.getElementById("pm-save-tags");
+  if (!box || !saveForm) return;
+  const tags = [...new Set([...savedTagSuggestions(), ...saveForm.tags])];
+  box.hidden = !tags.length;
+  box.innerHTML = tags.map((t) =>
+    `<button type="button" data-tag="${escHtml(t)}" aria-pressed="${saveForm.tags.has(t)}">#${escHtml(t)}</button>`).join("");
+}
+
+/** Beside what is being saved: above it when there is room, else below. */
+function positionSaveForm(anchor) {
+  const el = document.getElementById("pm-save");
+  if (!el) return;
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 8;
+  const width = Math.min(340, vw - 2 * m);
+  el.style.width = width + "px";
+  const r = anchor || { left: (vw - width) / 2, right: (vw + width) / 2, top: vh / 2, bottom: vh / 2 };
+  el.style.left = Math.max(m, Math.min(r.right - width, vw - width - m)) + "px";
+  const h = el.offsetHeight;
+  if (r.top - gap - m >= h || r.top > vh - r.bottom) {
+    el.style.top = Math.max(m, r.top - gap - h) + "px";
+  } else {
+    el.style.top = Math.min(vh - h - m, r.bottom + gap) + "px";
+  }
+}
+
+function closeSaveForm(restoreFocus = true) {
+  const f = saveForm;
+  saveForm = null;
+  document.getElementById("pm-save")?.remove();
+  if (!f) return;
+  if (restoreFocus && f.returnFocus?.isConnected) f.returnFocus.focus({ preventScroll: true });
+  f.onClose?.();
+}
+
+async function submitSaveForm() {
+  const f = saveForm;
+  if (!f || f.busy) return;
+  const title = document.getElementById("pm-save-title")?.value.trim() || "";
+  const typed = (document.getElementById("pm-save-newtags")?.value || "")
+    .split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean);
+  const tags = [...new Set([...f.tags, ...typed])];
+  const go = document.getElementById("pm-save-go");
+  f.busy = true;
+  if (go) { go.disabled = true; go.textContent = "Saving\u2026"; }
+  const outcome = await createSavedPrompt(f.text, title, tags);
+  f.busy = false;
+  if (saveForm !== f) return;   // closed while the request was out
+  if (outcome === "failed") {
+    if (go) { go.disabled = false; go.textContent = "Save"; }
+    const status = document.getElementById("pm-save-status");
+    if (status) { status.textContent = "Could not save. Check your connection and try again."; status.classList.add("pm-save-error"); }
+    return;
+  }
+  if (outcome === "duplicate") {
+    closeSaveForm();
+    // Nothing was written, so nothing is refetched; the user is shown where it is.
+    showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(f.text) });
+    return;
+  }
+  const id = lastSavedPromptId;
+  statsBump("saves");
+  tipDone("save");
+  // Gone as soon as the server says yes; the list catches up behind it.
+  closeSaveForm();
+  showToast(f.successMessage || (title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library"),
+    "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
+  await fetchSavedPrompts();
+  if (panelOpen) renderLibrary();
+}
+
+async function undoSave(id) {
+  if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return; }
+  if (selectedIds.has(id)) toggleAttachment({ id });
+  await fetchSavedPrompts();
+  if (panelOpen) renderLibrary();
+  showToast("Removed from your library", "info");
+}
+
+/** Open the library on a prompt that is already there. */
+function showInLibrary(text) {
+  togglePanel(true);
+  searchQuery = norm(text).slice(0, 40);
+  const q = document.getElementById("pm-lib-q");
+  if (q) q.value = searchQuery;
+  renderLibraryList();
+}
+
+/** The row element for list index i (the highlighted one when i is undefined). */
+function libRowEl(i) {
+  return document.querySelector(`#pm-library .pm-lib-row[data-i="${i ?? libSel}"]`);
 }
 
 function libAct(act, i) {
@@ -1995,12 +2164,12 @@ function libAct(act, i) {
   switch (act) {
     case "insert":
       if (!it) return;
-      if (it.kind === "save") { libSaveText(it.text); return; }
+      if (it.kind === "save") { libSaveText(it.text, libRowEl(i)); return; }
       if (it.kind === "recent") { libInsert(it.h.enhanced, it.h.log_id); return; }
       libInsert(it.p.content);
       return;
     case "save":
-      if (it?.kind === "save") libSaveText(it.text);
+      if (it?.kind === "save") libSaveText(it.text, libRowEl(i));
       return;
     case "attach":
       if (it?.kind === "saved") toggleAttachment(it.p);
@@ -2037,7 +2206,7 @@ function libAct(act, i) {
       }
       return;
     case "keep":
-      if (it?.kind === "recent") { libRowMenu = null; libSaveText(it.h.enhanced); }
+      if (it?.kind === "recent") { libRowMenu = null; libSaveText(it.h.enhanced, libRowEl(i)); }
       return;
     case "copy":
       if (it?.kind === "recent") {
@@ -3772,7 +3941,7 @@ function hideCard() {
 // pointer passes on its way to the chat box.
 
 /** What counts as "the page" and not the extension's own surfaces. */
-const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-caret, #pm-rail, " +
+const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-caret, #pm-rail, " +
   "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
 
 function renderStrip() {

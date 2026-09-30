@@ -265,10 +265,31 @@ def main():
         check(rows()[0].startswith("Save “Turn these meeting notes"), f"the box offered as a Save row, got {rows()[0]!r}")
         verb = ev("document.querySelectorAll('#pm-library .pm-lib-row')[1].querySelector('.pm-lib-verb').textContent")
         check(verb == "Replace", f"box has text: Replace, got {verb!r}")
+        # ↵ on the Save row opens the save form on it; ↵ again saves
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#pm-save")
+        check(ev("document.activeElement.id") == "pm-save-title", "the form opens with its name field focused")
+        check(page.input_value("#pm-save-title") == "", "the name starts empty: an unnamed prompt shows its words")
+        check("Turn these meeting notes" in page.inner_text("#pm-save .pm-save-snip"), "the form shows what it will save")
+        check(ev("panelOpen"), "and the sheet stays open under it")
+        tags = [t.strip() for t in page.locator("#pm-save-tags button").all_inner_texts()]
+        check("#coding" in tags and "#writing" in tags, f"the user's own tags are one click away, got {tags}")
+        page.click("#pm-save-tags button[data-tag='writing']")
+        check(page.get_attribute("#pm-save-tags button[data-tag='writing']", "aria-pressed") == "true", "a click picks a tag")
+        page.fill("#pm-save-newtags", "meetings, #notes")
+        shot("5-save-form")
+        page.focus("#pm-save-title")
+        check(ev("panelOpen") and page.locator("#pm-save").count() == 1, "working in the form leaves the sheet open")
         page.keyboard.press("Enter")
         page.wait_for_function("FAKE_API.calls.some(c => c.method === 'POST' && c.path === '/saved-prompts')")
+        post = calls("POST", "/saved-prompts")[-1]["body"]
+        check("title" not in post and sorted(post.get("tags", [])) == ["meetings", "notes", "writing"],
+              f"saved unnamed, with the picked and typed tags, got {post}")
+        page.wait_for_selector("#pm-save", state="detached", timeout=3000)
+        check(True, "the form goes once the server says yes")
         page.wait_for_function("!document.querySelector('#pm-library .pm-lib-row-save') && "
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
+        check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
