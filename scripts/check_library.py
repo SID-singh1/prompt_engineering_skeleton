@@ -303,6 +303,10 @@ def main():
         page.wait_for_function("!document.querySelector('#pm-library .pm-lib-row-save') && "
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
         check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
+        toast = rect(".pm-toast")
+        for what, sel in (("the context chips", "#pm-rail"), ("the chat box", "form"), ("the open library", "#pm-library")):
+            check(not overlaps(toast, rect(sel)), f"the toast stays off {what}")
+        check(toast["r"] >= 1440 - 60, "and sits on the pill's side of the window")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
@@ -642,6 +646,17 @@ def main():
         check(w > 60, f"the chip keeps its size against host button rules, got {w}px")
         stack = ev("document.elementsFromPoint(1408, 860).map(e => e.id || e.tagName)[0]")
         check(stack in ("path", "svg", "SPAN", "pm-trigger"), f"⊕ stays clickable, top element {stack}")
+
+        # ── the pill on the box's corner and the chips on its edge share a row (Claude, seen live) ──
+        page.set_viewport_size({"width": 1000, "height": 800})
+        ev("""clearAttachments(); savedPrompts.slice(0, 3).forEach((p) => toggleAttachment(p));
+              H.type(H.ORIG); H.stream(); H.done(); hideCard();""")
+        page.wait_for_timeout(400)
+        pill, rail, box = rect("#pm-trigger"), rect("#pm-rail"), rect("form")
+        check(pill["b"] <= box["t"] + 1, f"a wide pill steps up onto the box's corner here ({pill} vs {box})")
+        check(not overlaps(rail, pill), f"and the chips stop short of it ({rail} vs {pill})")
+        ev("closeCard(); clearAttachments()")
+        page.set_viewport_size({"width": 1440, "height": 900})
 
         check(not errors, f"page errors: {errors}")
         page.close()
