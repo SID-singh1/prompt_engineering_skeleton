@@ -1448,6 +1448,7 @@ const LIB_ICON = {
   // Drawn rather than typed, like the others: a "?" left to the host's font
   // renders at a different weight and baseline on every site.
   close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
+  tick: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 6.3 5 8.6l4.4-5"/></svg>',
   help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
 };
 
@@ -1857,12 +1858,14 @@ function libRowsHtml() {
     const words = p.title
       ? `<div class="pm-lib-title">${escHtml(p.title)}</div><div class="pm-lib-preview pm-lib-clamp">${escHtml(norm(p.content))}</div>`
       : `<div class="pm-lib-title pm-lib-untitled">${escHtml(norm(p.content))}</div>`;
-    let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
-      `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
+    // The tick is what a click on the row leaves behind: in context or not.
+    // aria-checked, because aria-selected already means "highlighted" here
+    // (the search box points at that row with aria-activedescendant).
+    let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}" aria-checked="${att}">` +
+      `<span class="pm-lib-tick" aria-hidden="true">${LIB_ICON.tick}</span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
       `<div class="pm-lib-acts">` +
-      `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" aria-label="${att ? "Detach" : "Attach as context"}" title="${att ? "Attached as context" : "Attach as context"} (${CMD_KEY}↵)">${LIB_ICON.clip}</button>` +
       `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
-      `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
+      `<button type="button" class="pm-lib-verb" data-act="insert" title="${verb} into the chat box (${CMD_KEY}↵)">${verb}</button></div></div>`;
     if (libRowMenu === p.id) {
       row += `<div class="pm-lib-rowmenu"><button type="button" data-act="improve" data-i="${i}" title="Rewrite this saved prompt, then update it or save a new one">Improve</button>` +
         `<button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;

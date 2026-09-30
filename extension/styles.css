@@ -2119,13 +2119,31 @@
     border-top: 1px solid var(--pm-con-border);
 }
 
+/* A saved prompt's tick box: the state a click on its row toggles. */
+.pm-lib .pm-lib-row:has(.pm-lib-tick) { grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; padding-left: 9px; }
+.pm-lib .pm-lib-tick {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    border-radius: 5px;
+    border: 1.5px solid rgba(255, 255, 255, 0.24);
+    color: transparent;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.pm-lib .pm-lib-tick svg { width: 11px; height: 11px; }
+.pm-lib .pm-lib-row:hover .pm-lib-tick { border-color: rgba(255, 255, 255, 0.42); }
+.pm-lib .pm-lib-row.pm-att { background: var(--pm-accent-soft); }
+.pm-lib .pm-lib-row.pm-att.pm-sel { background: rgba(80, 200, 168, 0.19); }
+.pm-lib .pm-lib-row.pm-att .pm-lib-tick { background: var(--pm-accent); border-color: var(--pm-accent); color: #06201a; }
+@media (prefers-reduced-motion: reduce) { .pm-lib .pm-lib-tick { transition: none; } }
+
 /* One visible action until you point at a row: the clip, and only on a row
    that is attached. Hover or ↑↓ brings the rest. */
 .pm-lib .pm-lib-acts { display: none; align-items: center; gap: 2px; }
 .pm-lib .pm-lib-row.pm-sel .pm-lib-acts,
-.pm-lib .pm-lib-row:hover .pm-lib-acts,
-.pm-lib .pm-lib-row.pm-att .pm-lib-acts { display: flex; }
-.pm-lib .pm-lib-row.pm-att:not(.pm-sel):not(:hover) .pm-lib-acts > :not(.pm-lib-attach) { visibility: hidden; }
+.pm-lib .pm-lib-row:hover .pm-lib-acts { display: flex; }
 
 .pm-lib .pm-lib-verb {
     margin-left: 2px;
