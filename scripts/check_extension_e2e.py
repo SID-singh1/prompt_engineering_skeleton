@@ -505,6 +505,10 @@ def main():
         page.click("#pm-library [data-act='improve']")
         page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').startsWith('Improved')", timeout=8000)
         page.click("#pm-card-save")
+        page.wait_for_selector("#pm-save", timeout=5000)
+        check(page.input_value("#pm-save-title") == "Code review template (improved)",
+              "saving an improvement opens the form, named after the original")
+        page.keyboard.press("Enter")
         page.wait_for_selector(".pm-toast:has-text('new prompt')", timeout=5000)
         check(server["post"][-1] == {"content": REPLY["deep"], "title": "Code review template (improved)"},
               f"save as new keeps the original and adds one, got {server['post'][-1:]}")
