@@ -2110,6 +2110,18 @@ function onLibraryKeydown(e) {
     if (libPeek !== null) showPeek(libSel);   // an open preview follows the highlight
     return;
   }
+  // → at the end of the query opens the whole prompt; ← puts it away. Only at
+  // the end, so → still moves the caret through what was typed.
+  if (e.key === "ArrowRight" && e.target.selectionStart === e.target.value.length && !mod && !e.shiftKey) {
+    const it = libraryItems()[libSel];
+    if (it && it.kind !== "save") { e.preventDefault(); showPeek(libSel); }
+    return;
+  }
+  if (e.key === "ArrowLeft" && libPeek !== null) {
+    e.preventDefault();
+    hidePeek();
+    return;
+  }
   if (e.key === "Enter") {
     e.preventDefault(); e.stopPropagation();
     if (!n) return;
