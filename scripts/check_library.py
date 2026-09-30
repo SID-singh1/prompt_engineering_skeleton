@@ -336,6 +336,28 @@ def main():
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
 
+        # ── keys where they act: tooltips with keycaps ──
+        open_lib()
+        page.hover("#pm-lib-close")
+        page.wait_for_timeout(120)
+        check(page.locator("#pm-keytip:not([hidden])").count() == 0, "a pointer passing over a control does not pop a tip")
+        page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
+        check(page.inner_text("#pm-keytip span >> nth=0") == "Close" and page.locator("#pm-keytip kbd").all_inner_texts() == ["Esc"],
+              "resting on × names it and draws its key")
+        tip, btn = rect("#pm-keytip"), rect("#pm-lib-close")
+        check(tip["b"] <= btn["t"], "above the control, not over it")
+        check(page.get_attribute("#pm-lib-close", "title") is None, "and no native tooltip doubles it")
+        page.hover("#pm-library .pm-lib-row[aria-checked] >> nth=0")     # a saved prompt, not the Save row
+        page.hover("#pm-library .pm-lib-row[aria-checked] >> nth=0 >> [data-act='insert']")
+        page.wait_for_timeout(80)
+        check(page.locator("#pm-keytip:not([hidden])").count() == 1 and "into the chat box" in page.inner_text("#pm-keytip"),
+              "moving to the next control while warm shows its tip at once")
+        check(len(page.locator("#pm-keytip kbd").all_inner_texts()) == 2, "⌘↵ drawn as its two keys")
+        page.mouse.move(300, 150)
+        page.wait_for_timeout(50)
+        check(page.locator("#pm-keytip:not([hidden])").count() == 0, "and it goes with the pointer")
+        page.keyboard.press("Escape")
+
         # ── the keyboard map ──
         ev("document.activeElement.blur()")          # on the page, not in a text box
         page.keyboard.press("?")

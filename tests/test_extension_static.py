@@ -1670,3 +1670,16 @@ def test_the_map_gives_the_keyboard_back():
     assert "keyMapReturn.focus(" in close
     opener = _function_bodies(CONTENT_JS, r"openKeyMap")["openKeyMap"]
     assert 'e.key === "Escape"' in opener and 'aria-modal="true"' in opener
+
+
+def test_every_key_a_tooltip_shows_is_one_the_map_lists():
+    """Tooltips teach keys one at a time; the map is where they are all
+    written down. A key on a tooltip that the map does not list has drifted."""
+    import re
+    listed = _shortcuts_block()
+    keys = set(re.findall(r'data-pm-key="([^"]+)"', CONTENT_JS)) | set(re.findall(r"dataset\.pmKey = (`[^`]+`|\"[^\"]+\")", CONTENT_JS))
+    keys = {k.strip('`"') for k in keys}
+    assert keys, "no control carries a keycap tooltip"
+    for k in keys:
+        assert f'"{k}"' in listed or f"`{k}`" in listed, f"a tooltip shows {k}, which the map does not list"
+    assert 'title="Close (esc)"' not in CONTENT_JS, "a native title would double the tooltip"
