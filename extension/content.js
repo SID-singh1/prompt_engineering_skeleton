@@ -1147,7 +1147,9 @@ function placePill() {
       bottom = Math.min(maxBottom, Math.round(window.innerHeight - r.top + gap));
       inset = Math.max(PILL_MARGIN, Math.round(pillDock === "left" ? r.left : window.innerWidth - r.right));
     };
-    const c = composer && pill.classList.contains("pm-pill-open") ? composer.getBoundingClientRect() : null;
+    // The box as drawn, as the card and the chips use: measured by its
+    // editable, the pill came to rest 11px down over the box's frame.
+    const c = composer && pill.classList.contains("pm-pill-open") ? composerFrame(composer) : null;
     const cardEl = document.getElementById("pm-card");
     const cb = cardEl ? cardEl.getBoundingClientRect() : null;
     if (hits(c) || hits(cb)) {
