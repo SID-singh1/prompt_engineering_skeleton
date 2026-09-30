@@ -1547,7 +1547,11 @@ function createLibrary() {
   });
   lib.addEventListener("pointerover", (e) => {
     const row = e.target.closest?.(".pm-lib-row[data-i]");
-    if (row && !row.classList.contains("pm-lib-row-save")) schedulePeek(Number(row.dataset.i));
+    if (!row || row.classList.contains("pm-lib-row-save")) return;
+    // Only a row that hides some of its words has anything to show beside it.
+    // A one-line prompt opened a panel repeating that one line (seen live).
+    if (rowIsClipped(row)) schedulePeek(Number(row.dataset.i));
+    else { clearTimeout(peekOpenTimer); if (libPeek !== null) hidePeek(); }
   });
   document.addEventListener("pointermove", trackPeekPointer, { capture: true, passive: true });
 
@@ -2547,6 +2551,11 @@ function hidePeek() {
   document.getElementById("pm-peek")?.remove();
 }
 
+/** Whether a row's clamped text runs past what it shows. */
+function rowIsClipped(row) {
+  return [...row.querySelectorAll(".pm-lib-clamp, .pm-lib-untitled")].some((el) => el.scrollHeight > el.clientHeight + 1);
+}
+
 /** Pointer came to rest on a row: open (or move) the preview after a beat. */
 function schedulePeek(i) {
   clearTimeout(peekOpenTimer);
@@ -2596,6 +2605,20 @@ function positionPeek() {
   // Level with the sheet's edge nearest the pill, so the two read as a pair.
   if (lib.dataset.side === "below") { peek.style.top = r.top + "px"; peek.style.bottom = "auto"; }
   else { peek.style.bottom = (window.innerHeight - r.bottom) + "px"; peek.style.top = "auto"; }
+  // But never on the context chips or the chat box: the chips are where a
+  // tick shows up, and the preview sat on them (seen live). It rises above
+  // whichever it would cover, if that leaves it room to be read.
+  const obstacles = [document.getElementById("pm-rail"), findComposer() && { getBoundingClientRect: () => composerFrame(findComposer()) }]
+    .filter((o) => o && !o.hidden).map((o) => o.getBoundingClientRect()).filter((o) => o && o.width);
+  for (const o of obstacles) {
+    const pr = peek.getBoundingClientRect();
+    if (!(pr.left < o.right && pr.right > o.left && pr.top < o.bottom && pr.bottom > o.top)) continue;
+    const limit = o.top - gap;
+    if (limit - m < 160) continue;
+    peek.style.top = "auto";
+    peek.style.bottom = (window.innerHeight - limit) + "px";
+    peek.style.maxHeight = Math.min(parseFloat(peek.style.maxHeight), limit - m) + "px";
+  }
 }
 
 // ── Keyboard shortcuts: a map over the page ──
