@@ -1962,6 +1962,12 @@ async function libSaveText(text) {
 function libAct(act, i) {
   const list = libraryItems();
   const it = list[i ?? libSel];
+  // What a click on the row, or ↵, means for this kind of row. A saved prompt
+  // is ticked as context for the next rewrite and the sheet stays open, so
+  // several can be picked in a row; putting its text in the chat box is the
+  // row's Insert button, or ⌘↵. A past rewrite cannot be context (the server
+  // looks context up among saved prompts), so its row still inserts.
+  if (act === "primary") act = it?.kind === "saved" ? "attach" : it?.kind === "save" ? "save" : "insert";
   switch (act) {
     case "insert":
       if (!it) return;
@@ -2066,8 +2072,8 @@ function onLibraryClick(e) {
   const rowEl = e.target.closest("[data-i]");
   const i = rowEl ? Number(rowEl.dataset.i) : undefined;
   if (act) { libAct(act, i); return; }
-  // A click on the row itself does the row's verb.
-  if (rowEl?.classList.contains("pm-lib-row")) { libSel = i; libAct("insert", i); }
+  // A click on the row itself does what the row is for: see libAct("primary").
+  if (rowEl?.classList.contains("pm-lib-row")) { libSel = i; libAct("primary", i); }
 }
 
 function onLibraryInput(e) {
@@ -2126,7 +2132,10 @@ function onLibraryKeydown(e) {
   if (e.key === "Enter") {
     e.preventDefault(); e.stopPropagation();
     if (!n) return;
-    libAct(mod ? "attach" : "insert");
+    // ↵ does what a click does; ⌘↵ inserts. The other way round from before:
+    // the keyboard and the pointer now agree on what picking a row means.
+    const it = libraryItems()[libSel];
+    libAct(mod && it?.kind === "saved" ? "insert" : "primary");
   }
 }
 

@@ -226,10 +226,11 @@ def main():
         page.keyboard.press("ArrowUp")
         check(page.get_attribute("#pm-lib-q", "aria-activedescendant") == "pm-lib-row-4", "↑ wraps to the last row")
 
-        # attach with ⌘↵
+        # ↵ ticks a saved prompt as context, and the sheet stays open for more
         page.keyboard.press("ArrowDown")          # wraps back to the first row
-        page.keyboard.press("Meta+Enter")
-        check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "⌘↵ attaches: a chip on the rail")
+        page.keyboard.press("Enter")
+        check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
+        check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
         check("1 attached as context" in page.inner_text("#pm-lib-foot"), "the foot says so")
         check(ev("[...selectedIds]") == ["p1"], "selected for the next rewrite")
@@ -241,7 +242,7 @@ def main():
         page.keyboard.press("ArrowDown")
         page.keyboard.press("ArrowDown")
         check(page.inner_text("#pm-library .pm-lib-row.pm-sel .pm-lib-verb").strip() == "Insert", "empty box: Insert")
-        page.keyboard.press("Enter")
+        page.keyboard.press("Meta+Enter")
         page.wait_for_selector("#pm-library", state="hidden")
         # Insert gives the editor a frame to see the selection before clearing.
         page.wait_for_function("document.getElementById('composer').textContent.length > 0", timeout=3000)
