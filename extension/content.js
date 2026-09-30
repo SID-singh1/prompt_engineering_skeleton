@@ -3628,6 +3628,11 @@ function positionCard() {
   // name throughout, and shadowing it inside a function is a trap for the next
   // line added here.
   const frame = card.offsetHeight - (textEl ? textEl.clientHeight : 0);
+  // max-height applies to the text's content box, and clientHeight above
+  // counts its padding: without this the card came out that much taller than
+  // the room it was fitted to, and on a short window ran into the chat box.
+  const textCs = textEl && getComputedStyle(textEl);
+  const textPad = textCs ? parseFloat(textCs.paddingTop) + parseFloat(textCs.paddingBottom) : 0;
 
   const overlapsComposer = Boolean(box) && left < box.right && left + width > box.left;
 
@@ -3657,14 +3662,14 @@ function positionCard() {
     // instead would walk it down over the composer exactly when the head made
     // it taller. MIN_TEXT stops a short window collapsing the rewrite to a
     // sliver.
-    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame - textPad) + "px");
     top = Math.max(margin, floor - (card.offsetHeight || 160));
   } else {
     let ceiling = pillBox.bottom + gap;
     let floor = window.innerHeight - margin;
     if (overlapsComposer && box.top > ceiling) floor = box.top - gap;
     room = floor - ceiling;
-    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame - textPad) + "px");
     top = ceiling;
   }
   card.style.top = top + "px";
