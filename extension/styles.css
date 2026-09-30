@@ -2074,6 +2074,51 @@
     color: var(--pm-con-text-2);
 }
 
+/* ── The whole prompt, beside the sheet ── */
+.pm-lib.pm-peek { width: 360px; max-height: 520px; animation: pm-peek-in .12s ease-out; }
+@keyframes pm-peek-in { from { opacity: 0; } to { opacity: 1; } }
+.pm-lib .pm-peek-head {
+    flex: none;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px 9px;
+    border-bottom: 1px solid var(--pm-con-border);
+}
+.pm-lib .pm-peek-head .pm-lib-meta { margin-top: 3px; }
+.pm-lib .pm-peek-title { font-size: 13.5px; font-weight: 600; color: var(--pm-con-text); overflow-wrap: anywhere; }
+.pm-lib .pm-peek-untitled { color: var(--pm-con-muted); font-weight: 500; }
+.pm-lib .pm-peek-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 11px 14px 13px;
+    color: var(--pm-con-text-2);
+    font-size: 12.5px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .14) transparent;
+}
+.pm-lib .pm-peek-from {
+    margin-top: 12px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--pm-con-border);
+    color: var(--pm-con-muted);
+}
+.pm-lib .pm-peek-from span { display: block; margin-bottom: 2px; font-size: 11px; letter-spacing: .02em; }
+.pm-lib .pm-peek-foot {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 8px 10px;
+    border-top: 1px solid var(--pm-con-border);
+}
+
 /* One visible action until you point at a row: the clip, and only on a row
    that is attached. Hover or ↑↓ brings the rest. */
 .pm-lib .pm-lib-acts { display: none; align-items: center; gap: 2px; }
@@ -2096,6 +2141,8 @@
     cursor: pointer;
 }
 .pm-lib .pm-lib-verb:hover { background: rgba(80, 200, 168, .2); }
+.pm-lib .pm-lib-verb-quiet { border-color: var(--pm-con-border); background: none; color: var(--pm-con-text-2); }
+.pm-lib .pm-lib-verb-quiet:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
 
 .pm-lib .pm-lib-rowmenu { display: flex; gap: 4px; padding: 0 6px 6px 22px; }
 .pm-lib .pm-lib-rowmenu button,

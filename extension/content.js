@@ -1517,13 +1517,18 @@ function createLibrary() {
     lib.querySelectorAll(".pm-lib-row[data-i]").forEach((r) => r.classList.toggle("pm-sel", Number(r.dataset.i) === libSel));
     syncActiveDescendant();
   });
+  lib.addEventListener("pointerover", (e) => {
+    const row = e.target.closest?.(".pm-lib-row[data-i]");
+    if (row && !row.classList.contains("pm-lib-row-save")) schedulePeek(Number(row.dataset.i));
+  });
+  document.addEventListener("pointermove", trackPeekPointer, { capture: true, passive: true });
 
   // Anywhere else closes it. Capture phase, so a host handler that stops the
   // event cannot strand the sheet open. Modals and toasts the sheet itself
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
   // So does turning the wheel over the conversation: the sheet is fixed to
@@ -1550,6 +1555,7 @@ function togglePanel(force) {
   }
   panelOpen = open;
   lib.hidden = !open;
+  hidePeek();
   const chip = document.getElementById("pm-library-btn");
   chip?.setAttribute("aria-expanded", String(open));
   syncHelpChipExpanded();
@@ -1648,6 +1654,7 @@ function positionLibrary() {
   lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
   lib.style.maxHeight = Math.max(160, up ? above : below) + "px";
   lib.dataset.side = up ? "above" : "below";
+  positionPeek();
 }
 
 function libraryItems() {
@@ -1709,6 +1716,7 @@ function renderLibrary() {
   }
   afterListRender(lib);
   positionLibrary();
+  refreshPeek();
 }
 
 /** Typing in the search box redraws the rows only: rebuilding the input under
@@ -1721,6 +1729,7 @@ function renderLibraryList() {
   const foot = lib.querySelector("#pm-lib-foot");
   if (foot) foot.innerHTML = libFootHtml();
   afterListRender(lib);
+  refreshPeek();
 }
 
 function afterListRender(lib) {
@@ -2016,6 +2025,7 @@ function onLibraryClick(e) {
   if (b?.dataset.view) {
     libView = b.dataset.view;
     libSel = 0; libRowMenu = null; libConfirm = null;
+    hidePeek();
     renderLibrary();
     focusLibrarySearch();
     if (libView === "recent" && !libHistoryLoaded) {
@@ -2063,6 +2073,7 @@ function onLibraryInput(e) {
   if (e.target.id !== "pm-lib-q") return;
   searchQuery = e.target.value;
   libSel = 0; libRowMenu = null; libConfirm = null;
+  hidePeek();
   renderLibraryList();
 }
 
@@ -2080,6 +2091,7 @@ function onLibraryKeydown(e) {
   if (e.key === "Escape") {
     e.preventDefault(); e.stopPropagation();
     if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
+    if (libPeek !== null) { hidePeek(); return; }
     if (libPage === "privacy" || libPage === "feedback" || libPage === "shortcuts") {
       libPage = "list"; renderLibrary(); focusLibrarySearch(); return;
     }
@@ -2095,6 +2107,7 @@ function onLibraryKeydown(e) {
     libSel = (libSel + (e.key === "ArrowDown" ? 1 : -1) + n) % n;
     libRowMenu = null;
     renderLibraryList();
+    if (libPeek !== null) showPeek(libSel);   // an open preview follows the highlight
     return;
   }
   if (e.key === "Enter") {
@@ -2102,6 +2115,144 @@ function onLibraryKeydown(e) {
     if (!n) return;
     libAct(mod ? "attach" : "insert");
   }
+}
+
+// ── The whole prompt, beside the sheet ──
+//
+// A row shows two or three lines, and a saved prompt is often a paragraph.
+// Reading one used to mean Edit, a modal. Resting the pointer on a row, or
+// → from the search box, opens the whole of it beside the sheet, with the
+// row's own actions under it.
+//
+// Hover waits 350ms with the pointer still over one row (a pointer crossing
+// the list on its way somewhere else is not asking), then moves to the next
+// row at once while one is open. Leaving waits 150ms, long enough to cross
+// the gap into the preview to reach its buttons.
+//
+// Leaving is read from pointermove, not pointerleave. Both the list and the
+// preview redraw under the pointer (a click on Attach relabels its button),
+// and after the node under the pointer is replaced Chrome sends no leave
+// event for its old ancestors: the preview stayed up after the pointer had
+// gone.
+
+const PEEK_OPEN_MS = 350;
+const PEEK_SWITCH_MS = 60;
+const PEEK_CLOSE_MS = 150;
+let libPeek = null;           // the list index the preview shows, or null
+let peekOpenTimer = null;
+let peekCloseTimer = null;
+
+function peekItem() {
+  if (libPeek === null || !panelOpen || libPage !== "list") return null;
+  const it = libraryItems()[libPeek];
+  return it && it.kind !== "save" ? it : null;
+}
+
+function peekHtml(it) {
+  const verb = libVerb();
+  const btn = (act, label, extra = "") => `<button type="button" class="pm-lib-verb${extra}" data-act="${act}">${label}</button>`;
+  if (it.kind === "recent") {
+    const h = it.h;
+    return `<div class="pm-peek-head"><div class="pm-peek-title">Rewrite</div>` +
+      `<div class="pm-lib-meta">${escHtml(STYLE_NAMES[h.mode] || "")}${h.timestamp ? `<span>${escHtml(getTimeAgo(h.timestamp))}</span>` : ""}</div></div>` +
+      `<div class="pm-peek-body">${escHtml(h.enhanced)}<div class="pm-peek-from"><span>Rewritten from</span>${escHtml(h.original)}</div></div>` +
+      `<div class="pm-peek-foot">${btn("copy", "Copy", " pm-lib-verb-quiet")}${btn("keep", "Save to library", " pm-lib-verb-quiet")}${btn("insert", verb)}</div>`;
+  }
+  const p = it.p;
+  const att = selectedIds.has(p.id);
+  return `<div class="pm-peek-head"><div class="pm-peek-title${p.title ? "" : " pm-peek-untitled"}">${escHtml(p.title || "Untitled prompt")}</div>` +
+    promptMetaHtml(p) + `</div>` +
+    `<div class="pm-peek-body">${escHtml(p.content)}</div>` +
+    `<div class="pm-peek-foot">${btn("edit", "Edit", " pm-lib-verb-quiet")}` +
+    btn("attach", att ? "Detach" : "Attach as context", " pm-lib-verb-quiet") + btn("insert", verb) + `</div>`;
+}
+
+/** Show the preview for list row i, or redraw it where it is. */
+function showPeek(i) {
+  clearTimeout(peekOpenTimer);
+  clearTimeout(peekCloseTimer);
+  peekCloseTimer = null;
+  libPeek = i;
+  const it = peekItem();
+  if (!it) { hidePeek(); return; }
+  let peek = document.getElementById("pm-peek");
+  if (!peek) {
+    peek = document.createElement("div");
+    peek.id = "pm-peek";
+    peek.className = "pm-lib pm-peek";
+    peek.setAttribute("role", "region");
+    // Its buttons run the row's verbs; the list works out which row from here.
+    peek.addEventListener("click", (e) => {
+      const act = e.target.closest("button")?.dataset.act;
+      if (act && libPeek !== null) libAct(act, libPeek);
+    });
+    document.body.appendChild(peek);
+  }
+  peek.setAttribute("aria-label", "The whole prompt");
+  peek.dataset.i = String(i);
+  peek.innerHTML = peekHtml(it);
+  positionPeek();
+  watchScrollable(peek.querySelector(".pm-peek-body"));
+  markScrollable(peek.querySelector(".pm-peek-body"));
+}
+
+function hidePeek() {
+  clearTimeout(peekOpenTimer);
+  clearTimeout(peekCloseTimer);
+  peekCloseTimer = null;
+  libPeek = null;
+  document.getElementById("pm-peek")?.remove();
+}
+
+/** Pointer came to rest on a row: open (or move) the preview after a beat. */
+function schedulePeek(i) {
+  clearTimeout(peekOpenTimer);
+  if (libPeek === i) return;
+  peekOpenTimer = setTimeout(() => showPeek(i), libPeek === null ? PEEK_OPEN_MS : PEEK_SWITCH_MS);
+}
+
+/** Every pointer move while the sheet is open: is it still on the sheet or the preview? */
+function trackPeekPointer(e) {
+  if (!panelOpen) return;
+  const inside = Boolean(e.target.closest?.("#pm-library, #pm-peek"));
+  if (inside) {
+    clearTimeout(peekCloseTimer);
+    peekCloseTimer = null;
+  } else {
+    clearTimeout(peekOpenTimer);     // it left before the preview was asked for
+    if (libPeek !== null && !peekCloseTimer) peekCloseTimer = setTimeout(hidePeek, PEEK_CLOSE_MS);
+  }
+}
+
+/** Redraw an open preview after the list changed under it. */
+function refreshPeek() {
+  if (libPeek === null) return;
+  if (peekItem()) showPeek(libPeek); else hidePeek();
+}
+
+/**
+ * Beside the sheet, on the side away from the pill's edge, where the page has
+ * room. Where it has none (a narrow window), over the sheet itself: the
+ * preview is the thing being looked at, and it goes when the pointer leaves.
+ */
+function positionPeek() {
+  const peek = document.getElementById("pm-peek");
+  const lib = document.getElementById("pm-library");
+  if (!peek || !lib || lib.hidden) return;
+  const r = lib.getBoundingClientRect();
+  const vw = window.innerWidth, m = 12, gap = 8;
+  const width = Math.min(360, vw - 2 * m);
+  peek.style.width = width + "px";
+  const leftRoom = r.left - gap - m, rightRoom = vw - r.right - gap - m;
+  let left;
+  if (leftRoom >= width && (leftRoom >= rightRoom || rightRoom < width)) left = r.left - gap - width;
+  else if (rightRoom >= width) left = r.right + gap;
+  else left = Math.max(m, Math.min(r.left, vw - width - m));
+  peek.style.left = left + "px";
+  peek.style.maxHeight = Math.max(200, r.height) + "px";
+  // Level with the sheet's edge nearest the pill, so the two read as a pair.
+  if (lib.dataset.side === "below") { peek.style.top = r.top + "px"; peek.style.bottom = "auto"; }
+  else { peek.style.bottom = (window.innerHeight - r.bottom) + "px"; peek.style.top = "auto"; }
 }
 
 // ── Keyboard shortcuts, a page of the sheet ──
