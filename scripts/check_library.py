@@ -336,6 +336,43 @@ def main():
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
 
+        # ── the keyboard map ──
+        ev("document.activeElement.blur()")          # on the page, not in a text box
+        page.keyboard.press("?")
+        page.wait_for_selector("#pm-keys .pm-keys")
+        check(page.locator("#pm-keys .pm-kb-group").count() == 5, "? opens the map with every group side by side")
+        check(page.inner_text("#pm-keys .pm-kb-here .pm-kb-cap").startswith("ANYWHERE ON THE PAGE") or
+              page.inner_text("#pm-keys .pm-kb-here .pm-kb-cap").lower().startswith("anywhere on the page"),
+              "it lights the group for where the user is")
+        caps = page.locator("#pm-keys .pm-kb-group >> nth=0").locator(".pm-kb-row >> nth=0").locator("kbd").all_inner_texts()
+        check(len(caps) == 3, f"a chord is drawn as the keys it is pressed with, got {caps}")
+        check(ev("document.activeElement.closest('#pm-keys') !== null"), "the keyboard is in the map")
+        page.keyboard.press("Escape")
+        check(page.locator("#pm-keys").count() == 0, "esc closes it")
+        page.hover("#pm-trigger")
+        page.click("#pm-help-btn")
+        page.wait_for_selector("#pm-keys .pm-keys")
+        check(page.get_attribute("#pm-help-btn", "aria-expanded") == "true", "the Shortcuts chip opens it, and says so")
+        page.mouse.click(20, 450)                    # the scrim
+        check(page.locator("#pm-keys").count() == 0 and page.get_attribute("#pm-help-btn", "aria-expanded") == "false",
+              "a click outside closes it")
+        open_lib()
+        page.click("#pm-lib-more")
+        page.click("#pm-library [data-act='shortcuts']")
+        page.wait_for_selector("#pm-keys .pm-keys")
+        check("library" in page.inner_text("#pm-keys .pm-keys-here").lower(), "from the library's ⋯, the library's keys are lit")
+        page.keyboard.press("Escape")
+        check(ev("panelOpen") and ev("document.activeElement.id") == "pm-lib-q",
+              "esc closes the map and gives the keyboard back to the library")
+        page.keyboard.press("Escape")
+        ev("window.FAKE_SHORTCUT = ''; assignedShortcut = null; document.activeElement.blur()")
+        page.keyboard.press("?")
+        page.wait_for_function("document.querySelector('#pm-keys .pm-kb-unset')")
+        check("Not set" in page.inner_text("#pm-keys .pm-kb-unset"), "a rewrite key Chrome did not assign is not promised")
+        shot("7-keymap")
+        page.keyboard.press("Escape")
+        ev("window.FAKE_SHORTCUT = undefined; assignedShortcut = null")
+
         # ── save a prompt already sent, from the conversation ──
         msg = page.locator("[data-message-author-role='user'] >> nth=0")
         msg.hover()
