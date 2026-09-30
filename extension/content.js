@@ -135,8 +135,8 @@ const SHORTCUTS = () => [
     rows: [
       { keys: ["↑", "↓"], what: "Move through the list" },
       { keys: ["→"], what: "Read the whole prompt", note: "← puts it away" },
-      { keys: ["↵"], what: "Insert the selected prompt" },
-      { keys: [`${CMD_KEY}↵`], what: "Attach it as context instead" },
+      { keys: ["↵"], what: "Add it to context, or take it out", note: "a click does the same" },
+      { keys: [`${CMD_KEY}↵`], what: "Insert it into the chat box" },
       { keys: ["Esc"], what: "Go back, then close" },
     ],
   },

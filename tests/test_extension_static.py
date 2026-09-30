@@ -1496,6 +1496,16 @@ def test_every_listed_chord_is_one_the_code_answers():
     assert 'e.key === "ArrowLeft" && libPeek !== null' in CONTENT_JS
 
 
+def test_the_library_keys_are_listed_the_way_they_now_work():
+    """↵ and a click add to context; ⌘↵ inserts. The list said the opposite."""
+    listed = _shortcuts_block()
+    lib = listed[listed.index('"In the library"'):]
+    assert '"Add it to context, or take it out"' in lib
+    assert '`${CMD_KEY}↵`], what: "Insert it into the chat box"' in lib
+    assert 'libAct(mod && it?.kind === "saved" ? "insert" : "primary")' in CONTENT_JS
+    assert 'if (act === "primary") act = it?.kind === "saved" ? "attach"' in CONTENT_JS
+
+
 def test_the_sheet_does_not_promise_tab_to_insert():
     """Tab went back to being navigation; the sheet must not resurrect it."""
     listed = _shortcuts_block()
