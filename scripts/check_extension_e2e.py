@@ -484,7 +484,11 @@ def main():
         page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').endsWith('Quick')", timeout=8000)
         check("s2" in (server["stream"][-1].get("excluded_prompt_ids") or []), "a style rerun still leaves it out")
         type_prompt("an unrelated message I am halfway through")
-        page.click("#pm-card-accept")
+        # A click in the chat box tucks the card into its strip, which keeps the verb.
+        page.wait_for_selector("#pm-card.pm-card-tucked", timeout=3000)
+        check(page.inner_text("#pm-card-strip .pm-card-strip-verb").strip() == "Update",
+              "clicking into the chat box tucks the card, and its strip still offers Update")
+        page.click("#pm-card-strip .pm-card-strip-verb")
         page.wait_for_selector(".pm-toast:has-text('Updated')", timeout=5000)
         check(server["put"] and server["put"][-1] == ("s2", {"content": REPLY["quick"]}),
               f"Update writes the version on screen over the saved prompt, got {server['put'][-1:]}")
