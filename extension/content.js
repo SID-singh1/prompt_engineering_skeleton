@@ -1755,7 +1755,8 @@ function libHeadHtml() {
   }
   const count = libView === "saved" ? savedPrompts.length : enhanceHistory.length;
   const placeholder = libView === "saved"
-    ? (count ? `Search ${count} saved prompt${count === 1 ? "" : "s"}` : "Search saved prompts")
+    // Short enough to fit beside Saved | History, ⋯ and × in a 368px sheet.
+    ? (count ? `Search ${count} prompt${count === 1 ? "" : "s"}` : "Search saved prompts")
     : "Search your rewrite history";
   return `<div class="pm-lib-head">` +
     `<label class="pm-lib-search">${LIB_ICON.search}` +

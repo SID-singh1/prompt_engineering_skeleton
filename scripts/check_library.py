@@ -120,9 +120,10 @@ def main():
         check(ev("""getComputedStyle(document.querySelector('#pm-library .pm-lib-untitled')).webkitLineClamp === '3'"""),
               "an unnamed one shows three lines of its own words")
         check(page.inner_text("#pm-library .pm-lib-row >> nth=0").count("#") == 2, "tags show under the words")
+        check("2d ago" in page.inner_text("#pm-library .pm-lib-row >> nth=0 >> .pm-lib-meta"), "and how old the prompt is")
         check(page.locator("#pm-library .pm-lib-row >> nth=1").locator(".pm-lib-preview").count() == 0,
               "an untitled prompt is not split into a made-up title and the rest")
-        check(page.get_attribute("#pm-lib-q", "placeholder") == "Search 5 saved prompts", "placeholder counts prompts")
+        check(page.get_attribute("#pm-lib-q", "placeholder") == "Search 5 prompts", "placeholder counts prompts")
         lib, box, send = rect("#pm-library"), rect("form"), rect(".send")
         check(not overlaps(lib, send), "the sheet stays off the chat box's send button")
         check(not overlaps(lib, box), "and off the chat box itself at 1440×900")
