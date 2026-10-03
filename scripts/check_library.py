@@ -194,8 +194,9 @@ def main():
         page.wait_for_timeout(100)
         check(not ev("panelOpen"), "turning the wheel over the conversation closes it")
         open_lib()
-        box = page.locator("#pm-lib-list").bounding_box()
-        page.mouse.move(box["x"] + 40, box["y"] + 40)
+        # hover() waits for a list that is not being redrawn: the sheet draws
+        # again when the saved prompts and the usage count arrive.
+        page.locator("#pm-lib-list").hover()
         page.mouse.wheel(0, 60)
         page.wait_for_timeout(100)
         check(ev("panelOpen"), "the wheel inside the sheet only scrolls it")
@@ -226,12 +227,20 @@ def main():
         page.keyboard.press("ArrowUp")
         check(page.get_attribute("#pm-lib-q", "aria-activedescendant") == "pm-lib-row-4", "↑ wraps to the last row")
 
-        # attach with ⌘↵
+        # ↵ ticks a saved prompt as context, and the sheet stays open for more
         page.keyboard.press("ArrowDown")          # wraps back to the first row
-        page.keyboard.press("Meta+Enter")
-        check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "⌘↵ attaches: a chip on the rail")
+        page.keyboard.press("Enter")
+        check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
+        check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
+        check(page.inner_text("#pm-rail .pm-rail-label").strip() == "Context for ⊕", "the rail says what the chips are for")
+        check(page.is_visible("#pm-trigger .pm-pill-ctx") and page.inner_text("#pm-trigger .pm-pill-ctx") == "1",
+              "⊕ counts the context its next rewrite carries")
+        check("with 1 saved prompt as context" in page.get_attribute("#pm-trigger", "aria-label"), "and says so to a screen reader")
+        check(page.locator("#pm-rail .pm-rail-chip.pm-rail-new").count() == 1, "a newly ticked prompt pops onto the rail")
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
-        check("1 attached as context" in page.inner_text("#pm-lib-foot"), "the foot says so")
+        foot = page.inner_text("#pm-lib-foot")
+        check("1 in context" in foot, f"the foot says so, got {foot!r}")
+        check("for your next ⊕ rewrite" in foot, "and what context is for, with the chat box empty")
         check(ev("[...selectedIds]") == ["p1"], "selected for the next rewrite")
         check(ev("JSON.parse(sessionStorage.getItem('pm')).pm_attached")[0]["title"] == "Code review template",
               "kept in session storage with its title")
@@ -241,7 +250,7 @@ def main():
         page.keyboard.press("ArrowDown")
         page.keyboard.press("ArrowDown")
         check(page.inner_text("#pm-library .pm-lib-row.pm-sel .pm-lib-verb").strip() == "Insert", "empty box: Insert")
-        page.keyboard.press("Enter")
+        page.keyboard.press("Meta+Enter")
         page.wait_for_selector("#pm-library", state="hidden")
         # Insert gives the editor a frame to see the selection before clearing.
         page.wait_for_function("document.getElementById('composer').textContent.length > 0", timeout=3000)
@@ -262,6 +271,16 @@ def main():
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
+        check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
+        # The harness routes rewrites to its fake direct path; that the ticked
+        # ids ride with a server rewrite is checked in check_extension_e2e.py.
+        before = ev("FAKE.calls.length")
+        page.click("#pm-lib-foot [data-act='rewrite']")
+        page.wait_for_function(f"FAKE.calls.length > {before}")
+        check(ev("cardState") in ("streaming", "ready"), "Rewrite starts the rewrite of what is in the chat box")
+        check(not ev("panelOpen"), "and the sheet goes as the card comes up")
+        ev("closeCard()")
+        open_lib()
 
         # delete, with an inline confirm
         page.fill("#pm-lib-q", "spec")

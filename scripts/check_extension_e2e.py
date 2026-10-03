@@ -355,7 +355,7 @@ def main():
         titles = [x.strip() for x in page.locator("#pm-library .pm-lib-row .pm-lib-title").all_inner_texts()]
         check(titles == ["Code review template", "Bug report triage"], f"saved prompts from the server, got {titles}")
         page.keyboard.press("ArrowDown")
-        page.keyboard.press("Meta+Enter")
+        page.keyboard.press("Enter")
         page.wait_for_selector("#pm-rail .pm-rail-chip", timeout=5000)
         check("Bug report triage" in page.text_content("#pm-rail"), "attached: named on the rail")
         page.keyboard.press("Escape")

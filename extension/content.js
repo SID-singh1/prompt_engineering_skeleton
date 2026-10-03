@@ -135,8 +135,8 @@ const SHORTCUTS = () => [
     rows: [
       { keys: ["↑", "↓"], what: "Move through the list" },
       { keys: ["→"], what: "Read the whole prompt", note: "← puts it away" },
-      { keys: ["↵"], what: "Insert the selected prompt" },
-      { keys: [`${CMD_KEY}↵`], what: "Attach it as context instead" },
+      { keys: ["↵"], what: "Add it to context, or take it out", note: "a click does the same" },
+      { keys: [`${CMD_KEY}↵`], what: "Insert it into the chat box" },
       { keys: ["Esc"], what: "Go back, then close" },
     ],
   },
@@ -756,7 +756,10 @@ function createTrigger() {
       `<button class="pm-pill-up" type="button" title="Good rewrite" aria-label="Good rewrite">${PILL_THUMB_SVG(false)}</button>` +
       `<button class="pm-pill-down" type="button" title="Bad rewrite" aria-label="Bad rewrite">${PILL_THUMB_SVG(true)}</button>` +
     `</span>` +
-    `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>`;
+    `<button class="pm-pill-x" type="button" title="Discard this draft" aria-label="Discard draft" hidden>${PILL_X_SVG}</button>` +
+    // How many saved prompts the next rewrite will carry: ⊕ is where context
+    // is used, so it counts it, as the Library chip does.
+    `<span class="pm-pill-ctx" aria-hidden="true" hidden></span>`;
   btn.title = "Enhance this prompt\nShift-click for your library";
   // Click runs the thing people came for. This used to open the panel, which
   // meant the primary action sat two clicks deep behind a tab bar; the library
@@ -1001,7 +1004,7 @@ function renderPill() {
     label = pillApplied.thanked ? "Thanks" : "Inserted";
   }
 
-  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}`;
+  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
   if (sig === pillSignature) return;
   pillSignature = sig;
 
@@ -1028,8 +1031,12 @@ function renderPill() {
   xEl.title = state === "streaming" ? "Cancel the rewrite" : state === "error" ? "Dismiss" : "Discard this draft";
   xEl.setAttribute("aria-label", xEl.title);
 
+  const ctx = selectedIds.size;
+  const ctxBadge = pill.querySelector(".pm-pill-ctx");
+  if (ctxBadge) { ctxBadge.hidden = !ctx || state !== "idle"; ctxBadge.textContent = String(ctx); }
+  const withCtx = ctx ? ` with ${ctx} saved prompt${ctx === 1 ? "" : "s"} as context` : "";
   pill.setAttribute("aria-label", {
-    idle: "Enhance this prompt",
+    idle: "Enhance this prompt" + withCtx,
     streaming: "Rewriting your prompt",
     ready: "Enhanced prompt ready. Click to review or use Insert.",
     stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
@@ -1037,7 +1044,7 @@ function renderPill() {
     applied: "Rewrite inserted.",
   }[state]);
   pill.title = state === "idle"
-    ? "Enhance this prompt\nShift-click for your library"
+    ? `Enhance this prompt${withCtx}\nShift-click for your library`
     : state === "applied" ? "" : "Click to review the draft \u00b7 drag to move";
 
   // The pill's width just changed, so everything that hangs off it moves.
@@ -1448,6 +1455,7 @@ const LIB_ICON = {
   // Drawn rather than typed, like the others: a "?" left to the host's font
   // renders at a different weight and baseline on every site.
   close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
+  tick: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 6.3 5 8.6l4.4-5"/></svg>',
   help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
 };
 
@@ -1857,12 +1865,14 @@ function libRowsHtml() {
     const words = p.title
       ? `<div class="pm-lib-title">${escHtml(p.title)}</div><div class="pm-lib-preview pm-lib-clamp">${escHtml(norm(p.content))}</div>`
       : `<div class="pm-lib-title pm-lib-untitled">${escHtml(norm(p.content))}</div>`;
-    let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}">` +
-      `<span class="pm-lib-dot" aria-hidden="true"></span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
+    // The tick is what a click on the row leaves behind: in context or not.
+    // aria-checked, because aria-selected already means "highlighted" here
+    // (the search box points at that row with aria-activedescendant).
+    let row = `<div class="pm-lib-row${sel}${att ? " pm-att" : ""}" id="${id}" data-i="${i}" role="option" aria-selected="${Boolean(sel)}" aria-checked="${att}">` +
+      `<span class="pm-lib-tick" aria-hidden="true">${LIB_ICON.tick}</span><div class="pm-lib-text">${words}${promptMetaHtml(p)}</div>` +
       `<div class="pm-lib-acts">` +
-      `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" aria-label="${att ? "Detach" : "Attach as context"}" title="${att ? "Attached as context" : "Attach as context"} (${CMD_KEY}↵)">${LIB_ICON.clip}</button>` +
       `<button type="button" class="pm-lib-icon" data-act="more" aria-label="More actions" aria-expanded="${libRowMenu === p.id}">${LIB_ICON.more}</button>` +
-      `<button type="button" class="pm-lib-verb" data-act="insert">${verb}</button></div></div>`;
+      `<button type="button" class="pm-lib-verb" data-act="insert" title="${verb} into the chat box (${CMD_KEY}↵)">${verb}</button></div></div>`;
     if (libRowMenu === p.id) {
       row += `<div class="pm-lib-rowmenu"><button type="button" data-act="improve" data-i="${i}" title="Rewrite this saved prompt, then update it or save a new one">Improve</button>` +
         `<button type="button" data-act="edit" data-i="${i}">Edit</button><button type="button" class="pm-lib-danger" data-act="ask" data-i="${i}">Delete</button></div>`;
@@ -1878,12 +1888,21 @@ function libFootHtml() {
     parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : left === 1 ? "1 rewrite left today" : `${left} rewrites left today`}</span>`);
   }
   if (selectedIds.size) {
-    parts.push(`<span class="pm-lib-att-count">${selectedIds.size} attached as context</span>` +
+    const n = selectedIds.size, them = n === 1 ? "it" : "them";
+    parts.push(`<span class="pm-lib-att-count">${n} in context</span>` +
       `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
+    // What the ticks are for, said where they are ticked. Context shapes the
+    // ⊕ rewrite and is never sent to the chat on its own, so with text in the
+    // box the next step is offered here, and without it the foot says so.
+    parts.push(norm(getCurrentInputText()).length >= 3
+      ? `<button type="button" class="pm-lib-verb pm-lib-foot-go" data-act="rewrite" title="Rewrite what is in the chat box with ${them} as context">Rewrite with ${them}</button>`
+      : `<span class="pm-lib-foot-note">for your next ⊕ rewrite</span>`);
   }
   if (!parts.length) {
     const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
-    parts.push(`<span class="pm-lib-hints">${k("↵", libVerb().toLowerCase())}${k(CMD_KEY + "↵", "attach")}${slashEnabled ? k("//", "in the chat box") : k("esc", "close")}</span>`);
+    parts.push(`<span class="pm-lib-hints">` + (libView === "recent"
+      ? k("↵", libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
+      : k("↵", "add to context") + k(CMD_KEY + "↵", libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
   }
   return parts.join("");
 }
@@ -1962,6 +1981,12 @@ async function libSaveText(text) {
 function libAct(act, i) {
   const list = libraryItems();
   const it = list[i ?? libSel];
+  // What a click on the row, or ↵, means for this kind of row. A saved prompt
+  // is ticked as context for the next rewrite and the sheet stays open, so
+  // several can be picked in a row; putting its text in the chat box is the
+  // row's Insert button, or ⌘↵. A past rewrite cannot be context (the server
+  // looks context up among saved prompts), so its row still inserts.
+  if (act === "primary") act = it?.kind === "saved" ? "attach" : it?.kind === "save" ? "save" : "insert";
   switch (act) {
     case "insert":
       if (!it) return;
@@ -2061,13 +2086,14 @@ function onLibraryClick(e) {
     case "voice": closeLibrary(); toggleVoice(); return;
     case "signin": openSettings(); return;
     case "clear": clearAttachments(); return;
+    case "rewrite": closeLibrary(); handleEnhance(); return;
     case "sendfeedback": sendLibraryFeedback(); return;
   }
   const rowEl = e.target.closest("[data-i]");
   const i = rowEl ? Number(rowEl.dataset.i) : undefined;
   if (act) { libAct(act, i); return; }
-  // A click on the row itself does the row's verb.
-  if (rowEl?.classList.contains("pm-lib-row")) { libSel = i; libAct("insert", i); }
+  // A click on the row itself does what the row is for: see libAct("primary").
+  if (rowEl?.classList.contains("pm-lib-row")) { libSel = i; libAct("primary", i); }
 }
 
 function onLibraryInput(e) {
@@ -2126,7 +2152,10 @@ function onLibraryKeydown(e) {
   if (e.key === "Enter") {
     e.preventDefault(); e.stopPropagation();
     if (!n) return;
-    libAct(mod ? "attach" : "insert");
+    // ↵ does what a click does; ⌘↵ inserts. The other way round from before:
+    // the keyboard and the pointer now agree on what picking a row means.
+    const it = libraryItems()[libSel];
+    libAct(mod && it?.kind === "saved" ? "insert" : "primary");
   }
 }
 
@@ -2395,6 +2424,7 @@ function reconcileAttachments() {
 }
 
 function renderChipCount() {
+  renderPill();   // ⊕ counts the context it will use
   const cnt = document.querySelector("#pm-library-btn .pm-library-count");
   if (!cnt) return;
   cnt.textContent = selectedIds.size ? String(selectedIds.size) : "";
@@ -2433,15 +2463,17 @@ function composerFrame(el) {
  * because the card sits on that same edge, and when the chat box is too near
  * the top of the window to leave room above it.
  */
+let railShown = new Set();     // ids on the rail at its last draw, to animate only newcomers
+
 function renderRail() {
   let rail = document.getElementById("pm-rail");
-  if (!selectedIds.size) { rail?.remove(); return; }
+  if (!selectedIds.size) { rail?.remove(); railShown = new Set(); return; }
   if (!rail) {
     rail = document.createElement("div");
     rail.id = "pm-rail";
     rail.className = "pm-rail";
     rail.setAttribute("role", "group");
-    rail.setAttribute("aria-label", "Attached as context for the next rewrite");
+    rail.setAttribute("aria-label", "Context for your next rewrite");
     rail.addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b) return;
@@ -2453,11 +2485,17 @@ function renderRail() {
     });
     document.body.appendChild(rail);
   }
-  rail.innerHTML = [...selectedIds].map((id) => {
+  // Led by what the chips are for. They sit on the chat box, right over what
+  // is about to be sent, and read as if they were going with the message;
+  // they shape the ⊕ rewrite and are not sent on their own.
+  rail.innerHTML = `<span class="pm-rail-label" title="These saved prompts shape your next rewrite (⊕). They are not sent to the chat on their own.">Context for ⊕</span>` +
+    [...selectedIds].map((id) => {
     const title = attachTitles.get(id) || "Saved prompt";
-    return `<span class="pm-rail-chip" title="Attached as context: ${escHtml(title)}">${LIB_ICON.clip}<span>${escHtml(title)}</span>` +
+    const fresh = railShown.has(id) ? "" : " pm-rail-new";
+    return `<span class="pm-rail-chip${fresh}" title="Context for your next rewrite: ${escHtml(title)}">${LIB_ICON.clip}<span>${escHtml(title)}</span>` +
       `<button type="button" data-detach="${escHtml(String(id))}" aria-label="Detach ${escHtml(title)}">${PILL_X_SVG}</button></span>`;
   }).join("") + `<button type="button" class="pm-rail-add" data-act="railadd" aria-label="Attach another saved prompt">+ Context</button>`;
+  railShown = new Set(selectedIds);
   positionRail();
 }
 
@@ -2716,7 +2754,10 @@ function handleSlashKeydown(e) {
     renderSlash();
   } else if (e.key === "Enter" && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
     // With nothing to pick, Enter is the user's: it sends what they typed.
-    if (!items.length) { closeSlash(); return; }
+    // Muted, as esc mutes it: the //query is still at the caret until the
+    // host clears the box, and a selectionchange still queued from the typing
+    // reopened the menu over a message that had just been sent.
+    if (!items.length) { slashMuted = true; closeSlash(); return; }
     slashInsert();
   } else if (e.key === "Tab" && !e.shiftKey) {
     if (!items.length) return;

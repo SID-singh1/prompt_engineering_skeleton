@@ -235,6 +235,26 @@
 
 .pm-trigger:active { transform: translateY(0) scale(0.985); }
 
+/* The count of saved prompts the next rewrite carries, on ⊕'s shoulder. */
+.pm-pill-ctx {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    box-sizing: border-box;
+    border-radius: 8px;
+    border: 1.5px solid #0c0f0e;
+    background: var(--pm-accent);
+    color: #06201a;
+    font: 700 9.5px/13px var(--pm-font);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+}
+.pm-pill-ctx[hidden] { display: none; }
+
 .pm-trigger:focus-visible {
     outline: 2px solid var(--pm-accent);
     outline-offset: 3px;
@@ -2119,13 +2139,31 @@
     border-top: 1px solid var(--pm-con-border);
 }
 
+/* A saved prompt's tick box: the state a click on its row toggles. */
+.pm-lib .pm-lib-row:has(.pm-lib-tick) { grid-template-columns: 18px minmax(0, 1fr) auto; gap: 9px; padding-left: 9px; }
+.pm-lib .pm-lib-tick {
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 16px;
+    margin-top: 1px;
+    border-radius: 5px;
+    border: 1.5px solid rgba(255, 255, 255, 0.24);
+    color: transparent;
+    transition: background .12s ease, border-color .12s ease, color .12s ease;
+}
+.pm-lib .pm-lib-tick svg { width: 11px; height: 11px; }
+.pm-lib .pm-lib-row:hover .pm-lib-tick { border-color: rgba(255, 255, 255, 0.42); }
+.pm-lib .pm-lib-row.pm-att { background: var(--pm-accent-soft); }
+.pm-lib .pm-lib-row.pm-att.pm-sel { background: rgba(80, 200, 168, 0.19); }
+.pm-lib .pm-lib-row.pm-att .pm-lib-tick { background: var(--pm-accent); border-color: var(--pm-accent); color: #06201a; }
+@media (prefers-reduced-motion: reduce) { .pm-lib .pm-lib-tick { transition: none; } }
+
 /* One visible action until you point at a row: the clip, and only on a row
    that is attached. Hover or ↑↓ brings the rest. */
 .pm-lib .pm-lib-acts { display: none; align-items: center; gap: 2px; }
 .pm-lib .pm-lib-row.pm-sel .pm-lib-acts,
-.pm-lib .pm-lib-row:hover .pm-lib-acts,
-.pm-lib .pm-lib-row.pm-att .pm-lib-acts { display: flex; }
-.pm-lib .pm-lib-row.pm-att:not(.pm-sel):not(:hover) .pm-lib-acts > :not(.pm-lib-attach) { visibility: hidden; }
+.pm-lib .pm-lib-row:hover .pm-lib-acts { display: flex; }
 
 .pm-lib .pm-lib-verb {
     margin-left: 2px;
@@ -2229,6 +2267,8 @@
     cursor: pointer;
 }
 .pm-lib .pm-lib-low { color: #e0b25a; }
+.pm-lib .pm-lib-foot-go { margin-left: auto; }
+.pm-lib .pm-lib-foot-note { margin-left: auto; color: var(--pm-con-muted); }
 
 /* ── ⋯ ── */
 .pm-lib .pm-lib-menu {
@@ -2463,6 +2503,31 @@
 .pm-rail .pm-rail-chip button svg { width: 9px; height: 9px; }
 .pm-rail .pm-rail-chip button:hover { background: var(--pm-con-hover); color: var(--pm-con-text); }
 .pm-rail .pm-rail-add { padding: 0 10px; color: var(--pm-con-text-2); cursor: pointer; }
+/* On the console's own ground, like the chips: the rail floats over the host,
+   which may be white, and bare muted text there was unreadable. */
+.pm-rail .pm-rail-label {
+    pointer-events: auto;
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 13px;
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    color: var(--pm-con-muted);
+    font-size: 11.5px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: help;
+}
+@keyframes pm-rail-pop {
+    from { opacity: 0; transform: translateY(4px) scale(.85); }
+    to   { opacity: 1; transform: none; }
+}
+.pm-rail .pm-rail-new { animation: pm-rail-pop .22s cubic-bezier(.3, 1.4, .6, 1); }
+@media (prefers-reduced-motion: reduce) { .pm-rail .pm-rail-new { animation: none; } }
 .pm-rail .pm-rail-add:hover { color: var(--pm-con-text); border-color: var(--pm-con-border-hover); }
 
 /* ── // at the caret ──
