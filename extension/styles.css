@@ -2491,8 +2491,122 @@
    The rows are a two-column grid rather than flex space-between: the keycaps
    then line up in one column down the page, which is what makes a list of
    fifteen of them readable at a glance instead of a ragged edge. */
-.pm-lib .pm-kb-page { gap: 18px; }
-.pm-lib .pm-kb-group { display: flex; flex-direction: column; gap: 7px; }
+/* ── A tooltip that shows the key ── */
+.pm-keytip {
+    position: fixed;
+    z-index: var(--pm-z-toast);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 280px;
+    padding: 5px 6px 5px 9px;
+    border-radius: 8px;
+    background: #050706;
+    border: 1px solid rgba(255, 255, 255, .1);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .35);
+    color: #e9efec;
+    font: 500 11.5px/1.3 var(--pm-font);
+    pointer-events: none;
+    white-space: nowrap;
+    animation: pm-peek-in .1s ease-out;
+}
+.pm-keytip[hidden] { display: none; }
+.pm-keytip-keys { display: flex; gap: 3px; }
+.pm-keytip kbd {
+    min-width: 18px;
+    box-sizing: border-box;
+    padding: 1px 5px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-bottom-width: 2px;
+    background: rgba(255, 255, 255, .08);
+    color: #e9efec;
+    font: 500 10.5px/1.35 var(--pm-font);
+    text-align: center;
+}
+@media (prefers-reduced-motion: reduce) { .pm-keytip { animation: none; } }
+
+/* ── The keyboard map: a wide panel over the page ── */
+.pm-keys-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: var(--pm-z-overlay);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0);
+    transition: background .16s ease;
+}
+.pm-keys-scrim.pm-keys-in { background: rgba(0, 0, 0, .32); }
+.pm-lib.pm-keys {
+    position: relative;
+    width: min(760px, 100%);
+    max-height: min(720px, calc(100vh - 32px));
+    animation: pm-lib-in .16s ease-out;
+    transform-origin: 50% 50%;
+}
+.pm-lib .pm-keys-head {
+    flex: none;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 12px 12px 18px;
+    border-bottom: 1px solid var(--pm-con-border);
+}
+.pm-lib .pm-keys-title { font-size: 15px; font-weight: 600; color: var(--pm-con-text); }
+.pm-lib .pm-keys-here { margin-top: 2px; font-size: 12px; color: var(--pm-accent); }
+.pm-lib .pm-keys-grid {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 12px;
+    padding: 14px 18px 16px;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .14) transparent;
+}
+.pm-lib .pm-kb-group {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    padding: 11px 12px 12px;
+    border-radius: 11px;
+    border: 1px solid var(--pm-con-border);
+    align-self: start;
+}
+.pm-lib .pm-kb-here { border-color: var(--pm-accent-border); background: var(--pm-accent-soft); }
+.pm-lib .pm-kb-cap {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--pm-con-muted);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+.pm-lib .pm-kb-cap em { font-style: normal; color: var(--pm-accent); letter-spacing: .04em; }
+.pm-lib .pm-kb-gap { width: 6px; }
+.pm-lib .pm-kb-none { color: #e0b25a; font-size: 11px; }
+.pm-lib .pm-kb-unset .pm-kb-note { color: #e0b25a; }
+.pm-lib .pm-keys-foot {
+    flex: none;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    padding: 10px 18px 12px;
+    border-top: 1px solid var(--pm-con-border);
+    color: var(--pm-con-muted);
+    font-size: 11.5px;
+}
+.pm-lib .pm-keys-foot p { margin: 0; }
+@media (prefers-reduced-motion: reduce) { .pm-keys-scrim { transition: none; } .pm-lib.pm-keys { animation: none; } }
 .pm-lib .pm-kb-row {
     display: grid;
     grid-template-columns: 1fr auto;
@@ -2501,13 +2615,19 @@
 }
 .pm-lib .pm-kb-what { font-size: 12.5px; line-height: 1.45; color: var(--pm-con-text-2); }
 .pm-lib .pm-kb-note { display: block; color: var(--pm-con-muted); font-size: 11.5px; }
-.pm-lib .pm-kb-keys { display: flex; gap: 3px; flex: none; }
+.pm-lib .pm-kb-keys { display: flex; align-items: center; gap: 3px; flex: none; }
 /* Same keycap as the card's footer: one object family, one way of drawing a
    key. The heavier bottom border is the edge of a physical key catching the
    light — the detail that makes it read as a key rather than a code span. */
+/* The UI font, not a monospace: ⌘ and ⇧ come out a size smaller than the
+   letters beside them in SF Mono and Menlo. Every cap at least square. */
 .pm-lib .pm-kb {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10.5px;
+    display: inline-block;
+    min-width: 20px;
+    box-sizing: border-box;
+    text-align: center;
+    font-family: var(--pm-font);
+    font-size: 11px;
     line-height: 1.4;
     color: var(--pm-con-text);
     background: var(--pm-con-elev);
