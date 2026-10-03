@@ -85,9 +85,13 @@ window.FAKE_API = {
     A.calls.push({ method, path, body });
     if (path === "/saved-prompts" && method === "GET") return json({ prompts: A.prompts });
     if (path === "/saved-prompts" && method === "POST") {
-      if (A.prompts.some((p) => p.content === body.content)) return json({ duplicate: true });
-      A.prompts.unshift({ id: "p" + A.nextId++, title: body.title || "", content: body.content, tags: body.tags || [] });
-      return json({ ok: true });
+      // As the real server answers (routers/saved_prompts.py): the id, and a
+      // duplicate named by the one already there.
+      const dup = A.prompts.find((p) => p.content === body.content);
+      if (dup) return json({ id: dup.id, duplicate: true });
+      const id = "p" + A.nextId++;
+      A.prompts.unshift({ id, title: body.title || "", content: body.content, tags: body.tags || [] });
+      return json({ id, message: "Prompt saved." });
     }
     const one = path.match(/^\/saved-prompts\/(.+)$/);
     if (one && method === "DELETE") { A.prompts = A.prompts.filter((p) => p.id !== one[1]); return json({ ok: true }); }

@@ -2165,6 +2165,96 @@
     color: var(--pm-con-text-2);
 }
 
+/* ── The save form ── */
+.pm-lib.pm-save {
+    z-index: var(--pm-z-tip);
+    width: 340px;
+    max-height: none;
+    gap: 10px;
+    padding: 12px;
+    transform-origin: 50% 100%;
+}
+.pm-lib .pm-save-head { font-size: 13px; font-weight: 600; color: var(--pm-con-text); }
+.pm-lib .pm-save-field { display: flex; flex-direction: column; gap: 5px; }
+.pm-lib .pm-save-field > span { font-size: 11px; color: var(--pm-con-muted); letter-spacing: .02em; }
+.pm-lib .pm-save .pm-lib-input {
+    width: 100%;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-soft);
+    color: var(--pm-con-text);
+    font-size: 13px;
+    outline: none;
+}
+.pm-lib .pm-save .pm-lib-input:focus { border-color: var(--pm-accent-border); }
+.pm-lib .pm-save .pm-lib-input::placeholder { color: var(--pm-con-muted); opacity: 1; }
+.pm-lib .pm-save-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.pm-lib .pm-save-tags[hidden] { display: none; }
+.pm-lib .pm-save-tags button {
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 11px;
+    border: 1px dashed rgba(255, 255, 255, .22);
+    background: none;
+    color: var(--pm-con-muted);
+    font-size: 11px;
+    cursor: pointer;
+}
+.pm-lib .pm-save-tags button[aria-pressed="true"] {
+    border-style: solid;
+    border-color: var(--pm-accent-border);
+    background: var(--pm-accent-soft);
+    color: var(--pm-accent);
+}
+.pm-lib .pm-save-snip {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+    overflow: hidden;
+    padding: 8px 9px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, .03);
+    color: var(--pm-con-text-2);
+    font-size: 12px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+.pm-lib .pm-save-foot { display: flex; align-items: center; gap: 6px; }
+.pm-lib .pm-save-status { flex: 1; min-width: 0; color: var(--pm-con-muted); font-size: 11px; }
+.pm-lib .pm-save-status kbd + kbd { margin-left: 8px; }
+.pm-lib .pm-save-status.pm-save-error { color: var(--pm-danger, #ef6a60); }
+
+/* ── The bookmark beside a sent prompt ──
+   The host's own button CSS is not to be trusted with it: every property it
+   depends on is set here. */
+.pm-msg-save {
+    position: fixed;
+    z-index: var(--pm-z-trigger);
+    display: grid;
+    place-items: center;
+    box-sizing: border-box;
+    width: 28px;
+    height: 28px;
+    min-width: 0;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border-radius: 50%;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    backdrop-filter: var(--pm-con-blur);
+    -webkit-backdrop-filter: var(--pm-con-blur);
+    box-shadow: var(--pm-con-shadow);
+    color: var(--pm-con-text-2);
+    cursor: pointer;
+    animation: pm-peek-in .12s ease-out;
+}
+.pm-msg-save[hidden] { display: none; }
+.pm-msg-save svg { display: block; width: 14px; height: 14px; }
+.pm-msg-save:hover { color: #50c8a8; border-color: rgba(80, 200, 168, .45); }
+.pm-msg-save:focus-visible { outline: 2px solid #50c8a8; outline-offset: 2px; }
+
 /* ── The whole prompt, beside the sheet ── */
 .pm-lib.pm-peek { width: 360px; max-height: 520px; animation: pm-peek-in .12s ease-out; }
 @keyframes pm-peek-in { from { opacity: 0; } to { opacity: 1; } }

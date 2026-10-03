@@ -484,7 +484,11 @@ def main():
         page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').endsWith('Quick')", timeout=8000)
         check("s2" in (server["stream"][-1].get("excluded_prompt_ids") or []), "a style rerun still leaves it out")
         type_prompt("an unrelated message I am halfway through")
-        page.click("#pm-card-accept")
+        # A click in the chat box tucks the card into its strip, which keeps the verb.
+        page.wait_for_selector("#pm-card.pm-card-tucked", timeout=3000)
+        check(page.inner_text("#pm-card-strip .pm-card-strip-verb").strip() == "Update",
+              "clicking into the chat box tucks the card, and its strip still offers Update")
+        page.click("#pm-card-strip .pm-card-strip-verb")
         page.wait_for_selector(".pm-toast:has-text('Updated')", timeout=5000)
         check(server["put"] and server["put"][-1] == ("s2", {"content": REPLY["quick"]}),
               f"Update writes the version on screen over the saved prompt, got {server['put'][-1:]}")
@@ -501,6 +505,10 @@ def main():
         page.click("#pm-library [data-act='improve']")
         page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').startsWith('Improved')", timeout=8000)
         page.click("#pm-card-save")
+        page.wait_for_selector("#pm-save", timeout=5000)
+        check(page.input_value("#pm-save-title") == "Code review template (improved)",
+              "saving an improvement opens the form, named after the original")
+        page.keyboard.press("Enter")
         page.wait_for_selector(".pm-toast:has-text('new prompt')", timeout=5000)
         check(server["post"][-1] == {"content": REPLY["deep"], "title": "Code review template (improved)"},
               f"save as new keeps the original and adds one, got {server['post'][-1:]}")

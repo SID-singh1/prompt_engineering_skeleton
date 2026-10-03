@@ -265,10 +265,31 @@ def main():
         check(rows()[0].startswith("Save “Turn these meeting notes"), f"the box offered as a Save row, got {rows()[0]!r}")
         verb = ev("document.querySelectorAll('#pm-library .pm-lib-row')[1].querySelector('.pm-lib-verb').textContent")
         check(verb == "Replace", f"box has text: Replace, got {verb!r}")
+        # ↵ on the Save row opens the save form on it; ↵ again saves
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#pm-save")
+        check(ev("document.activeElement.id") == "pm-save-title", "the form opens with its name field focused")
+        check(page.input_value("#pm-save-title") == "", "the name starts empty: an unnamed prompt shows its words")
+        check("Turn these meeting notes" in page.inner_text("#pm-save .pm-save-snip"), "the form shows what it will save")
+        check(ev("panelOpen"), "and the sheet stays open under it")
+        tags = [t.strip() for t in page.locator("#pm-save-tags button").all_inner_texts()]
+        check("#coding" in tags and "#writing" in tags, f"the user's own tags are one click away, got {tags}")
+        page.click("#pm-save-tags button[data-tag='writing']")
+        check(page.get_attribute("#pm-save-tags button[data-tag='writing']", "aria-pressed") == "true", "a click picks a tag")
+        page.fill("#pm-save-newtags", "meetings, #notes")
+        shot("5-save-form")
+        page.focus("#pm-save-title")
+        check(ev("panelOpen") and page.locator("#pm-save").count() == 1, "working in the form leaves the sheet open")
         page.keyboard.press("Enter")
         page.wait_for_function("FAKE_API.calls.some(c => c.method === 'POST' && c.path === '/saved-prompts')")
+        post = calls("POST", "/saved-prompts")[-1]["body"]
+        check("title" not in post and sorted(post.get("tags", [])) == ["meetings", "notes", "writing"],
+              f"saved unnamed, with the picked and typed tags, got {post}")
+        page.wait_for_selector("#pm-save", state="detached", timeout=3000)
+        check(True, "the form goes once the server says yes")
         page.wait_for_function("!document.querySelector('#pm-library .pm-lib-row-save') && "
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
+        check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
@@ -314,6 +335,35 @@ def main():
         check(composer().startswith("Show me how to sort"), "a recent rewrite inserts")
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
+
+        # ── save a prompt already sent, from the conversation ──
+        msg = page.locator("[data-message-author-role='user'] >> nth=0")
+        msg.hover()
+        page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+        shot("6-bookmark")
+        b = rect("#pm-msg-save")
+        words = ev("""(() => { const r = document.createRange(); r.selectNodeContents(document.querySelector("[data-message-author-role='user']"));
+                       const b = r.getBoundingClientRect(); return { l: b.left, t: b.top }; })()""")
+        check(b["r"] <= words["l"] and abs(b["t"] - words["t"]) <= 8, f"resting on a sent prompt shows a bookmark beside its words ({b} vs {words})")
+        page.mouse.move(300, 150)
+        page.wait_for_timeout(450)
+        check(page.is_hidden("#pm-msg-save"), "and it goes when the pointer does")
+        msg.hover()
+        page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+        page.hover("#pm-msg-save")
+        page.wait_for_timeout(400)
+        check(page.is_visible("#pm-msg-save"), "crossing to the bookmark keeps it")
+        page.click("#pm-msg-save")
+        page.wait_for_selector("#pm-save")
+        check("whitening gel" in page.inner_text("#pm-save .pm-save-snip"), "it opens the save form on that prompt")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("#pm-save", state="detached", timeout=3000)
+        post = calls("POST", "/saved-prompts")[-1]["body"]
+        check(post["content"] == "can you check this whitening gel, is it safe for enamel", f"and saves its words, got {post}")
+        new_id = ev("FAKE_API.prompts[0].id")
+        page.click(".pm-toast .pm-toast-action")
+        page.wait_for_function(f"FAKE_API.calls.some(c => c.method === 'DELETE' && c.path === '/saved-prompts/{new_id}')", timeout=3000)
+        check(True, "Undo on its toast deletes what was just saved")
 
         # ⋯: default style, count, privacy, feedback
         page.click("#pm-trigger")
