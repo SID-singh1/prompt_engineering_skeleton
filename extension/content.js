@@ -555,8 +555,17 @@ function scrapeConversation() {
 
   try {
     if (hostname === "chatgpt.com") {
-      document.querySelectorAll("[data-message-author-role]").forEach((el) => {
-        const role = el.getAttribute("data-message-author-role");
+      // ChatGPT dropped data-message-author-role (seen live, 2026-10-01): the
+      // two sides are now marked on their text, as a user "tone" and an
+      // assistant "style". Both markings are read, in page order, and an
+      // element inside one already taken is not counted twice.
+      const sel = "[data-message-author-role], [data-markdown-text-tone='user-message'], [data-markdown-text-style='assistant-message']";
+      const taken = [];
+      document.querySelectorAll(sel).forEach((el) => {
+        if (taken.some((t) => t.contains(el))) return;
+        taken.push(el);
+        const role = el.getAttribute("data-message-author-role") ||
+          (el.getAttribute("data-markdown-text-tone") === "user-message" ? "user" : "assistant");
         const text = el.innerText?.trim();
         if (text && text.length > 2) {
           messages.push(`[${role}]: ${text.substring(0, 500)}`);
@@ -1138,7 +1147,9 @@ function placePill() {
       bottom = Math.min(maxBottom, Math.round(window.innerHeight - r.top + gap));
       inset = Math.max(PILL_MARGIN, Math.round(pillDock === "left" ? r.left : window.innerWidth - r.right));
     };
-    const c = composer && pill.classList.contains("pm-pill-open") ? composer.getBoundingClientRect() : null;
+    // The box as drawn, as the card and the chips use: measured by its
+    // editable, the pill came to rest 11px down over the box's frame.
+    const c = composer && pill.classList.contains("pm-pill-open") ? composerFrame(composer) : null;
     const cardEl = document.getElementById("pm-card");
     const cb = cardEl ? cardEl.getBoundingClientRect() : null;
     if (hits(c) || hits(cb)) {
@@ -1538,7 +1549,11 @@ function createLibrary() {
   });
   lib.addEventListener("pointerover", (e) => {
     const row = e.target.closest?.(".pm-lib-row[data-i]");
-    if (row && !row.classList.contains("pm-lib-row-save")) schedulePeek(Number(row.dataset.i));
+    if (!row || row.classList.contains("pm-lib-row-save")) return;
+    // Only a row that hides some of its words has anything to show beside it.
+    // A one-line prompt opened a panel repeating that one line (seen live).
+    if (rowIsClipped(row)) schedulePeek(Number(row.dataset.i));
+    else { clearTimeout(peekOpenTimer); if (libPeek !== null) hidePeek(); }
   });
   document.addEventListener("pointermove", trackPeekPointer, { capture: true, passive: true });
 
@@ -1637,6 +1652,8 @@ function focusLibrarySearch() {
   if (q && document.activeElement !== q) q.focus({ preventScroll: true });
 }
 
+const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
+
 /** Where the sheet goes: on the pill's side, above it if there is room, else below. */
 function positionLibrary() {
   const lib = document.getElementById("pm-library");
@@ -1653,9 +1670,27 @@ function positionLibrary() {
   // it sideways: the host's send button lives on that box's edge, and a sheet
   // resting on it is a sheet that swallows the click meant for Send.
   const left = onRight ? vw - parseFloat(lib.style.right) - width : parseFloat(lib.style.left);
-  const frame = composerFrame(findComposer());
+  const composer = findComposer();
+  const frame = composerFrame(composer);
   const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
-  const ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  let ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  // A tall or centred chat box (ChatGPT's new chat with a draft in it) left
+  // too little room above it, and the sheet came out two rows high at the
+  // top of the window, nowhere near the pill (seen live, 2026-10-01). It may
+  // then come down over the box's text, but still not over its row of
+  // buttons, where Send is.
+  if (overlapsBox && ceiling - gap - m < LIB_ROOM_WANTED) {
+    const controls = composerControlsTop(composer);
+    if (controls !== null) ceiling = Math.min(p.top, Math.max(ceiling, controls));
+  }
+  // Nor over the context chips: they are where a click on a row shows up.
+  const rail = document.getElementById("pm-rail");
+  if (rail && !rail.hidden) {
+    const rr = rail.getBoundingClientRect();
+    if (rr.width && left < rr.right && left + width > rr.left && rr.top < ceiling && rr.bottom > ceiling - 400) {
+      ceiling = Math.min(ceiling, rr.top);
+    }
+  }
   const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
   const up = above >= 260 || above >= below;
   lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
@@ -2122,7 +2157,14 @@ async function submitSaveForm() {
 // by it. The selectors are the ones each site marks the user's side with:
 // ChatGPT, Gemini, and Claude.
 
-const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], user-query, [data-testid="user-message"]';
+// ChatGPT marks the user's side two ways depending on the build: the old
+// author role, and (live since 2026-10) a bubble with a user-toned text inside.
+const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], [data-user-message-bubble], ' +
+  '[data-markdown-text-tone="user-message"], user-query, [data-testid="user-message"]';
+const SENT_PROMPT_WORDS = '[data-markdown-text-tone="user-message"], .query-text';
+// Text a screen reader hears and the eye does not: Gemini starts every one of
+// your messages with a hidden "You said", which is not part of the prompt.
+const VISUALLY_HIDDEN = '.cdk-visually-hidden, .sr-only, [class*="visually-hidden"]';
 const BOOKMARK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.8l-3.5 2.7z"/></svg>';
 let msgSaveTarget = null;
 let msgSaveHideTimer = null;
@@ -2130,11 +2172,17 @@ let msgSaveQueued = null;
 
 /** The element holding the words: Gemini wraps them inside its user-query. */
 function sentPromptWords(el) {
-  return el.querySelector?.(".query-text") || el;
+  return (el.matches?.(SENT_PROMPT_WORDS) ? el : el.querySelector?.(SENT_PROMPT_WORDS)) || el;
 }
 
 function sentPromptText(el) {
-  return (sentPromptWords(el).innerText || "").trim();
+  const words = sentPromptWords(el);
+  let text = (words.innerText || "").trim();
+  for (const hidden of words.querySelectorAll(VISUALLY_HIDDEN)) {
+    const h = (hidden.textContent || "").trim();
+    if (h && text.startsWith(h)) text = text.slice(h.length).trim();
+  }
+  return text;
 }
 
 /** Where the words are, which is not where the element is: ChatGPT's spans the column. */
@@ -2505,6 +2553,11 @@ function hidePeek() {
   document.getElementById("pm-peek")?.remove();
 }
 
+/** Whether a row's clamped text runs past what it shows. */
+function rowIsClipped(row) {
+  return [...row.querySelectorAll(".pm-lib-clamp, .pm-lib-untitled")].some((el) => el.scrollHeight > el.clientHeight + 1);
+}
+
 /** Pointer came to rest on a row: open (or move) the preview after a beat. */
 function schedulePeek(i) {
   clearTimeout(peekOpenTimer);
@@ -2554,6 +2607,20 @@ function positionPeek() {
   // Level with the sheet's edge nearest the pill, so the two read as a pair.
   if (lib.dataset.side === "below") { peek.style.top = r.top + "px"; peek.style.bottom = "auto"; }
   else { peek.style.bottom = (window.innerHeight - r.bottom) + "px"; peek.style.top = "auto"; }
+  // But never on the context chips or the chat box: the chips are where a
+  // tick shows up, and the preview sat on them (seen live). It rises above
+  // whichever it would cover, if that leaves it room to be read.
+  const obstacles = [document.getElementById("pm-rail"), findComposer() && { getBoundingClientRect: () => composerFrame(findComposer()) }]
+    .filter((o) => o && !o.hidden).map((o) => o.getBoundingClientRect()).filter((o) => o && o.width);
+  for (const o of obstacles) {
+    const pr = peek.getBoundingClientRect();
+    if (!(pr.left < o.right && pr.right > o.left && pr.top < o.bottom && pr.bottom > o.top)) continue;
+    const limit = o.top - gap;
+    if (limit - m < 160) continue;
+    peek.style.top = "auto";
+    peek.style.bottom = (window.innerHeight - limit) + "px";
+    peek.style.maxHeight = Math.min(parseFloat(peek.style.maxHeight), limit - m) + "px";
+  }
 }
 
 // ── Keyboard shortcuts: a map over the page ──
@@ -2855,9 +2922,14 @@ function renderChipCount() {
  * and visibly drawn (a background, a border or rounded corners).
  */
 function composerFrame(el) {
+  return composerFrameBox(el)?.rect || null;
+}
+
+/** composerFrame(), with the element that draws it. */
+function composerFrameBox(el) {
   if (!el) return null;
   const inner = el.getBoundingClientRect();
-  let frame = inner;
+  let box = { node: el, rect: inner };
   let node = el.parentElement;
   for (let i = 0; node && i < 6; i++, node = node.parentElement) {
     const r = node.getBoundingClientRect();
@@ -2865,9 +2937,30 @@ function composerFrame(el) {
     const cs = getComputedStyle(node);
     const drawn = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderRadius) >= 8 ||
       (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent");
-    if (drawn) frame = r;
+    if (drawn) box = { node, rect: r };
   }
-  return frame;
+  return box;
+}
+
+/**
+ * Where the chat box's own buttons begin, on the side the sheet comes from:
+ * the row with Send in it. Buttons level with the text's first line (an
+ * expand icon in the corner) do not count; a box whose buttons all sit
+ * beside the text has no row below it, and gives null.
+ */
+function composerControlsTop(el) {
+  const box = composerFrameBox(el);
+  if (!box || box.node === el) return null;
+  const text = el.getBoundingClientRect(), frame = box.rect;
+  let top = null;
+  for (const b of box.node.querySelectorAll("button, [role='button']")) {
+    if (el.contains(b)) continue;
+    const r = b.getBoundingClientRect();
+    if (!r.width || !r.height || r.left + r.width / 2 < frame.left + frame.width * 0.6) continue;
+    if (r.top < text.top + 20) continue;
+    top = top === null ? r.top : Math.min(top, r.top);
+  }
+  return top;
 }
 
 /**
@@ -2923,7 +3016,15 @@ function positionRail() {
   if (hide) return;
   rail.style.left = Math.max(8, Math.round(r.left)) + "px";
   rail.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
-  rail.style.maxWidth = Math.max(180, Math.round(r.width)) + "px";
+  let maxWidth = Math.max(180, Math.round(r.width));
+  // The pill steps up onto the box's top corner when it would sit on the box
+  // (a draft makes it wide), which is this same row: on Claude the chips ran
+  // under it (seen live). They stop short of it and wrap upward instead.
+  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  if (pill && pill.bottom > r.top - 40 && pill.top < r.top && pill.left > r.left) {
+    maxWidth = Math.min(maxWidth, Math.max(180, Math.round(pill.left - r.left - 8)));
+  }
+  rail.style.maxWidth = maxWidth + "px";
 }
 
 // ── // in the chat box ──
@@ -5067,23 +5168,39 @@ window.addEventListener("scroll", () => positionToasts(), true);
 function positionToasts() {
   const stack = document.getElementById("pm-toast-stack");
   if (!stack || !stack.firstChild) return;
+  const gap = 10, margin = 12;
+  const vw = window.innerWidth, vh = window.innerHeight;
 
-  const gap = 10;
-  const margin = 12;
-
-  // The HIGHEST of the two, not just the card. On the empty-chat layout the
-  // card renders BELOW the composer, so anchoring to the card alone would drop
-  // the toast straight onto the composer.
-  const tops = [document.getElementById("pm-card"), findComposer()]
-    .filter(Boolean)
-    .map((el) => el.getBoundingClientRect().top);
-
+  // Beside the pill, on its side of the window: the notice is about the
+  // extension's own action, and it belongs by the extension. Centred over
+  // the chat box it sat on the context chips and the last lines of the
+  // conversation (a tester called it out as covering what they were reading).
+  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  const right = !pill || pill.left + pill.width / 2 > vw / 2;
+  stack.style.transform = "none";
+  stack.style.alignItems = right ? "flex-end" : "flex-start";
+  stack.style.left = right ? "auto" : Math.max(margin, Math.round(pill.left)) + "px";
+  stack.style.right = right ? Math.max(margin, Math.round(vw - (pill ? pill.right : vw - margin))) + "px" : "auto";
+  const width = stack.offsetWidth || 320;
+  const colLeft = right ? vw - parseFloat(stack.style.right) - width : parseFloat(stack.style.left);
   const height = stack.offsetHeight || 44;
-  const top = tops.length
-    ? Math.min(...tops) - gap - height
-    : window.innerHeight - 80 - height;
 
-  stack.style.top = Math.max(margin, top) + "px";
+  // Above the pill, and above whatever of ours or the chat box stands in
+  // that column: the card, the open library, the save form, the chips, the
+  // box itself. Highest first wins, so it clears the whole stack.
+  let floor = pill ? pill.top : vh - 80;
+  const obstacles = [document.getElementById("pm-card"), document.getElementById("pm-library"),
+    document.getElementById("pm-save"), document.getElementById("pm-rail")]
+    .filter((el) => el && !el.hidden).map((el) => el.getBoundingClientRect());
+  const box = composerFrame(findComposer());
+  if (box) obstacles.push(box);
+  for (let pass = 0; pass < obstacles.length; pass++) {
+    for (const o of obstacles) {
+      if (!o.width || o.right <= colLeft || o.left >= colLeft + width) continue;
+      if (o.top < floor && o.bottom > floor - height - gap) floor = o.top;
+    }
+  }
+  stack.style.top = Math.max(margin, Math.round(floor - gap - height)) + "px";
 }
 
 /** Fade a toast out and take it out of the stack. */

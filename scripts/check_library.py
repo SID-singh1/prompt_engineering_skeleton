@@ -142,14 +142,19 @@ def main():
         check(peek["r"] <= lib["l"], f"beside the sheet, on the side with room ({peek['r']} vs {lib['l']})")
         check(abs(peek["b"] - lib["b"]) <= 1, "level with the sheet's bottom")
         shot("1b-peek")
-        page.locator("#pm-library .pm-lib-row >> nth=2").hover()
+        page.locator("#pm-library .pm-lib-row >> nth=0").hover()
         page.wait_for_timeout(150)
-        check("common misconception" in peek_text(), "moving to another row moves the preview with it")
+        check("Flag anything that changes behaviour" in peek_text(), "moving to another row moves the preview with it")
+        page.locator("#pm-library .pm-lib-row >> nth=4").hover()        # its words fit, even beside its buttons
+        page.wait_for_timeout(450)
+        check(page.locator("#pm-peek").count() == 0, "a row that shows all its words opens no preview")
+        page.locator("#pm-library .pm-lib-row >> nth=3").hover()
+        page.wait_for_selector("#pm-peek", timeout=1500)
         page.hover("#pm-peek .pm-peek-body")
         page.wait_for_timeout(300)
         check(page.locator("#pm-peek").count() == 1, "crossing the gap into the preview keeps it open")
         page.click("#pm-peek [data-act='attach']")
-        check(ev("[...selectedIds]") == ["p3"] and "Detach" in peek_text(), "its Attach attaches that prompt, and says Detach")
+        check(ev("[...selectedIds]") == ["p4"] and "Detach" in peek_text(), "its Attach attaches that prompt, and says Detach")
         page.click("#pm-peek [data-act='attach']")
         check(ev("selectedIds.size") == 0, "and detaches it again")
         page.mouse.move(300, 150)
@@ -232,6 +237,14 @@ def main():
         page.keyboard.press("Enter")
         check(page.locator("#pm-rail .pm-rail-chip").count() == 1, "↵ attaches: a chip on the rail")
         check(ev("panelOpen"), "and the sheet stays open, so more can be picked")
+        page.locator("#pm-library .pm-lib-row >> nth=3").hover()
+        page.wait_for_selector("#pm-peek", timeout=1500)
+        check(not overlaps(rect("#pm-peek"), rect("#pm-rail")) and not overlaps(rect("#pm-peek"), rect("form")),
+              "the preview stays off the context chips and the chat box")
+        page.mouse.move(300, 150)
+        page.wait_for_timeout(300)
+        page.fill("#pm-lib-q", "a")               # the pointer moved the highlight; put it back on the first row
+        page.fill("#pm-lib-q", "")
         check(page.inner_text("#pm-rail .pm-rail-label").strip() == "Context for ⊕", "the rail says what the chips are for")
         check(page.is_visible("#pm-trigger .pm-pill-ctx") and page.inner_text("#pm-trigger .pm-pill-ctx") == "1",
               "⊕ counts the context its next rewrite carries")
@@ -290,6 +303,10 @@ def main():
         page.wait_for_function("!document.querySelector('#pm-library .pm-lib-row-save') && "
                                "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
         check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
+        toast = rect(".pm-toast")
+        for what, sel in (("the context chips", "#pm-rail"), ("the chat box", "form"), ("the open library", "#pm-library")):
+            check(not overlaps(toast, rect(sel)), f"the toast stays off {what}")
+        check(toast["r"] >= 1440 - 60, "and sits on the pill's side of the window")
         check("Turn these meeting notes" in rows()[0], f"saved and listed first, got {rows()[:2]}")
         check(not any(r.startswith("Save “") for r in rows()), "the Save row goes once saved")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
@@ -335,6 +352,20 @@ def main():
         check(composer().startswith("Show me how to sort"), "a recent rewrite inserts")
         page.wait_for_function("FAKE_API.calls.some(c => c.path === '/enhance/accept')")
         check(calls("POST", "/enhance/accept")[0]["body"]["log_id"] == "h1", "and is approved by its log id")
+
+        # ── a centred chat box holding a long draft (ChatGPT's new chat, seen live) ──
+        ev("""document.body.classList.add('center');
+              const c = document.getElementById('composer');
+              c.innerHTML = Array.from({ length: 6 }, (_, k) => '<div>line ' + (k + 1) + ' of a long draft in the chat box</div>').join('');""")
+        page.wait_for_timeout(100)
+        open_lib()
+        lib, send, box = rect("#pm-library"), rect(".send"), rect("form")
+        check(lib["b"] - lib["t"] >= 400, f"the sheet keeps its height beside a tall centred box, got {lib['b'] - lib['t']:.0f}px")
+        check(not overlaps(lib, send), "and still stays off the Send button")
+        check(lib["t"] >= 0, "and inside the window")
+        page.keyboard.press("Escape")
+        ev("document.body.classList.remove('center'); document.getElementById('composer').textContent = ''")
+        page.wait_for_timeout(100)
 
         # ── keys where they act: tooltips with keycaps ──
         open_lib()
@@ -423,6 +454,18 @@ def main():
         page.click(".pm-toast .pm-toast-action")
         page.wait_for_function(f"FAKE_API.calls.some(c => c.method === 'DELETE' && c.path === '/saved-prompts/{new_id}')", timeout=3000)
         check(True, "Undo on its toast deletes what was just saved")
+        # the way ChatGPT marks the user's side now, and Gemini with its hidden "You said"
+        for sel, words in (("[data-markdown-text-tone='user-message'] p", "and how long should I use it each day"),
+                           ("user-query .query-text", "which one is cheaper per week")):
+            page.hover(sel)
+            page.wait_for_selector("#pm-msg-save:not([hidden])", timeout=2000)
+            page.hover("#pm-msg-save")
+            page.click("#pm-msg-save")
+            page.wait_for_selector("#pm-save")
+            snip = page.inner_text("#pm-save .pm-save-snip").strip()
+            check(snip == words, f"the bookmark reads {sel.split()[0]}'s words and nothing else, got {snip!r}")
+            page.keyboard.press("Escape")
+            page.wait_for_selector("#pm-save", state="detached")
 
         # ⋯: default style, count, privacy, feedback
         page.click("#pm-trigger")
@@ -603,6 +646,17 @@ def main():
         check(w > 60, f"the chip keeps its size against host button rules, got {w}px")
         stack = ev("document.elementsFromPoint(1408, 860).map(e => e.id || e.tagName)[0]")
         check(stack in ("path", "svg", "SPAN", "pm-trigger"), f"⊕ stays clickable, top element {stack}")
+
+        # ── the pill on the box's corner and the chips on its edge share a row (Claude, seen live) ──
+        page.set_viewport_size({"width": 1000, "height": 800})
+        ev("""clearAttachments(); savedPrompts.slice(0, 3).forEach((p) => toggleAttachment(p));
+              H.type(H.ORIG); H.stream(); H.done(); hideCard();""")
+        page.wait_for_timeout(400)
+        pill, rail, box = rect("#pm-trigger"), rect("#pm-rail"), rect("form")
+        check(pill["b"] <= box["t"] + 1, f"a wide pill steps up onto the box's corner here ({pill} vs {box})")
+        check(not overlaps(rail, pill), f"and the chips stop short of it ({rail} vs {pill})")
+        ev("closeCard(); clearAttachments()")
+        page.set_viewport_size({"width": 1440, "height": 900})
 
         check(not errors, f"page errors: {errors}")
         page.close()
