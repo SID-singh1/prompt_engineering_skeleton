@@ -421,8 +421,9 @@ def main():
         check("10" in page.inner_text("#pm-caret .pm-caret-head b"), "the head counts the matches")
         check(ev("(() => { const l = document.querySelector('#pm-caret .pm-caret-list'); return l.scrollHeight > l.clientHeight; })()"),
               "ten rows overflow the menu, so it has to scroll")
-        box = page.locator("#pm-caret .pm-caret-list").bounding_box()
-        page.mouse.move(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        # hover() rather than a measured point: the menu redraws on every
+        # selectionchange, and a box read mid-redraw comes back empty.
+        page.locator("#pm-caret .pm-caret-list").hover()
         page.mouse.wheel(0, 160)
         page.wait_for_timeout(250)
         top = ev("document.querySelector('#pm-caret .pm-caret-list').scrollTop")

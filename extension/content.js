@@ -922,6 +922,11 @@ function pillVerb() {
   else if (cardState === "error") { closeCard(); handleEnhance(); }
 }
 
+/** What a ready, fresh draft's one button says: see pillVerb() for what it does. */
+function draftVerb() {
+  return cardSubject ? "Update" : norm(getCurrentInputText()) ? "Replace" : "Insert";
+}
+
 /** Keyboard focus is in the composer the draft would be written into. */
 function composerHasFocus() {
   const composer = findComposer();
@@ -997,7 +1002,7 @@ function renderPill() {
       // The moment this exists for: a fresh chat, an empty box, a draft that
       // followed the user here. The verb says what it will do.
       state = "ready";
-      verb = cardSubject ? "Update" : norm(getCurrentInputText()) ? "Replace" : "Insert";
+      verb = draftVerb();
     }
   } else if (pillApplied) {
     state = "applied";
@@ -3040,6 +3045,7 @@ function reopenDraftIfRelevant(reveal = false) {
  */
 function revealCard() {
   if (!cardExpanded) { expandCard(); return; }
+  if (cardTucked) { untuckCard(); return; }
   const card = document.getElementById("pm-card");
   if (card) {
     card.classList.remove("pm-card-nudge");
@@ -3309,6 +3315,11 @@ let cardExpanded = false;
 // finishes while this is set lands in the pill instead of popping the card
 // open over what they moved on to.
 let cardMinimized = false;
+// The card is folded to a one-line strip on the chat box: the user went back
+// to reading or clicking in the conversation. Still on screen (cardExpanded
+// stays true), still one click from the whole card, and the strip keeps the
+// draft's verb. Minimize is the stronger fold, into the pill.
+let cardTucked = false;
 let cardError = "";
 let pillStreamingPreview = "";
 // Every rewrite of this draft, one per style asked for, oldest first. The card
@@ -3555,6 +3566,8 @@ function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
  * top, because a rewrite has to be judged against the text it belongs to and
  * cannot be judged while covering it.
  */
+const CARD_MAX_SHARE = 0.45;   // of the window's height, for a card on the chat box
+
 function positionCard() {
   const card = document.getElementById("pm-card");
   const pill = document.getElementById("pm-trigger");
@@ -3602,7 +3615,10 @@ function positionCard() {
   // The first cut hung the card off the pill and then pushed it up to clear
   // the composer, which left it 450px from the pill and aligned to nothing.
   // With no composer on the page it hangs off the pill instead.
-  const box = composer ? composer.getBoundingClientRect() : null;
+  // The chat box as drawn, not the editable inside it: hosts pad the text
+  // within a rounded frame, and a card fitted to the editable sat 9px down
+  // over that frame and short of its edges.
+  const box = composer ? composerFrame(composer) : null;
   const onComposer = Boolean(box) && box.width >= 240 && box.top > margin + 120;
   let width, left;
   if (onComposer) {
@@ -3628,6 +3644,11 @@ function positionCard() {
   // name throughout, and shadowing it inside a function is a trap for the next
   // line added here.
   const frame = card.offsetHeight - (textEl ? textEl.clientHeight : 0);
+  // max-height applies to the text's content box, and clientHeight above
+  // counts its padding: without this the card came out that much taller than
+  // the room it was fitted to, and on a short window ran into the chat box.
+  const textCs = textEl && getComputedStyle(textEl);
+  const textPad = textCs ? parseFloat(textCs.paddingTop) + parseFloat(textCs.paddingBottom) : 0;
 
   const overlapsComposer = Boolean(box) && left < box.right && left + width > box.left;
 
@@ -3646,25 +3667,31 @@ function positionCard() {
 
   let room, top;
   const MIN_TEXT = 88;
+  // The whole card, frame included, takes at most this much of the window.
+  // The text alone was capped at 40vh, and the frame around it (title, style
+  // row, context used, the first-run tip, the foot) came on top: a long Deep
+  // rewrite covered two thirds of the window and the conversation behind it.
+  // The rewrite scrolls inside instead.
+  const cap = Math.max(MIN_TEXT + frame + textPad, Math.round(window.innerHeight * CARD_MAX_SHARE));
   if (useAbove) {
     // The card's bottom edge: just above whatever it sits on, and never over
     // the composer.
     let floor = (onComposer ? box.top : pillBox.top) - gap;
     if (overlapsComposer && box.top - gap < floor) floor = box.top - gap;
-    room = floor - margin;
+    room = Math.min(floor - margin, cap);
     // Give the rewrite whatever is left over, rather than letting the card grow
     // past the space it has. Clamping the card's TOP against the viewport
     // instead would walk it down over the composer exactly when the head made
     // it taller. MIN_TEXT stops a short window collapsing the rewrite to a
     // sliver.
-    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame - textPad) + "px");
     top = Math.max(margin, floor - (card.offsetHeight || 160));
   } else {
     let ceiling = pillBox.bottom + gap;
     let floor = window.innerHeight - margin;
     if (overlapsComposer && box.top > ceiling) floor = box.top - gap;
-    room = floor - ceiling;
-    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame) + "px");
+    room = Math.min(floor - ceiling, cap);
+    card.style.setProperty("--pm-card-text-max", Math.max(MIN_TEXT, room - frame - textPad) + "px");
     top = ceiling;
   }
   card.style.top = top + "px";
@@ -3684,9 +3711,11 @@ function openCard(innerHTML) {
   // prompts ticked, the shortcut, a draft reopened): the sheet would sit
   // over the card's top edge, so it goes.
   if (!cardExpanded && panelOpen) togglePanel(false);
-  card.innerHTML = innerHTML +
+  card.innerHTML = innerHTML + `<div class="pm-card-strip" id="pm-card-strip"></div>` +
     `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" aria-expanded="false" aria-controls="pm-card-layout" title="Drag to resize, or click to move and size with buttons"></button>`;
   cardExpanded = true;
+  card.classList.toggle("pm-card-tucked", cardTucked);
+  renderStrip();
   positionRail();   // the card takes the chat box's top edge; the rail steps aside
   setupCardInteractions(card);
   if (focusedId) card.querySelector(`[id="${focusedId}"]`)?.focus({ preventScroll: true });
@@ -3724,6 +3753,7 @@ function hideCard() {
     cardReposition = null;
   }
   cardExpanded = false;
+  cardTucked = false;
   cardMinimized = true;
   // Folding the card leaves the pill as it was, so placement is not re-run on
   // its own; the rail has to be told the edge is free again.
@@ -3732,9 +3762,94 @@ function hideCard() {
   renderPill();
 }
 
+// ── Tucked: a strip on the chat box while the user reads the conversation ──
+//
+// The card sits on the chat box, which is also where the latest messages are.
+// Scrolling the conversation or clicking in it means the user went back to
+// the page: the card folds to a 40px strip that still says what the draft is
+// and still carries its verb. A click on the strip, ⌘⇧P, the pill or the
+// rewrite shortcut opens it again. Hover does not: the strip lies where the
+// pointer passes on its way to the chat box.
+
+/** What counts as "the page" and not the extension's own surfaces. */
+const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-caret, #pm-rail, " +
+  "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
+
+function renderStrip() {
+  const strip = document.getElementById("pm-card-strip");
+  if (!strip) return;
+  if (!cardTucked) { strip.innerHTML = ""; return; }
+  let label, gist, verb = "";
+  if (cardState === "streaming") {
+    label = "Rewriting\u2026";
+    // The newest words, so the line's end is the live edge.
+    const t = norm(pillStreamingPreview);
+    gist = t.length > 70 ? "…" + t.slice(-70) : t;
+  } else if (cardState === "error") {
+    label = "Rewrite failed";
+    gist = cardError;
+    verb = "Retry";
+  } else {
+    label = cardStale ? "Chat box changed" : cardSubject ? "Improved" : "Rewrite ready";
+    gist = cardResult?.enhanced || "";
+    verb = cardStale ? "Redo" : draftVerb();
+  }
+  strip.dataset.state = cardState === "ready" && cardStale ? "stale" : cardState;
+  strip.innerHTML =
+    `<span class="pm-card-strip-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-strip-label">${escHtml(label)}</span>` +
+    `<span class="pm-card-strip-gist">${escHtml(norm(gist))}</span>` +
+    (verb ? `<button type="button" class="pm-card-strip-verb" data-act="verb">${verb}</button>` : "") +
+    `<button type="button" class="pm-card-strip-open" data-act="open" aria-label="Show the whole rewrite" title="Show the whole rewrite (${MOD_SHIFT}P)">` +
+    `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 6 4.5l3 3"/></svg></button>`;
+  if (!strip._pmWired) {
+    strip._pmWired = true;
+    strip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (e.target.closest("[data-act='verb']")) { pillVerb(); return; }
+      untuckCard();
+    });
+  }
+}
+
+function setCardTucked(tucked) {
+  const card = document.getElementById("pm-card");
+  if (!card || !cardExpanded || cardTucked === tucked) return;
+  // Focus inside a card that is about to fold would be left on a hidden
+  // button; the strip's open button is where it can go on.
+  const hadFocus = card.contains(document.activeElement);
+  cardTucked = tucked;
+  card.classList.toggle("pm-card-tucked", tucked);
+  renderStrip();
+  if (hadFocus) {
+    const next = tucked ? card.querySelector(".pm-card-strip-open") : card.querySelector("#pm-card-min");
+    next?.focus({ preventScroll: true });
+  }
+  positionCard();
+  placePill();
+}
+
+function tuckCard() {
+  if (cardLayout?.detached) return;   // placed there on purpose: it stays as placed
+  setCardTucked(true);
+}
+
+function untuckCard() {
+  setCardTucked(false);
+}
+
+/** A wheel turn or a press on the page, outside the extension: fold the card. */
+function tuckOnPageGesture(e) {
+  if (!cardExpanded || cardTucked) return;
+  if (e.target.closest?.(PM_SURFACES)) return;
+  if (document.getElementById("pm-card")?._pmEndGesture) return;   // mid drag or resize
+  tuckCard();
+}
+
 /** Show the card again for a draft the pill is holding. */
 function expandCard() {
   cardMinimized = false;
+  cardTucked = false;
   draftStore.setExpanded(true);
   if (cardState === "ready" && cardResult) showDiffModal(cardResult);
   else if (cardState === "error") failStreamingModal(cardError);
@@ -3742,7 +3857,9 @@ function expandCard() {
 }
 
 function toggleCard() {
-  if (cardExpanded) hideCard();
+  // The pill is the card's handle: a tucked card opens again, an open one folds.
+  if (cardExpanded && cardTucked) untuckCard();
+  else if (cardExpanded) hideCard();
   else expandCard();
 }
 
@@ -3804,6 +3921,7 @@ function showStreamingDiffModal(originalText, style = currentMode) {
   cardState = "streaming";
   cardShowingOriginal = false;
   cardMinimized = false;
+  cardTucked = false;
   pillStreamingPreview = "";
   showStreamingCardAgain();
   renderPill();
@@ -3830,6 +3948,7 @@ function showStreamingCardAgain() {
 function updateStreamingText(text) {
   pillStreamingPreview = text;
   renderPill();
+  if (cardTucked) renderStrip();
   const target = document.getElementById("pm-stream-target");
   if (!target) return;
   target.innerHTML = escHtml(text) + '<span class="pm-card-cursor"></span>';
@@ -4366,7 +4485,7 @@ function handleCardKeydown(e) {
   const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.code === "KeyP";
   if (chord) {
     e.preventDefault(); e.stopPropagation();
-    if (card) hideCard(); else expandCard();
+    if (card && cardTucked) untuckCard(); else if (card) hideCard(); else expandCard();
     return;
   }
   if (!card) return;
@@ -4390,6 +4509,11 @@ function handleCardKeydown(e) {
   }
 }
 document.addEventListener("keydown", handleCardKeydown, true);
+// Capture, so a host that stops the event cannot keep the card over its page.
+// Wheel rather than scroll: a host auto-scrolling a streaming answer is not
+// the user going back to the conversation.
+document.addEventListener("wheel", tuckOnPageGesture, { capture: true, passive: true });
+document.addEventListener("pointerdown", tuckOnPageGesture, true);
 
 function showSetupRequiredModal() {
   const overlay = getOrCreateModalOverlay();

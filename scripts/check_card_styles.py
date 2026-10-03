@@ -265,6 +265,105 @@ def main():
         check(not card_open(), "a click on the pill still folds the card (the pill is its handle)")
         ev("closeCard()")
 
+        # ── the card on the chat box takes at most 45% of the window ──
+        LONG = " ".join(["Explain each step, name the trade-off, and show the code for it."] * 30)
+        ev("FAKE.calls = []; H.type(H.ORIG)")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        ev(f"showDiffModal({{ enhanced: {LONG!r}, original: H.ORIG, mode: 'deep' }})")
+        page.wait_for_timeout(100)
+        h = ev("document.getElementById('pm-card').getBoundingClientRect().height")
+        check(h <= 900 * 0.45 + 1, f"a long rewrite keeps the card to 45% of the window, got {h}px")
+        check(ev("(() => { const t = document.querySelector('#pm-card .pm-card-text'); return t.scrollHeight > t.clientHeight; })()"),
+              "and scrolls inside it")
+        shot("5-capped")
+        ev("closeCard()")
+
+        # ── tucked: a strip while the user reads the conversation ──
+        LONG = " ".join(["Explain each step, name the trade-off, and show the code for it."] * 30)
+        ev("FAKE.calls = []; H.type(H.ORIG)")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        ev(f"showDiffModal({{ enhanced: {LONG!r}, original: H.ORIG, mode: 'deep' }})")
+        page.wait_for_timeout(100)
+        def tucked():
+            return ev("cardTucked && document.getElementById('pm-card').classList.contains('pm-card-tucked')")
+
+        page.locator("#pm-card .pm-card-text").hover()   # waits out a redraw
+        page.mouse.wheel(0, 120)
+        page.wait_for_timeout(100)
+        check(not tucked(), "the wheel inside the card scrolls the rewrite and leaves the card open")
+        page.mouse.move(700, 150)
+        page.mouse.wheel(0, 200)
+        page.wait_for_timeout(250)
+        check(tucked(), "the wheel over the conversation tucks the card")
+        strip = ev("H.rect('#pm-card')")
+        check(strip["h"] <= 44, f"into a strip one line high, got {strip['h']}px")
+        composer_top = ev("H.rect('composer').t")
+        check(strip["b"] <= composer_top, "still on the chat box's top edge")
+        check("Rewrite ready" in page.inner_text("#pm-card-strip"), "which says what it holds")
+        check(page.inner_text("#pm-card-strip .pm-card-strip-verb").strip() in ("Insert", "Replace"),
+              "and keeps the draft's verb")
+        check(ev("cardState") == "ready" and ev("cardExpanded"), "the draft is untouched")
+        shot("6-tucked")
+        page.click("#pm-card-strip .pm-card-strip-gist")
+        page.wait_for_timeout(150)
+        check(not tucked() and page.is_visible("#pm-card .pm-card-text"), "a click on the strip opens the card again")
+        page.mouse.click(700, 150)
+        page.wait_for_timeout(150)
+        check(tucked(), "a click in the conversation tucks it too")
+        page.focus("#composer")
+        page.keyboard.press("Meta+Shift+P")
+        page.wait_for_timeout(150)
+        check(not tucked() and ev("cardExpanded"), "⌘⇧P opens a tucked card rather than hiding it")
+        page.mouse.click(700, 150)
+        page.click("#pm-trigger", position={"x": 12, "y": 12})
+        page.wait_for_timeout(250)
+        check(not tucked() and ev("cardExpanded"), "the pill opens a tucked card too")
+        page.mouse.click(700, 150)
+        page.focus("#composer")
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(250)
+        check(not ev("cardExpanded") and not ev("cardTucked"), "esc on a tucked card minimizes it to the pill")
+        page.click("#pm-trigger", position={"x": 12, "y": 12})
+        page.wait_for_timeout(250)
+        check(ev("cardExpanded") and not tucked(), "and it comes back whole")
+
+        # the strip's verb does the draft's job
+        page.mouse.click(700, 150)
+        ev("H.type('')")
+        page.wait_for_timeout(100)
+        page.click("#pm-card-strip .pm-card-strip-verb")
+        page.wait_for_function("document.getElementById('composer').textContent.length > 0", timeout=3000)
+        # Insert checks its write before it says so: wait for the receipt.
+        page.wait_for_function("document.getElementById('pm-trigger').dataset.state === 'applied'", timeout=3000)
+        check(ev("document.getElementById('composer').textContent").startswith("Explain each step"),
+              "Insert on the strip inserts the draft")
+        ev("closeCard()")
+
+        # streaming: the strip shows the live edge
+        ev("clearApplied(); FAKE.delay = 120; H.type(H.ORIG)")   # the "Inserted" receipt would eat the click
+        page.click("#pm-trigger")
+        page.wait_for_function("cardState === 'streaming'")
+        page.mouse.move(700, 150)
+        page.mouse.wheel(0, 150)
+        page.wait_for_timeout(100)
+        check(tucked() and "Rewriting" in page.inner_text("#pm-card-strip"), "a card still writing tucks, and says so")
+        page.wait_for_function("cardState === 'ready'", timeout=8000)
+        check(tucked() and "Rewrite ready" in page.inner_text("#pm-card-strip"), "and stays tucked when the rewrite lands")
+        ev("FAKE.delay = 25; closeCard()")
+
+        # a card the user placed stays where they put it
+        ev("H.type(H.ORIG)")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        ev("cardLayout = { detached: true, x: 300, y: 120, width: 520, height: 300 }; positionCard()")
+        page.mouse.move(1200, 150)
+        page.mouse.wheel(0, 150)
+        page.wait_for_timeout(100)
+        check(not tucked(), "a card moved off the chat box by hand does not tuck")
+        ev("resetCardLayout(); closeCard()")
+
         # ── screenshots, dark and light host ──
         if args.shots:
             ev("FAKE.calls = []; H.type(H.ORIG)")

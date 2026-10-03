@@ -1200,6 +1200,77 @@
     transform: translateY(0);
 }
 
+/* ── Tucked: the card folded to one line on the chat box ──
+   Every part of the card but the strip steps out; the card itself stays, so
+   its versions, scroll and focus survive the fold. */
+.pm-card-strip { display: none; }
+.pm-card.pm-card-tucked { border-radius: 12px; }
+.pm-card.pm-card-tucked > :not(.pm-card-strip) { display: none !important; }
+.pm-card.pm-card-tucked .pm-card-strip {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 40px;
+    padding: 0 5px 0 14px;
+    cursor: pointer;
+    animation: pm-strip-in .18s cubic-bezier(.2, .7, .3, 1);
+}
+@keyframes pm-strip-in {
+    from { opacity: 0; transform: translateY(8px); }
+    to   { opacity: 1; transform: none; }
+}
+.pm-card-strip-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--pm-accent); }
+.pm-card-strip[data-state="streaming"] .pm-card-strip-dot { animation: pm-strip-pulse 1s ease-in-out infinite; }
+.pm-card-strip[data-state="stale"] .pm-card-strip-dot { background: var(--pm-warn); }
+.pm-card-strip[data-state="error"] .pm-card-strip-dot { background: var(--pm-danger); }
+@keyframes pm-strip-pulse { 50% { opacity: .35; } }
+.pm-card-strip-label { flex: none; color: var(--pm-text); font-size: 12.5px; font-weight: 600; }
+.pm-card-strip-gist {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--pm-text-muted);
+    font-size: 12.5px;
+}
+.pm-card-strip-verb {
+    flex: none;
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 8px;
+    border: 1px solid var(--pm-accent);
+    background: var(--pm-accent);
+    color: #06201a;
+    font: 600 12px/1 var(--pm-font);
+    cursor: pointer;
+}
+.pm-card-strip[data-state="stale"] .pm-card-strip-verb,
+.pm-card-strip[data-state="error"] .pm-card-strip-verb {
+    border-color: var(--pm-border);
+    background: var(--pm-bg-hover);
+    color: var(--pm-text);
+}
+.pm-card-strip-open {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--pm-text-muted);
+    cursor: pointer;
+}
+.pm-card-strip-open svg { width: 12px; height: 12px; }
+.pm-card-strip-open:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-strip-verb:focus-visible, .pm-card-strip-open:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+    .pm-card.pm-card-tucked .pm-card-strip, .pm-card-strip[data-state="streaming"] .pm-card-strip-dot { animation: none; }
+}
+
 /* Opens downward from a pill that has been dragged into the top half. */
 .pm-card.pm-card-below { transform: translateY(-6px); }
 .pm-card.pm-card-below.pm-card-visible { transform: translateY(0); }
