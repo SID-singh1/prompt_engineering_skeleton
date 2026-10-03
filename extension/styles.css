@@ -2416,6 +2416,7 @@
     font-size: 11.5px;
 }
 .pm-caret .pm-caret-head b { color: var(--pm-accent); font-weight: 500; }
+.pm-caret .pm-caret-head b i { margin-left: 7px; font-style: normal; font-weight: 400; color: var(--pm-con-muted); font-variant-numeric: tabular-nums; }
 .pm-caret .pm-caret-list { overflow-y: auto; padding: 5px; overscroll-behavior: contain; }
 .pm-caret .pm-caret-row {
     display: grid;

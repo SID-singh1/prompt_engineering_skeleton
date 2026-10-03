@@ -2332,9 +2332,10 @@ function checkSlash() {
 function slashItems() {
   if (!slash) return [];
   const q = slash.q.toLowerCase();
+  // Every match: the list scrolls. It used to stop at six, and a seventh
+  // prompt could only be reached by typing enough of it to filter the rest out.
   return savedPrompts
-    .filter((p) => !q || [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q.replace(/^#/, "")))
-    .slice(0, 6);
+    .filter((p) => !q || [p.title, p.content, ...(p.tags || [])].join(" ").toLowerCase().includes(q.replace(/^#/, "")));
 }
 
 function closeSlash() {
@@ -2387,7 +2388,16 @@ function renderSlash() {
   }
   const items = slashItems();
   slashSel = Math.max(0, Math.min(slashSel, items.length - 1));
-  const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
+  // Redrawn on every keystroke and caret move. A list the user has scrolled
+  // keeps its place while the query is the same; a new query starts at the top.
+  const oldList = menu.querySelector(".pm-caret-list");
+  const sameList = Boolean(oldList) && menu.dataset.q === slash.q;
+  const keepTop = sameList ? oldList.scrollTop : 0;
+  const moved = !sameList || menu.dataset.sel !== String(slashSel);
+  menu.dataset.q = slash.q;
+  menu.dataset.sel = String(slashSel);
+  const count = promptsLoaded && items.length > 1 ? `<i>${items.length}</i>` : "";
+  const head = `<div class="pm-caret-head"><b>//${escHtml(slash.q)}${count}</b><span>↵ insert · ⇥ attach · esc</span></div>`;
   let body;
   if (!promptsLoaded) body = `<div class="pm-caret-empty">Loading your saved prompts…</div>`;
   else if (!items.length) body = `<div class="pm-caret-empty">${savedPrompts.length ? `No saved prompt matches “${escHtml(slash.q)}”` : "No saved prompts yet. Open the library to save one."}</div>`;
@@ -2399,7 +2409,26 @@ function renderSlash() {
       `<button type="button" class="pm-lib-icon pm-lib-attach" data-act="attach" aria-pressed="${att}" tabindex="-1" aria-label="Attach as context">${LIB_ICON.clip}</button></div>`;
   }).join("");
   menu.innerHTML = head + `<div class="pm-caret-list">${body}</div>`;
+  placeSlash();
+  const list = menu.querySelector(".pm-caret-list");
+  list.scrollTop = keepTop;
+  // ↑↓ can walk past the fold; the highlight follows into view, as in the
+  // sheet. Only when it moved: a redraw for a caret move must not undo a
+  // scroll the user just made with the wheel.
+  if (moved) list.querySelector(".pm-caret-row.pm-sel")?.scrollIntoView({ block: "nearest" });
+}
 
+/**
+ * Put the menu by the caret, without redrawing it.
+ *
+ * Separate from renderSlash() so a page scroll only moves the menu. Redrawing
+ * on scroll threw the list back to its top: the scroll listener is on window
+ * in the capture phase, so it also heard the menu's own list scrolling, and
+ * every turn of the wheel reset it.
+ */
+function placeSlash() {
+  const menu = document.getElementById("pm-caret");
+  if (!slash || !menu) return;
   const rect = caretRect(slash.el);
   const width = Math.min(340, window.innerWidth - 24);
   menu.style.width = width + "px";
@@ -2574,7 +2603,13 @@ function setupLibraryListeners() {
       if (slash && !slash.el.contains(document.activeElement) && document.activeElement !== slash.el) closeSlash();
     }, 0);
   }, true);
-  window.addEventListener("scroll", () => { positionRail(); if (slash) renderSlash(); }, true);
+  // Capture phase: a scroll anywhere, the page's or a panel's, may have moved
+  // the chat box. The menu's own list scrolling is not one of those.
+  window.addEventListener("scroll", (e) => {
+    if (e.target instanceof Element && e.target.closest("#pm-caret")) return;
+    positionRail();
+    placeSlash();
+  }, true);
   window.addEventListener("resize", () => { positionRail(); positionLibrary(); closeSlash(); });
 
   // Sign-in state and attachments can change in another tab or the popup.
