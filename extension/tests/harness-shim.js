@@ -63,7 +63,7 @@
 window.FAKE_API = {
   calls: [], usage: { count: 9, limit: 15 }, nextId: 100,
   prompts: [
-    { id: "p1", title: "Code review template", content: "Review this diff like a senior engineer: correctness first, then naming, then tests. Flag anything that changes behaviour.", tags: ["coding", "review"] },
+    { id: "p1", title: "Code review template", content: "Review this diff like a senior engineer: correctness first, then naming, then tests. Flag anything that changes behaviour.", tags: ["coding", "review"], created_at: new Date(Date.now() - 2 * 864e5).toISOString() },
     { id: "p2", title: "", content: "You are my writing editor. Cut every sentence that does not earn its place and keep my voice.", tags: ["writing"] },
     { id: "p3", title: "Explain like a teacher", content: "Explain the concept step by step with one concrete example, then a common misconception.", tags: [] },
     { id: "p4", title: "Bug report triage", content: "Given this bug report, list the likely root causes ranked by probability and the one log line that would confirm each.", tags: ["debug"] },
