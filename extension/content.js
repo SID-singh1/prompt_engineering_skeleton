@@ -1643,6 +1643,7 @@ function togglePanel(force) {
   }
   // The pill folds to ⊕ while the sheet is up, and the sheet hangs off it.
   placePill();
+  positionRail();
 }
 
 /** The chip, "?" and the ⋯ menu all come here: the keyboard map. See openKeyMap(). */
@@ -1711,6 +1712,9 @@ function focusLibrarySearch() {
 }
 
 const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
+const LIB_HEIGHT = 520;        // the sheet's height when there is room for it
+const RAIL_GAP = 6, RAIL_ROW = 26;      // the chips' row: its gap above the box, and its height
+const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 
 /** Where the sheet goes: on the pill's side, above it if there is room, else below. */
 function positionLibrary() {
@@ -1731,7 +1735,13 @@ function positionLibrary() {
   const composer = findComposer();
   const frame = composerFrame(composer);
   const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
-  let ceiling = overlapsBox ? Math.min(p.top, frame.top) : p.top;
+  // Over the box, it stands on the row the context chips land on, whether or
+  // not any have yet. It used to stand on the chips themselves, so the chip
+  // that first reached under it, and each that wrapped them onto another row,
+  // pushed the sheet up or made it shorter: picking a second or third prompt
+  // moved the list being picked from. While the sheet is open the chips keep
+  // to that one row (see fitRailToOneRow).
+  let ceiling = overlapsBox ? Math.min(p.top, frame.top - RAIL_SLOT) : p.top;
   // A tall or centred chat box (ChatGPT's new chat with a draft in it) left
   // too little room above it, and the sheet came out two rows high at the
   // top of the window, nowhere near the pill (seen live, 2026-10-01). It may
@@ -1741,19 +1751,17 @@ function positionLibrary() {
     const controls = composerControlsTop(composer);
     if (controls !== null) ceiling = Math.min(p.top, Math.max(ceiling, controls));
   }
-  // Nor over the context chips: they are where a click on a row shows up.
-  const rail = document.getElementById("pm-rail");
-  if (rail && !rail.hidden) {
-    const rr = rail.getBoundingClientRect();
-    if (rr.width && left < rr.right && left + width > rr.left && rr.top < ceiling && rr.bottom > ceiling - 400) {
-      ceiling = Math.min(ceiling, rr.top);
-    }
-  }
   const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
   const up = above >= 260 || above >= below;
   lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
   lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
-  lib.style.maxHeight = Math.max(160, up ? above : below) + "px";
+  // A set height, not one that follows what is inside: the foot gaining a
+  // line as the first prompt was ticked grew the sheet upward under the
+  // pointer. The list takes up the difference.
+  const room = Math.max(160, up ? above : below);
+  const h = Math.round(Math.min(room, LIB_HEIGHT));
+  lib.style.height = h + "px";
+  lib.style.maxHeight = h + "px";
   lib.dataset.side = up ? "above" : "below";
   positionPeek();
 }
@@ -1979,7 +1987,10 @@ function libFootHtml() {
   const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
   parts.push(`<span class="pm-lib-hints${parts.length ? " pm-lib-hints-also" : ""}">` + (libView === "recent"
     ? k(ENTER_KEY, libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
-    : k(ENTER_KEY, selectedIds.size ? "add" : "add to context") + k(CMD_ENTER, libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
+    : selectedIds.size
+      // Short beside the count, so the foot keeps to two lines however many are ticked.
+      ? k(ENTER_KEY, "add") + k(CMD_ENTER, libVerb().toLowerCase())
+      : k(ENTER_KEY, "add to context") + k(CMD_ENTER, libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
   if (selectedIds.size) {
     // What the ticks are for, said where they are ticked. Context shapes the
     // ⊕ rewrite and is never sent to the chat on its own, so with text in the
@@ -3075,7 +3086,7 @@ function positionRail() {
   rail.hidden = hide;
   if (hide) return;
   rail.style.left = Math.max(8, Math.round(r.left)) + "px";
-  rail.style.bottom = Math.round(window.innerHeight - r.top + 6) + "px";
+  rail.style.bottom = Math.round(window.innerHeight - r.top + RAIL_GAP) + "px";
   let maxWidth = Math.max(180, Math.round(r.width));
   // The pill steps up onto the box's top corner when it would sit on the box
   // (a draft makes it wide), which is this same row: on Claude the chips ran
@@ -3085,6 +3096,34 @@ function positionRail() {
     maxWidth = Math.min(maxWidth, Math.max(180, Math.round(pill.left - r.left - 8)));
   }
   rail.style.maxWidth = maxWidth + "px";
+  fitRailToOneRow(rail);
+}
+
+/**
+ * While the sheet is open the chips keep to the one row it leaves them, the
+ * oldest folding into a "+2" chip; wrapping upward ran them under the sheet.
+ * The newest stays in view: it is the one the user just watched land.
+ */
+function fitRailToOneRow(rail) {
+  const chips = [...rail.querySelectorAll(".pm-rail-chip")];
+  chips.forEach((c) => { c.hidden = false; });
+  rail.querySelector(".pm-rail-more")?.remove();
+  rail.classList.toggle("pm-rail-one", panelOpen);
+  if (!panelOpen) return;
+  const max = parseFloat(rail.style.maxWidth) || Infinity;
+  let folded = 0;
+  while (rail.scrollWidth > max + 1 && folded < chips.length - 1) {
+    chips[folded].hidden = true;
+    folded++;
+    let more = rail.querySelector(".pm-rail-more");
+    if (!more) {
+      more = document.createElement("span");
+      more.className = "pm-rail-more";
+      rail.insertBefore(more, chips[0]);
+    }
+    more.textContent = "+" + folded;
+    more.title = chips.slice(0, folded).map((c) => c.textContent.trim()).join(", ");
+  }
 }
 
 // ── // in the chat box ──

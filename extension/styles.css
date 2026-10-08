@@ -2753,6 +2753,26 @@
     animation: pm-lib-in .12s ease-out;
 }
 .pm-rail[hidden] { display: none; }
+/* Under an open sheet: one row (see fitRailToOneRow). */
+.pm-rail.pm-rail-one { flex-wrap: nowrap; }
+.pm-rail.pm-rail-one > * { flex-shrink: 0; }
+.pm-rail .pm-rail-chip[hidden] { display: none; }
+.pm-rail .pm-rail-more {
+    pointer-events: auto;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 13px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    box-shadow: var(--pm-con-shadow);
+    color: var(--pm-accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
 .pm-rail .pm-rail-chip,
 .pm-rail .pm-rail-add {
     pointer-events: auto;
