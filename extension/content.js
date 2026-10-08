@@ -1496,6 +1496,7 @@ let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
 let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
+let libFoldedCard = null;     // the card the sheet folded away on opening: { box }
 let libConfirm = null;        // a saved prompt awaiting "Delete?"
 let libSignedIn = false;      // kept current from storage; // needs it synchronously
 let libHistoryLoaded = false;
@@ -1670,6 +1671,15 @@ function togglePanel(force) {
   }
   if (open) {
     closeSlash();
+    // The card and the sheet are two windows with one place to be: over the
+    // chat box's right half. Opened over a rewrite, the sheet covered the
+    // card's end (most of it in a 1024px window). The card folds into the
+    // pill, which still carries the draft and its verb, and comes back when
+    // the sheet closes, if the chat box is as it was.
+    if (cardExpanded && cardState !== "idle") {
+      libFoldedCard = { box: norm(getCurrentInputText()) };
+      hideCard();
+    }
     libPage = "list";
     libView = "saved";
     searchQuery = "";
@@ -1683,6 +1693,12 @@ function togglePanel(force) {
     loadLibrary();
   } else {
     lib.innerHTML = "";
+    // Back, unless something moved on from it meanwhile: the draft was used
+    // or thrown away, or a saved prompt went into the chat box, which would
+    // bring the card back stale.
+    const folded = libFoldedCard;
+    libFoldedCard = null;
+    if (folded && !cardExpanded && cardState !== "idle" && norm(getCurrentInputText()) === folded.box) expandCard();
   }
   // The pill folds to ⊕ while the sheet is up, and the sheet hangs off it.
   placePill();
@@ -2190,6 +2206,9 @@ async function improveSavedPrompt(p) {
 }
 
 async function libInsert(text, logId) {
+  // The chat box is about to change: a card the sheet folded away would come
+  // back stale. The pill keeps the draft.
+  libFoldedCard = null;
   closeLibrary();
   const applied = await applyOrFallback(text, null);
   if (applied) {
@@ -2598,7 +2617,7 @@ function onLibraryClick(e) {
     case "signin": openSettings(); return;
     case "clear": clearAttachments(); return;
     case "new": libMenu = false; openNewPrompt(); return;
-    case "rewrite": closeLibrary(); handleEnhance(); return;
+    case "rewrite": libFoldedCard = null; closeLibrary(); handleEnhance(); return;
     case "sendfeedback": sendLibraryFeedback(); return;
   }
   const rowEl = e.target.closest("[data-i]");
@@ -4454,7 +4473,8 @@ function openCard(innerHTML) {
   // A card coming up means the user moved on from the library (⊕ with
   // prompts ticked, the shortcut, a draft reopened): the sheet would sit
   // over the card's top edge, so it goes.
-  if (!cardExpanded && panelOpen) togglePanel(false);
+  // That card is the one now, not the one the sheet folded away.
+  if (!cardExpanded && panelOpen) { libFoldedCard = null; togglePanel(false); }
   card.innerHTML = innerHTML + `<div class="pm-card-strip" id="pm-card-strip"></div>` +
     `<button type="button" class="pm-card-resize" id="pm-card-resize" aria-label="Card size and position" aria-expanded="false" aria-controls="pm-card-layout" title="Drag to resize, or click to move and size with buttons"></button>`;
   cardExpanded = true;
