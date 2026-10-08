@@ -540,6 +540,30 @@ def main():
         check(ev("JSON.parse(localStorage.getItem('pm')).pm_sheet_size") == {"w": 0, "h": 0}, "and forgets the dragged one")
         page.keyboard.press("Escape")
 
+        # ── the library and the rewrite card take turns (seen: the sheet sat on the card) ──
+        for size in ((1440, 900), (1024, 700)):
+            page.set_viewport_size({"width": size[0], "height": size[1]})
+            ev("H.type(H.ORIG); H.stream(); H.done()")
+            page.wait_for_selector("#pm-card #pm-card-accept")
+            open_lib()
+            page.wait_for_timeout(250)
+            check(page.locator("#pm-card").count() == 0 and not overlaps(rect("#pm-library"), rect("#pm-card")),
+                  f"{size[0]}px: opened over a rewrite, the sheet folds the card into the pill instead of covering it")
+            check(ev("cardState") == "ready" and "Replace" in page.inner_text("#pm-trigger"), "which still holds the draft and its verb")
+            page.keyboard.press("Escape")
+            page.wait_for_selector("#pm-card #pm-card-accept", timeout=2000)
+            check(ev("cardExpanded"), f"{size[0]}px: closing the sheet brings the card back")
+        open_lib()
+        page.locator("#pm-library .pm-lib-row[aria-checked] >> nth=0").hover()
+        page.click("#pm-library .pm-lib-row[aria-checked] >> nth=0 >> [data-act='insert']")
+        page.wait_for_selector("#pm-library", state="hidden")
+        page.wait_for_timeout(300)
+        check(not ev("cardExpanded") and ev("cardState") == "ready",
+              "but not after a saved prompt went into the chat box: it would come back stale; the pill keeps it")
+        ev("closeCard(); H.type('')")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(100)
+
         # ── keys where they act: tooltips with keycaps ──
         open_lib()
         page.hover("#pm-lib-close")
