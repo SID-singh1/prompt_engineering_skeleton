@@ -2442,13 +2442,17 @@
     gap: 6px 10px;
     min-height: 36px;
     padding: 8px 12px;
+    /* One line, whatever is in context (see libFootHtml): the keys give way first. */
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
     border-top: 1px solid var(--pm-con-border);
     color: var(--pm-con-muted);
     font-size: 11.5px;
 }
-.pm-lib .pm-lib-hints { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.pm-lib .pm-lib-hints { display: flex; flex-wrap: nowrap; gap: 4px 10px; min-width: 0; overflow: hidden; }
 /* Beside what is in context, set apart from it. */
-.pm-lib .pm-lib-hints-also { padding-left: 10px; border-left: 1px solid var(--pm-con-border); }
+.pm-lib .pm-lib-hints-also { margin-left: auto; }
 .pm-lib kbd {
     margin-right: 4px;
     padding: 1px 4px;
@@ -2473,7 +2477,7 @@
     cursor: pointer;
 }
 .pm-lib .pm-lib-low { color: #e0b25a; }
-.pm-lib .pm-lib-foot-go { margin-left: auto; }
+.pm-lib .pm-lib-foot-go { margin-left: auto; height: 19px; padding: 0 8px; font-size: 11.5px; }  /* no taller than the keys it stands in for */
 .pm-lib .pm-lib-foot-note { margin-left: auto; color: var(--pm-con-muted); }
 
 /* ── ⋯ ── */

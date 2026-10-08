@@ -1915,13 +1915,19 @@ function positionLibrary() {
   const up = above >= 260 || above >= below;
   lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
   lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
-  // A set height, not one that follows what is inside: the foot gaining a
-  // line as the first prompt was ticked grew the sheet upward under the
-  // pointer. The list takes up the difference.
+  // It fits what it holds, up to the usual height (a sign-in note or one
+  // prompt in a 520px box was mostly empty), or is the height the user
+  // dragged it to. Ticking a prompt changes nothing inside it in height: the
+  // foot keeps to one line (see libFootHtml).
   const room = Math.max(160, up ? above : below);
-  const h = Math.round(Math.min(room, sheetSize.h ? Math.max(SHEET_H_MIN, sheetSize.h) : LIB_HEIGHT));
-  lib.style.height = h + "px";
-  lib.style.maxHeight = h + "px";
+  if (sheetSize.h) {
+    const h = Math.round(Math.min(room, Math.max(SHEET_H_MIN, sheetSize.h)));
+    lib.style.height = h + "px";
+    lib.style.maxHeight = h + "px";
+  } else {
+    lib.style.height = "";
+    lib.style.maxHeight = Math.round(Math.min(room, LIB_HEIGHT)) + "px";
+  }
   lib.dataset.side = up ? "above" : "below";
   positionPeek();
 }
@@ -2126,33 +2132,31 @@ function libRowsHtml() {
 }
 
 function libFootHtml() {
+  // One line in every state. A foot that gained a line when the first prompt
+  // was ticked grew the sheet upward under the pointer.
   const parts = [];
   const left = usageData.limit - usageData.count;
   if (libSignedIn && usageData.known && left <= 3) {
-    parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : left === 1 ? "1 rewrite left today" : `${left} rewrites left today`}</span>`);
+    // "today" gives way beside the context count, to keep the foot one line.
+    const today = selectedIds.size ? "" : " today";
+    parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : `${left} rewrite${left === 1 ? "" : "s"} left${today}`}</span>`);
   }
-  if (selectedIds.size) {
-    parts.push(`<span class="pm-lib-att-count">${selectedIds.size} in context</span>` +
-      `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
-  }
-  // The keys stay once something is in context: ticking a prompt is when
-  // the user is learning ↵ and ⌘↵, and the foot used to drop them right then.
   const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
-  parts.push(`<span class="pm-lib-hints${parts.length ? " pm-lib-hints-also" : ""}">` + (libView === "recent"
-    ? k(ENTER_KEY, libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
-    : selectedIds.size
-      // Short beside the count, so the foot keeps to two lines however many are ticked.
-      ? k(ENTER_KEY, "add") + k(CMD_ENTER, libVerb().toLowerCase())
+  if (!selectedIds.size) {
+    parts.push(`<span class="pm-lib-hints">` + (libView === "recent"
+      ? k(ENTER_KEY, libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
       : k(ENTER_KEY, "add to context") + k(CMD_ENTER, libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
-  if (selectedIds.size) {
-    // What the ticks are for, said where they are ticked. Context shapes the
-    // ⊕ rewrite and is never sent to the chat on its own, so with text in the
-    // box the next step is offered here, and without it the foot says so.
-    const them = selectedIds.size === 1 ? "it" : "them";
-    parts.push(norm(getCurrentInputText()).length >= 3
-      ? `<button type="button" class="pm-lib-verb pm-lib-foot-go" data-act="rewrite" title="Rewrite what is in the chat box with ${them} as context">Rewrite with ${them}</button>`
-      : `<span class="pm-lib-foot-note">for your next ⊕ rewrite</span>`);
+    return parts.join("");
   }
+  // What the ticks are for, said where they are ticked: context shapes the
+  // ⊕ rewrite and is never sent to the chat on its own. With text in the box
+  // the next step is offered; without it, the keys stay, short.
+  const them = selectedIds.size === 1 ? "it" : "them";
+  parts.push(`<span class="pm-lib-att-count" title="Context for your next ⊕ rewrite. It is not sent to the chat on its own.">${selectedIds.size} in context</span>` +
+    `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
+  parts.push(norm(getCurrentInputText()).length >= 3
+    ? `<button type="button" class="pm-lib-verb pm-lib-foot-go" data-act="rewrite" title="Rewrite what is in the chat box with ${them} as context">Rewrite with ${them}</button>`
+    : `<span class="pm-lib-hints pm-lib-hints-also">${k(ENTER_KEY, "add")}${k(CMD_ENTER, libVerb().toLowerCase())}</span>`);
   return parts.join("");
 }
 
