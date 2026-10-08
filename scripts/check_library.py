@@ -92,6 +92,8 @@ def main():
         check(ev("document.getElementById('pm-library').dataset.page") == "signin", "signed out: the sign-in page")
         check(page.locator("#pm-lib-signin").count() == 1, "with a Sign in button")
         check(page.locator("#pm-lib-more").count() == 1, "and ⋯ still there (style, voice, privacy work without an account)")
+        h = rect("#pm-library")
+        check(h["b"] - h["t"] < 260, f"signed out, the sheet fits its few lines, got {h['b'] - h['t']:.0f}px tall")
         page.keyboard.press("Escape")
         set_box("hello ")
         page.keyboard.type("//rev")
@@ -327,7 +329,8 @@ def main():
         check(page.inner_text("#pm-rail .pm-rail-chip").strip() == "Code review template", f"the rail names it, got {page.inner_text('#pm-rail .pm-rail-chip')!r} {ev('[...selectedIds]')}")
         foot = page.inner_text("#pm-lib-foot")
         check("1 in context" in foot, f"the foot says so, got {foot!r}")
-        check("for your next ⊕ rewrite" in foot, "and what context is for, with the chat box empty")
+        check("next ⊕ rewrite" in page.get_attribute("#pm-lib-foot .pm-lib-att-count", "title"),
+              "and says what context is for when the pointer rests on the count")
         check(ev("[...selectedIds]") == ["p1"], "selected for the next rewrite")
         check(ev("JSON.parse(sessionStorage.getItem('pm')).pm_attached")[0]["title"] == "Code review template",
               "kept in session storage with its title")
@@ -454,6 +457,17 @@ def main():
         ev("document.body.classList.remove('center'); document.getElementById('composer').textContent = ''")
         page.wait_for_timeout(100)
 
+        # ── the sheet keeps its height as the pointer moves from row to row ──
+        open_lib()
+        page.wait_for_timeout(200)
+        heights = set()
+        for i in range(5):
+            page.locator("#pm-library .pm-lib-row[data-i]").nth(i).hover()
+            page.wait_for_timeout(60)
+            heights.add(round(rect("#pm-library")["b"] - rect("#pm-library")["t"]))
+        check(len(heights) == 1, f"highlighting a row does not reflow it: one height throughout, got {sorted(heights)}")
+        page.keyboard.press("Escape")
+
         # ── the sheet holds still as chips land (seen live: a second pick shrank it) ──
         for size, centred in (((1440, 900), False), ((1440, 820), True)):
             page.set_viewport_size({"width": size[0], "height": size[1]})
@@ -536,7 +550,10 @@ def main():
         page.wait_for_timeout(150)
         page.dblclick("#pm-library .pm-lib-grip-h")
         page.wait_for_timeout(100)
-        check(rect("#pm-library") == before, f"a double-click on an edge puts back the usual size, got {rect('#pm-library')}")
+        back = rect("#pm-library")
+        check(ev("document.getElementById('pm-library').style.height") == "" and back["r"] - back["l"] == before["r"] - before["l"]
+              and back["b"] - back["t"] <= 520 and abs(back["b"] - before["b"]) <= 1,
+              f"a double-click on an edge puts back the usual size, fitted to what it holds, got {back}")
         check(ev("JSON.parse(localStorage.getItem('pm')).pm_sheet_size") == {"w": 0, "h": 0}, "and forgets the dragged one")
         page.keyboard.press("Escape")
 
