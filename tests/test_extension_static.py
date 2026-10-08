@@ -322,18 +322,33 @@ def test_the_card_comes_back_the_way_it_was_left():
     assert "draftStore.setExpanded(false)" in _function_bodies(CONTENT_JS, r"hideCard")["hideCard"]
 
 
-def test_the_stale_footer_still_lists_the_keys_that_still_work():
+def test_the_stale_footer_keeps_every_action_that_still_works():
     """
-    The stale footer was a separate, shorter list that dropped \\ original and
-    ⌘S save — while both key handlers stayed live. A footer that stops listing
-    working keys teaches you to stop reading it.
+    The stale footer was a separate, shorter list that dropped Show original
+    and Save while both stayed live. One footer: going stale swaps only its
+    lead, accept for Redo, since a rewrite of text the user has since changed
+    must not be offered first.
     """
     body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
     actions = body[body.index("const actions ="):body.index("openCard(")]
-    for el in ("pm-card-toggle", "pm-card-save", "pm-card-close"):
+    for el in ("pm-card-toggle", "pm-card-save", "pm-card-discard"):
         assert el in actions, f"{el} is missing from the one shared footer"
-    # Accept is the only thing that differs between the two states.
-    assert "pm-card-disabled" in body and "pm-card-redo" in body
+    lead = body[body.index("const lead ="):body.index("const actions =")]
+    assert "cardStale" in lead and "pm-card-redo" in lead and "pm-card-accept" in lead
+
+
+def test_the_card_foot_is_buttons_not_a_legend_of_keys():
+    """
+    "esc minimize · ⌘S save" printed a keycap on every action, and a minimize
+    the head already has. The foot is buttons; a key shows in the tooltip of
+    the button it presses, and the map still lists them all.
+    """
+    for fn in ("showDiffModal", "showStreamingCardAgain", "failStreamingModal"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert "pm-card-key" not in body and "cardKey(" not in body, f"{fn} still prints keycaps in its foot"
+    assert "pm-card-close" not in CONTENT_JS, "the foot's minimize repeated the head's"
+    body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
+    assert 'data-pm-key="${CMD_KEY}S"' in body and 'data-pm-key="${CMD_ENTER}"' in body
 
 
 def test_the_reading_position_survives_going_stale():

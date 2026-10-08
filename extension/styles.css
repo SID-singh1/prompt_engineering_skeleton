@@ -1608,7 +1608,7 @@
 .pm-card-foot {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 8px;
     flex-wrap: wrap;
     padding: 9px 30px 9px 15px;
     border-top: 1px solid var(--pm-border);
@@ -1632,17 +1632,25 @@
 .pm-card-act.pm-card-primary { color: var(--pm-accent); }
 .pm-card-act:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 3px; border-radius: 4px; }
 
-.pm-card-key {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10.5px;
-    color: var(--pm-text);
-    background: var(--pm-bg-elev, rgba(127, 127, 127, .12));
+/* The foot's buttons: one solid (what the card is for), the rest outlined. */
+.pm-card-act.pm-card-btn {
+    height: 28px;
+    min-height: 28px;
+    padding: 0 12px;
     border: 1px solid var(--pm-border);
-    border-bottom-width: 2px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    line-height: 1.4;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background var(--pm-transition), color var(--pm-transition), border-color var(--pm-transition);
 }
+.pm-card-act.pm-card-btn:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-act.pm-card-btn.pm-card-primary {
+    background: var(--pm-accent);
+    border-color: var(--pm-accent);
+    color: #04231b;
+    font-weight: 600;
+}
+.pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
 
 .pm-card-spacer { margin-left: auto; }
 
@@ -1680,19 +1688,12 @@
 
 /* Shown, not hidden: the key still means accept, it simply has nothing safe to
    accept right now. Removing it would read as the footer changing at random. */
-.pm-card-act.pm-card-disabled {
-    opacity: .38;
-    cursor: not-allowed;
+.pm-card-act.pm-card-btn.pm-card-redo {
+    background: var(--pm-warn);
+    border-color: var(--pm-warn);
+    color: #2a1a05;
 }
-
-.pm-card-act.pm-card-redo {
-    color: var(--pm-warn);
-}
-
-.pm-card-act.pm-card-redo .pm-card-key {
-    color: var(--pm-warn);
-    border-color: var(--pm-warn-border);
-}
+.pm-card-act.pm-card-btn.pm-card-redo:hover { background: var(--pm-warn); }
 
 /* ── Scroll affordance ───────────────────────────────────────────────────
    Applied by markScrollable() to any scroller with content still below the
@@ -1932,7 +1933,7 @@
     outline: 2px solid var(--pm-accent); outline-offset: 2px;
 }
 .pm-card-resize { width: 28px; height: 28px; border: 0; background: transparent; padding: 0; }
-.pm-card-act { min-height: 32px; }
+.pm-card-act:not(.pm-card-btn) { min-height: 32px; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE LIBRARY — a sheet on the pill, // at the caret, a rail on the chat box

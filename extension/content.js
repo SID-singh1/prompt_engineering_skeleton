@@ -4635,7 +4635,6 @@ function cardFoot(parts) {
   return `<div class="pm-card-foot">${parts.join("")}</div>`;
 }
 
-const cardKey = (k) => `<span class="pm-card-key">${k}</span>`;
 
 /**
  * The card's title bar: what this card is, and the one window control it has.
@@ -4678,7 +4677,7 @@ function showStreamingCardAgain() {
     cardHead(`${what}${STYLE_NAMES[cardStreamingStyle] ? " \u00b7 " + STYLE_NAMES[cardStreamingStyle] : ""}\u2026`, "live") +
     `<div class="pm-card-text" id="pm-stream-target"><span class="pm-card-cursor"></span></div>` +
     cardFoot([
-      `<button class="pm-card-act" id="pm-card-cancel">${cardKey("esc")} cancel</button>`,
+      `<button class="pm-card-act pm-card-btn" id="pm-card-cancel" data-pm-tip="Stop this rewrite" data-pm-key="Esc">Cancel</button>`,
       `<span class="pm-card-spacer"></span>`,
       `<span class="pm-card-meta">the pill keeps it if you minimize</span>`,
     ])
@@ -4757,8 +4756,8 @@ function failStreamingModal(message) {
     cardHead("Couldn\u2019t rewrite", "error") +
     `<div class="pm-card-text pm-card-error">${escHtml(message)}<span class="pm-card-error-note">Your text in the chat box is untouched.</span></div>` +
     cardFoot([
-      `<button class="pm-card-act pm-card-primary" id="pm-card-retry">${cardKey(CMD_ENTER)} try again</button>`,
-      `<button class="pm-card-act" id="pm-card-dismiss">${cardKey("esc")} dismiss</button>`,
+      `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-retry">Try again</button>`,
+      `<button class="pm-card-act pm-card-btn" id="pm-card-dismiss" data-pm-tip="Dismiss" data-pm-key="Esc">Dismiss</button>`,
     ])
   );
   document.getElementById("pm-card-retry")?.addEventListener("click", () => { closeCard(); handleEnhance(); });
@@ -4836,35 +4835,34 @@ function showDiffModal(result) {
   // saved prompt actually took part.
   const chip = cardUsedHtml(result);
 
+  // Only when it matters: how long the rewrite took was a number nobody acted on.
   const truncatedNote = result.truncated
     ? `<span class="pm-card-meta" style="color:var(--pm-danger)">cut short</span>`
-    : `<span class="pm-card-meta">${result.latency ? result.latency + "s" : ""}</span>`;
+    : "";
 
-  // One footer, with accept swapped for its disabled twin. The stale variant
-  // used to be a separate, shorter list, which silently dropped \ original and
-  // ⌘S save while their key handlers below stayed live. A footer that stops
-  // listing keys that still work is worse than one that never listed them, and
-  // the reflow made the card visibly rebuild itself the moment you typed.
+  // Buttons, not a legend of keys. The foot read "Replace draft · esc
+  // minimize · Show original · ⌘S save · discard · 1.05s": a keycap on every
+  // action, a minimize the head already has, and the one thing most people
+  // came to do drawn as coloured text. It is now the one solid button, the
+  // rest plain, discard quiet at the far end. The keys still work, and each
+  // button that has one shows it when the pointer rests on it.
+  //
+  // Stale, Redo takes accept's place: using a rewrite of text the user has
+  // since changed is the one thing the card must not offer first.
   const acceptLabel = cardSubject
     ? (cardShowingOriginal ? "Keep it as it is" : "Update saved prompt")
     : cardShowingOriginal ? "Use original" : norm(getCurrentInputText()) ? "Replace draft" : "Insert";
-  const accept = cardStale
-    ? `<span class="pm-card-act pm-card-disabled" title="The prompt changed — redo first">${acceptLabel}</span>`
-    : `<button class="pm-card-act pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
+  const lead = cardStale
+    ? `<button class="pm-card-act pm-card-btn pm-card-primary pm-card-redo" id="pm-card-redo" data-pm-tip="Rewrite what is in the chat box now" data-pm-key="${CMD_ENTER}">Redo</button>`
+    : `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
   const actions = [
-    accept,
-    ...(cardStale
-      ? [`<button class="pm-card-act pm-card-redo" id="pm-card-redo">${cardKey(CMD_ENTER)} redo</button>`]
-      : []),
-    // Hide, not dismiss: the draft goes back into the pill and can be brought
-    // up again — from this chat or the next one. Discard is its own action.
-    `<button class="pm-card-act" id="pm-card-close">${cardKey("esc")} minimize</button>`,
-    `<button class="pm-card-act" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
-    `<button class="pm-card-act" id="pm-card-save">${cardKey(CMD_KEY + "S")} ${cardSubject ? "save as new" : "save"}</button>`,
-    `<button class="pm-card-act pm-card-discard" id="pm-card-discard">discard</button>`,
+    lead,
+    `<button class="pm-card-act pm-card-btn" id="pm-card-save" data-pm-tip="Save it to your library" data-pm-key="${CMD_KEY}S">${cardSubject ? "Save as new" : "Save"}</button>`,
+    `<button class="pm-card-act pm-card-btn" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
     `<span class="pm-card-spacer"></span>`,
     truncatedNote,
+    `<button class="pm-card-act pm-card-discard" id="pm-card-discard">Discard</button>`,
   ];
 
   // Where the user had scrolled to in the rewrite. A staleness flip rebuilds
@@ -4889,7 +4887,6 @@ function showDiffModal(result) {
   markScrollable(textEl);
 
   document.getElementById("pm-card-accept")?.addEventListener("click", acceptCard);
-  document.getElementById("pm-card-close")?.addEventListener("click", hideCard);
   document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
   document.getElementById("pm-card-discard")?.addEventListener("click", closeCard);
   document.getElementById("pm-card-redo")?.addEventListener("click", redoCard);
