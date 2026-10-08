@@ -1999,6 +1999,36 @@
 .pm-lib[hidden] { display: none; }
 .pm-lib[data-side="below"] { transform-origin: 100% 0; }
 
+/* Its free edges size it (see startSheetResize): the side away from the pill,
+   the edge away from the box, and their corner. A handle shows on hover. */
+.pm-lib .pm-lib-grip { position: absolute; z-index: 1; touch-action: none; }
+.pm-lib .pm-lib-grip-w { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
+.pm-lib .pm-lib-grip-h { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
+.pm-lib .pm-lib-grip-c { width: 14px; height: 14px; }
+.pm-lib[data-dock="right"] .pm-lib-grip-w, .pm-lib[data-dock="right"] .pm-lib-grip-c { left: 0; }
+.pm-lib[data-dock="left"] .pm-lib-grip-w, .pm-lib[data-dock="left"] .pm-lib-grip-c { right: 0; }
+.pm-lib[data-side="above"] .pm-lib-grip-h, .pm-lib[data-side="above"] .pm-lib-grip-c { top: 0; }
+.pm-lib[data-side="below"] .pm-lib-grip-h, .pm-lib[data-side="below"] .pm-lib-grip-c { bottom: 0; }
+.pm-lib[data-dock="right"][data-side="above"] .pm-lib-grip-c,
+.pm-lib[data-dock="left"][data-side="below"] .pm-lib-grip-c { cursor: nwse-resize; }
+.pm-lib[data-dock="left"][data-side="above"] .pm-lib-grip-c,
+.pm-lib[data-dock="right"][data-side="below"] .pm-lib-grip-c { cursor: nesw-resize; }
+.pm-lib .pm-lib-grip-h::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    width: 36px;
+    height: 3px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, .2);
+    opacity: 0;
+    transition: opacity .12s;
+}
+.pm-lib:hover .pm-lib-grip-h::after, .pm-lib.pm-lib-resizing .pm-lib-grip-h::after { opacity: 1; }
+.pm-lib.pm-lib-resizing { user-select: none; }
+
 /* ── Head: search, Saved | Recent, ⋯ ── */
 .pm-lib .pm-lib-head {
     flex: none;

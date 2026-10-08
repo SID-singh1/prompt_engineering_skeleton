@@ -677,13 +677,15 @@ def test_toasts_sit_above_everything():
 
 def test_no_page_level_surface_hardcodes_its_own_level():
     """
-    The one remaining literal is local: the library's ⋯ menu is `position:
-    absolute` inside the sheet, which is fixed and z-indexed and so its own
-    stacking context; the 1 says nothing about page-level order.
+    The remaining literals are local: the library's ⋯ menu and its resize
+    edges are `position: absolute` inside the sheet, which is fixed and
+    z-indexed and so its own stacking context; the 1s say nothing about
+    page-level order.
     """
     literals = re.findall(r"z-index:\s*(\d+);", STYLES_CSS)
-    assert literals == ["1"], f"unscaled page-level z-index: {literals}"
+    assert literals == ["1", "1"], f"unscaled page-level z-index: {literals}"
     assert "z-index: 1;" in _css_block(".pm-lib .pm-lib-menu")
+    assert "z-index: 1;" in _css_block(".pm-lib .pm-lib-grip")
 
 
 def test_the_scale_clears_host_page_overlays():

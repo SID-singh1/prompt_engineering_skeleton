@@ -1568,6 +1568,7 @@ function createLibrary() {
   lib.addEventListener("input", onLibraryInput);
   lib.addEventListener("change", onLibraryChange);
   lib.addEventListener("keydown", onLibraryKeydown);
+  lib.addEventListener("pointerdown", startSheetResize);
   lib.addEventListener("mousemove", (e) => {
     const row = e.target.closest?.(".pm-lib-row[data-i]");
     if (!row || Number(row.dataset.i) === libSel) return;
@@ -1603,7 +1604,11 @@ function createLibrary() {
     togglePanel(false);
   }, { capture: true, passive: true });
 
-  storageGet(["pm_slash"], (r) => { slashEnabled = r.pm_slash !== false; });
+  storageGet(["pm_slash", SHEET_SIZE_KEY], (r) => {
+    slashEnabled = r.pm_slash !== false;
+    const size = r[SHEET_SIZE_KEY] || {};
+    sheetSize = { w: Number(size.w) || 0, h: Number(size.h) || 0 };
+  });
 }
 
 function togglePanel(force) {
@@ -1713,6 +1718,71 @@ function focusLibrarySearch() {
 
 const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
 const LIB_HEIGHT = 520;        // the sheet's height when there is room for it
+const SHEET_W_MIN = 300, SHEET_H_MIN = 240;   // the smallest a drag on its edges makes it
+// The size the user dragged the sheet to, kept on this device; 0 is "the usual".
+const SHEET_SIZE_KEY = "pm_sheet_size";
+let sheetSize = { w: 0, h: 0 };
+let sheetGripTap = 0;          // when an edge was last pressed without a drag
+// The edges that size it: the one facing away from the pill (its width), the
+// one away from the chat box (its height), and the corner between them. The
+// sides they sit on follow where the sheet hangs (data-dock, data-side).
+const SHEET_GRIPS = ["w", "h", "c"].map((g) =>
+  `<div class="pm-lib-grip pm-lib-grip-${g}" data-grip="${g}" title="Drag to resize. Double-click for the usual size." aria-hidden="true"></div>`).join("");
+
+/**
+ * Drag an edge of the sheet to size it; kept on this device and used every
+ * time it opens, within the window and the room it has. Its corner on the
+ * pill stays put, so the far edges are the ones that move.
+ */
+function startSheetResize(e) {
+  const grip = e.target.closest?.(".pm-lib-grip");
+  const lib = document.getElementById("pm-library");
+  if (!grip || !lib || e.button !== 0) return;
+  e.preventDefault();
+  const g = grip.dataset.grip;
+  const r = lib.getBoundingClientRect();
+  const x0 = e.clientX, y0 = e.clientY;
+  const towardLeft = lib.dataset.dock === "right";   // its free side is its left
+  const upward = lib.dataset.side !== "below";       // its free edge is its top
+  // The sheet, not the grip: a redraw mid-drag replaces the grip.
+  try { lib.setPointerCapture(e.pointerId); } catch { /* window listeners finish it */ }
+  lib.classList.add("pm-lib-resizing");
+  let moved = false;
+  const move = (m) => {
+    if (m.pointerId !== e.pointerId) return;
+    const dx = m.clientX - x0, dy = m.clientY - y0;
+    if (!moved && Math.hypot(dx, dy) < 3) return;
+    moved = true;
+    if (g !== "h") sheetSize.w = Math.round(r.width + (towardLeft ? -dx : dx));
+    if (g !== "w") sheetSize.h = Math.round(r.height + (upward ? -dy : dy));
+    positionLibrary();
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    lib.removeEventListener("lostpointercapture", end);
+    lib.classList.remove("pm-lib-resizing");
+    // Two presses on an edge without a drag put back the usual size. Counted
+    // here: with the pointer captured, the dblclick lands on the sheet, not
+    // the edge, as it did on the card's grip.
+    if (!moved) {
+      const again = Date.now() - sheetGripTap < 450;
+      sheetGripTap = again ? 0 : Date.now();
+      if (again) { sheetSize = { w: 0, h: 0 }; storageSet({ [SHEET_SIZE_KEY]: sheetSize }); positionLibrary(); }
+      return;
+    }
+    // Keep the size it reached, not one the window or the room cut short.
+    const b = lib.getBoundingClientRect();
+    if (g !== "h") sheetSize.w = Math.round(b.width);
+    if (g !== "w") sheetSize.h = Math.round(b.height);
+    storageSet({ [SHEET_SIZE_KEY]: sheetSize });
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  lib.addEventListener("lostpointercapture", end);
+}
 const RAIL_GAP = 6, RAIL_ROW = 26;      // the chips' row: its gap above the box, and its height
 const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 
@@ -1723,9 +1793,12 @@ function positionLibrary() {
   if (!lib || lib.hidden || !pill) return;
   const p = pill.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
-  const width = Math.min(368, vw - 2 * m);
+  // A size the user dragged the sheet to wins, within the window and the
+  // room it has (see startSheetResize).
+  const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : 368, vw - 2 * m));
   lib.style.width = width + "px";
   const onRight = p.left + p.width / 2 > vw / 2;
+  lib.dataset.dock = onRight ? "right" : "left";
   lib.style.left = onRight ? "auto" : Math.max(m, Math.min(p.left, vw - width - m)) + "px";
   lib.style.right = onRight ? Math.max(m, Math.min(vw - p.right, vw - width - m)) + "px" : "auto";
   // Opening upward, the sheet also clears the chat box when it would overlap
@@ -1759,7 +1832,7 @@ function positionLibrary() {
   // line as the first prompt was ticked grew the sheet upward under the
   // pointer. The list takes up the difference.
   const room = Math.max(160, up ? above : below);
-  const h = Math.round(Math.min(room, LIB_HEIGHT));
+  const h = Math.round(Math.min(room, sheetSize.h ? Math.max(SHEET_H_MIN, sheetSize.h) : LIB_HEIGHT));
   lib.style.height = h + "px";
   lib.style.maxHeight = h + "px";
   lib.dataset.side = up ? "above" : "below";
@@ -1808,7 +1881,7 @@ function renderLibrary() {
 
   lib.dataset.page = libPage;
   lib.innerHTML = libHeadHtml() + libBodyHtml() + (libPage === "list" ? `<div class="pm-lib-foot" id="pm-lib-foot">${libFootHtml()}</div>` : "") +
-    (libMenu ? libMenuHtml() : "");
+    (libMenu ? libMenuHtml() : "") + SHEET_GRIPS;
 
   const again = focusId && lib.querySelector(`[id="${focusId}"]`);
   if (again) {
