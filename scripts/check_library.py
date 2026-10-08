@@ -581,6 +581,26 @@ def main():
         page.set_viewport_size({"width": 1440, "height": 900})
         page.wait_for_timeout(100)
 
+        # ── ChatGPT's one-row box: picker, mic and Send beside the text (seen live, Oct 2026) ──
+        page.set_viewport_size({"width": 1512, "height": 805})
+        ev("document.body.classList.add('center', 'row'); document.getElementById('composer').textContent = ''")
+        page.wait_for_timeout(150)
+        open_lib()
+        page.wait_for_timeout(200)
+        lib, box = rect("#pm-library"), rect("form")
+        for what, sel in (("Send", ".send"), ("the model picker", ".tools .model"), ("the mic", ".tools .mic")):
+            check(not overlaps(lib, rect(sel)), f"the sheet stays off the box's {what}, got {lib} vs {rect(sel)}")
+        check(lib["b"] <= box["t"] or lib["l"] >= box["r"], f"and off the box itself, got {lib} vs {box}")
+        page.keyboard.press("Escape")
+        ev("H.type(H.ORIG); H.stream(); H.done()")
+        page.wait_for_selector("#pm-card #pm-card-accept")
+        page.wait_for_timeout(250)
+        card, box = rect("#pm-card"), rect("form")
+        check(card["b"] <= box["t"] + 1 and not overlaps(card, rect(".send")), f"the card stands on the box, not on its Send, got {card} vs {box}")
+        ev("closeCard(); H.type(''); document.body.classList.remove('center', 'row')")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(150)
+
         # ── keys where they act: tooltips with keycaps ──
         open_lib()
         page.hover("#pm-lib-close")
