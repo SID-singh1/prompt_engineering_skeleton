@@ -3161,7 +3161,13 @@ function composerFrameBox(el) {
   let node = el.parentElement;
   for (let i = 0; node && i < 6; i++, node = node.parentElement) {
     const r = node.getBoundingClientRect();
-    if (r.width > inner.width + 240 || r.height > inner.height + 200) break;
+    // Much taller than the text is the page around the box. Much wider is
+    // too, unless it is little taller: then it is the box's own row with its
+    // controls beside the text, as ChatGPT has had since October 2026 (model
+    // picker, mic and Send on the text's row, 254px wider than the text). The
+    // frame was taken to end where the text did, and the library, the card
+    // and the chips were placed by it, the sheet over the box's Send.
+    if (r.height > inner.height + 200 || (r.width > inner.width + 240 && r.height > inner.height + 80)) break;
     const cs = getComputedStyle(node);
     const drawn = parseFloat(cs.borderTopWidth) > 0 || parseFloat(cs.borderRadius) >= 8 ||
       (cs.backgroundColor && cs.backgroundColor !== "rgba(0, 0, 0, 0)" && cs.backgroundColor !== "transparent");
