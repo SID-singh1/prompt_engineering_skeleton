@@ -364,6 +364,32 @@ def main():
         check(not tucked(), "a card moved off the chat box by hand does not tuck")
         ev("resetCardLayout(); closeCard()")
 
+        # ── the foot: buttons, not a legend of keys ──
+        ev("FAKE.calls = []; H.type(H.ORIG)")
+        page.click("#pm-trigger")
+        wait_title("Rewrite · Deep")
+        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
+        check(foot == ["Replace draft", "Save", "Show original", "Discard"], f"the foot is four buttons, got {foot}")
+        check(page.locator("#pm-card .pm-card-foot .pm-card-key, #pm-card .pm-card-foot kbd").count() == 0, "with no keycaps printed on them")
+        check(page.locator("#pm-card-close").count() == 0, "and no second minimize: the head has one")
+        bg = ev("getComputedStyle(document.getElementById('pm-card-accept')).backgroundColor")
+        check(bg not in ("rgba(0, 0, 0, 0)", "transparent"), f"Replace draft is the one solid button, got {bg}")
+        check(ev("getComputedStyle(document.getElementById('pm-card-save')).backgroundColor") in ("rgba(0, 0, 0, 0)", "transparent"),
+              "the rest are outlined")
+        page.hover("#pm-card-save")
+        page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
+        check(page.locator("#pm-keytip kbd").all_inner_texts() == ["⌘", "S"], "Save's key shows where the pointer rests on it")
+        page.mouse.move(5, 5)
+        ev("H.type('something else entirely')")
+        page.wait_for_selector("#pm-card-redo")
+        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
+        check(foot == ["Redo", "Save", "Show original", "Discard"], f"stale, Redo leads in accept's place, got {foot}")
+        check(page.locator("#pm-card-accept").count() == 0, "and the stale rewrite is not offered to use")
+        ev("closeCard(); H.type(H.ORIG); H.stream(); H.fail()")
+        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
+        check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
+        ev("closeCard()")
+
         # ── screenshots, dark and light host ──
         if args.shots:
             ev("FAKE.calls = []; H.type(H.ORIG)")

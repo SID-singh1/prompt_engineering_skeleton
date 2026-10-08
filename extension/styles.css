@@ -1608,7 +1608,7 @@
 .pm-card-foot {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 8px;
     flex-wrap: wrap;
     padding: 9px 30px 9px 15px;
     border-top: 1px solid var(--pm-border);
@@ -1632,17 +1632,25 @@
 .pm-card-act.pm-card-primary { color: var(--pm-accent); }
 .pm-card-act:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 3px; border-radius: 4px; }
 
-.pm-card-key {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 10.5px;
-    color: var(--pm-text);
-    background: var(--pm-bg-elev, rgba(127, 127, 127, .12));
+/* The foot's buttons: one solid (what the card is for), the rest outlined. */
+.pm-card-act.pm-card-btn {
+    height: 28px;
+    min-height: 28px;
+    padding: 0 12px;
     border: 1px solid var(--pm-border);
-    border-bottom-width: 2px;
-    padding: 2px 6px;
-    border-radius: 4px;
-    line-height: 1.4;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background var(--pm-transition), color var(--pm-transition), border-color var(--pm-transition);
 }
+.pm-card-act.pm-card-btn:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-act.pm-card-btn.pm-card-primary {
+    background: var(--pm-accent);
+    border-color: var(--pm-accent);
+    color: #04231b;
+    font-weight: 600;
+}
+.pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
 
 .pm-card-spacer { margin-left: auto; }
 
@@ -1680,19 +1688,12 @@
 
 /* Shown, not hidden: the key still means accept, it simply has nothing safe to
    accept right now. Removing it would read as the footer changing at random. */
-.pm-card-act.pm-card-disabled {
-    opacity: .38;
-    cursor: not-allowed;
+.pm-card-act.pm-card-btn.pm-card-redo {
+    background: var(--pm-warn);
+    border-color: var(--pm-warn);
+    color: #2a1a05;
 }
-
-.pm-card-act.pm-card-redo {
-    color: var(--pm-warn);
-}
-
-.pm-card-act.pm-card-redo .pm-card-key {
-    color: var(--pm-warn);
-    border-color: var(--pm-warn-border);
-}
+.pm-card-act.pm-card-btn.pm-card-redo:hover { background: var(--pm-warn); }
 
 /* ── Scroll affordance ───────────────────────────────────────────────────
    Applied by markScrollable() to any scroller with content still below the
@@ -1932,7 +1933,7 @@
     outline: 2px solid var(--pm-accent); outline-offset: 2px;
 }
 .pm-card-resize { width: 28px; height: 28px; border: 0; background: transparent; padding: 0; }
-.pm-card-act { min-height: 32px; }
+.pm-card-act:not(.pm-card-btn) { min-height: 32px; }
 
 /* ══════════════════════════════════════════════════════════════════════════
    THE LIBRARY — a sheet on the pill, // at the caret, a rail on the chat box
@@ -1953,6 +1954,8 @@
     -webkit-font-smoothing: antialiased;
 }
 .pm-lib *, .pm-caret *, .pm-rail * { box-sizing: border-box; }
+/* Focused only to keep the sheet's keys answering; the ring would frame the whole sheet. */
+.pm-lib:focus { outline: none; }
 .pm-lib button, .pm-lib input, .pm-lib select, .pm-lib textarea,
 .pm-caret button, .pm-rail button {
     font: inherit;
@@ -1996,6 +1999,36 @@
 }
 .pm-lib[hidden] { display: none; }
 .pm-lib[data-side="below"] { transform-origin: 100% 0; }
+
+/* Its free edges size it (see startSheetResize): the side away from the pill,
+   the edge away from the box, and their corner. A handle shows on hover. */
+.pm-lib .pm-lib-grip { position: absolute; z-index: 1; touch-action: none; }
+.pm-lib .pm-lib-grip-w { top: 14px; bottom: 14px; width: 6px; cursor: ew-resize; }
+.pm-lib .pm-lib-grip-h { left: 14px; right: 14px; height: 6px; cursor: ns-resize; }
+.pm-lib .pm-lib-grip-c { width: 14px; height: 14px; }
+.pm-lib[data-dock="right"] .pm-lib-grip-w, .pm-lib[data-dock="right"] .pm-lib-grip-c { left: 0; }
+.pm-lib[data-dock="left"] .pm-lib-grip-w, .pm-lib[data-dock="left"] .pm-lib-grip-c { right: 0; }
+.pm-lib[data-side="above"] .pm-lib-grip-h, .pm-lib[data-side="above"] .pm-lib-grip-c { top: 0; }
+.pm-lib[data-side="below"] .pm-lib-grip-h, .pm-lib[data-side="below"] .pm-lib-grip-c { bottom: 0; }
+.pm-lib[data-dock="right"][data-side="above"] .pm-lib-grip-c,
+.pm-lib[data-dock="left"][data-side="below"] .pm-lib-grip-c { cursor: nwse-resize; }
+.pm-lib[data-dock="left"][data-side="above"] .pm-lib-grip-c,
+.pm-lib[data-dock="right"][data-side="below"] .pm-lib-grip-c { cursor: nesw-resize; }
+.pm-lib .pm-lib-grip-h::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 50%;
+    width: 36px;
+    height: 3px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, .2);
+    opacity: 0;
+    transition: opacity .12s;
+}
+.pm-lib:hover .pm-lib-grip-h::after, .pm-lib.pm-lib-resizing .pm-lib-grip-h::after { opacity: 1; }
+.pm-lib.pm-lib-resizing { user-select: none; }
 
 /* ── Head: search, Saved | Recent, ⋯ ── */
 .pm-lib .pm-lib-head {
@@ -2052,6 +2085,8 @@
 }
 .pm-lib .pm-lib-views button:hover { color: var(--pm-con-text); }
 .pm-lib .pm-lib-views button[aria-pressed="true"] { background: var(--pm-con-elev); color: var(--pm-con-text); }
+/* New writes rather than shows: drawn in the accent, like the other ways to add. */
+.pm-lib .pm-lib-icon.pm-lib-new { color: var(--pm-accent); }
 .pm-lib .pm-lib-views-wide { display: flex; }
 .pm-lib .pm-lib-views-wide button { flex: 1; }
 
@@ -2101,15 +2136,6 @@
 .pm-lib .pm-lib-row.pm-sel { background: var(--pm-con-hover); }
 .pm-lib .pm-lib-dot { justify-self: center; width: 6px; height: 6px; border-radius: 50%; }
 .pm-lib .pm-lib-row.pm-att .pm-lib-dot { background: var(--pm-accent); }
-.pm-lib .pm-lib-row-save .pm-lib-dot {
-    width: auto;
-    height: auto;
-    background: none;
-    color: var(--pm-accent);
-    font-size: 14px;
-    line-height: 1;
-}
-.pm-lib .pm-lib-row-save .pm-lib-title { color: var(--pm-accent); }
 
 .pm-lib .pm-lib-text, .pm-caret .pm-lib-text { min-width: 0; }
 .pm-lib .pm-lib-title, .pm-caret .pm-lib-title {
@@ -2137,8 +2163,6 @@
    stay on the first line however tall the row grows. */
 .pm-lib .pm-lib-row { align-items: start; }
 .pm-lib .pm-lib-row .pm-lib-dot { margin-top: 6px; }
-.pm-lib .pm-lib-row-save, .pm-lib .pm-lib-row-save .pm-lib-acts { align-items: center; }
-.pm-lib .pm-lib-row-save .pm-lib-dot { align-self: center; margin-top: 0; }
 .pm-lib .pm-lib-clamp, .pm-lib .pm-lib-untitled {
     display: -webkit-box;
     -webkit-box-orient: vertical;
@@ -2322,7 +2346,26 @@
 
 /* One visible action until you point at a row: the clip, and only on a row
    that is attached. Hover or ↑↓ brings the rest. */
-.pm-lib .pm-lib-acts { display: none; align-items: center; gap: 2px; }
+/* A row's ⋯ and Insert lie over its bottom corner, faded into it, rather
+   than taking a column: as a column they narrowed the highlighted row's
+   words onto another line, so the sheet changed height as the pointer moved
+   from row to row. Their ground is the row's tint over the sheet's own. */
+.pm-lib .pm-lib-row { position: relative; --pm-row-tint: var(--pm-con-hover); }
+.pm-lib .pm-lib-row.pm-att { --pm-row-tint: var(--pm-accent-soft); }
+.pm-lib .pm-lib-row.pm-att.pm-sel { --pm-row-tint: rgba(80, 200, 168, 0.19); }
+.pm-lib .pm-lib-acts {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    padding-left: 22px;
+    background-color: rgb(12, 15, 14);
+    background-image: linear-gradient(var(--pm-row-tint), var(--pm-row-tint));
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
+    mask-image: linear-gradient(to right, transparent, #000 20px);
+}
 .pm-lib .pm-lib-row.pm-sel .pm-lib-acts,
 .pm-lib .pm-lib-row:hover .pm-lib-acts { display: flex; }
 
@@ -2399,11 +2442,17 @@
     gap: 6px 10px;
     min-height: 36px;
     padding: 8px 12px;
+    /* One line, whatever is in context (see libFootHtml): the keys give way first. */
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    overflow: hidden;
     border-top: 1px solid var(--pm-con-border);
     color: var(--pm-con-muted);
     font-size: 11.5px;
 }
-.pm-lib .pm-lib-hints { display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.pm-lib .pm-lib-hints { display: flex; flex-wrap: nowrap; gap: 4px 10px; min-width: 0; overflow: hidden; }
+/* Beside what is in context, set apart from it. */
+.pm-lib .pm-lib-hints-also { margin-left: auto; }
 .pm-lib kbd {
     margin-right: 4px;
     padding: 1px 4px;
@@ -2428,7 +2477,7 @@
     cursor: pointer;
 }
 .pm-lib .pm-lib-low { color: #e0b25a; }
-.pm-lib .pm-lib-foot-go { margin-left: auto; }
+.pm-lib .pm-lib-foot-go { margin-left: auto; height: 19px; padding: 0 8px; font-size: 11.5px; }  /* no taller than the keys it stands in for */
 .pm-lib .pm-lib-foot-note { margin-left: auto; color: var(--pm-con-muted); }
 
 /* ── ⋯ ── */
@@ -2749,6 +2798,26 @@
     animation: pm-lib-in .12s ease-out;
 }
 .pm-rail[hidden] { display: none; }
+/* Under an open sheet: one row (see fitRailToOneRow). */
+.pm-rail.pm-rail-one { flex-wrap: nowrap; }
+.pm-rail.pm-rail-one > * { flex-shrink: 0; }
+.pm-rail .pm-rail-chip[hidden] { display: none; }
+.pm-rail .pm-rail-more {
+    pointer-events: auto;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    height: 26px;
+    padding: 0 9px;
+    border-radius: 13px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg);
+    box-shadow: var(--pm-con-shadow);
+    color: var(--pm-accent);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1;
+}
 .pm-rail .pm-rail-chip,
 .pm-rail .pm-rail-add {
     pointer-events: auto;
@@ -2988,3 +3057,5 @@
     scrollbar-width: thin;
     scrollbar-color: rgba(255, 255, 255, .16) transparent;
 }
+
+.pm-modal .pm-edit-status { display: block; min-height: 16px; margin-top: 8px; color: var(--pm-danger, #e5484d); font-size: 12px; }
