@@ -1595,13 +1595,26 @@ function createLibrary() {
     if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
-  // So does turning the wheel over the conversation: the sheet is fixed to
-  // the pill and would float over messages the user is trying to read.
+  // So does scrolling the page: the user has gone back to the conversation.
   // Wheel, not scroll, because only a wheel is the user; a scroll event also
   // comes from the host's own auto-scroll as an answer streams in.
+  //
+  // Except a wheel turned over the sheet or its preview, which was ignored:
+  // over the head, the foot or a list too short to scroll nothing took the
+  // turn, and the sheet is not inside the host's scroller, so nothing moved
+  // at all: "scroll should close it, but it doesn't". A deliberate turn the
+  // sheet cannot use now closes it, as one over the page does. One that
+  // scrolls the list or the preview is the sheet's, to its end and through
+  // the coast after (see sheetTakesWheel), and a graze of a trackpad is not
+  // a turn.
   document.addEventListener("wheel", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-save, #pm-keys, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek")) {
+      if (sheetTakesWheel(e)) return;
+      sheetWheel.sum += Math.abs(e.deltaX) + Math.abs(e.deltaY);
+      if (sheetWheel.sum < SHEET_WHEEL_CLOSES) return;
+    }
     togglePanel(false);
   }, { capture: true, passive: true });
 
@@ -1659,6 +1672,38 @@ function openShortcuts() {
 }
 
 const SHEET_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape"]);
+// One turn of the wheel arrives as a train of events, then the coast after
+// it; the first decides for the rest (see sheetTakesWheel).
+let sheetWheel = { at: -Infinity, takes: false, sum: 0 };
+const SHEET_WHEEL_CLOSES = 40;   // px of a turn over the sheet, with nothing in it to scroll, that closes it
+
+/**
+ * Does something in the sheet (or its preview) scroll with this wheel event?
+ * Walks out from the pointer: the first box with room to scroll that way
+ * takes it, and one at its end that keeps its scroll to itself
+ * (overscroll-behavior: contain, as the list does) swallows it. Decided at
+ * the start of a gesture and kept for its events, so a list flung to its
+ * end does not close the sheet as it coasts.
+ */
+function sheetTakesWheel(e) {
+  if (e.timeStamp - sheetWheel.at < 160) { sheetWheel.at = e.timeStamp; return sheetWheel.takes; }
+  const across = Math.abs(e.deltaX) > Math.abs(e.deltaY);
+  const d = across ? e.deltaX : e.deltaY;
+  let takes = false;
+  for (let el = e.target; el && el !== document.body; el = el.parentElement) {
+    const cs = getComputedStyle(el);
+    const scrolls = /(auto|scroll)/.test(across ? cs.overflowX : cs.overflowY);
+    const size = across ? el.scrollWidth - el.clientWidth : el.scrollHeight - el.clientHeight;
+    if (scrolls && size > 1) {
+      const pos = across ? el.scrollLeft : el.scrollTop;
+      if (d > 0 ? pos < size - 1 : pos > 0) { takes = true; break; }
+      if ((across ? cs.overscrollBehaviorX : cs.overscrollBehaviorY) !== "auto") { takes = true; break; }
+    }
+    if (el.id === "pm-library" || el.id === "pm-peek") break;
+  }
+  sheetWheel = { at: e.timeStamp, takes, sum: 0 };
+  return takes;
+}
 
 /**
  * Nothing in the sheet that can use the keys holds the keyboard: it fell to
