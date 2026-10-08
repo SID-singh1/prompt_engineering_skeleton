@@ -1953,6 +1953,8 @@
     -webkit-font-smoothing: antialiased;
 }
 .pm-lib *, .pm-caret *, .pm-rail * { box-sizing: border-box; }
+/* Focused only to keep the sheet's keys answering; the ring would frame the whole sheet. */
+.pm-lib:focus { outline: none; }
 .pm-lib button, .pm-lib input, .pm-lib select, .pm-lib textarea,
 .pm-caret button, .pm-rail button {
     font: inherit;

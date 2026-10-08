@@ -1540,9 +1540,31 @@ function createLibrary() {
   lib.setAttribute("role", "dialog");
   lib.setAttribute("aria-label", "Library");
   lib.hidden = true;
+  // Focusable itself, so its keys still answer on a page with no search box.
+  lib.tabIndex = -1;
   document.body.appendChild(lib);
 
   lib.addEventListener("click", onLibraryClick);
+  // After the click has done its work, in the sheet or the preview beside
+  // it: see keepSheetKeyboard(). By the path the click took, not its target:
+  // the redraw it caused has usually removed the row or button it landed on.
+  document.addEventListener("click", (e) => {
+    if (!panelOpen || !keyboardFell()) return;
+    if (e.composedPath().some((el) => el.id === "pm-library" || el.id === "pm-peek")) keepSheetKeyboard();
+  });
+  // Words selected in the preview leave the keyboard where it fell (see
+  // keepSheetKeyboard): the sheet's keys still answer from there.
+  document.addEventListener("keydown", (e) => {
+    if (!panelOpen || keyMapOpen || sheetCoveredByForm() || !keyboardFell() || !SHEET_KEYS.has(e.key)) return;
+    // A sheet key means the copying is done: the keyboard goes home first.
+    const q = libPage === "list" && document.getElementById("pm-lib-q");
+    const target = q || document.getElementById("pm-library");
+    target?.focus({ preventScroll: true });
+    onLibraryKeydown({
+      key: e.key, metaKey: e.metaKey, ctrlKey: e.ctrlKey, shiftKey: e.shiftKey, isComposing: false, target,
+      preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation(),
+    });
+  });
   lib.addEventListener("input", onLibraryInput);
   lib.addEventListener("change", onLibraryChange);
   lib.addEventListener("keydown", onLibraryKeydown);
@@ -1627,6 +1649,36 @@ function togglePanel(force) {
 function openShortcuts() {
   hideTip();
   openKeyMap();
+}
+
+const SHEET_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape"]);
+
+/**
+ * Nothing in the sheet that can use the keys holds the keyboard: it fell to
+ * <body>, or with a node a redraw removed, or a press on the sheet's own
+ * ground focused the sheet, which hears esc but cannot move the list.
+ */
+function keyboardFell() {
+  const a = document.activeElement;
+  return !a || a === document.body || !a.isConnected || a.id === "pm-library";
+}
+
+/** The edit window or the save form is up over the sheet: the keys are theirs. */
+function sheetCoveredByForm() {
+  return Boolean(document.querySelector("#pm-modal-overlay.pm-visible, #pm-save"));
+}
+
+/**
+ * A click on a row, on its ⋯, or in the preview left the keyboard on <body>:
+ * rows and words do not take focus, and the redraw after a button removes
+ * the button that had it. Every key the sheet answers went with it, so ↑↓,
+ * ↵, → and esc did nothing until the user clicked the search box again.
+ * The keyboard goes back to the sheet, unless the click selected words to copy.
+ */
+function keepSheetKeyboard() {
+  if (sheetCoveredByForm() || String(window.getSelection?.() || "")) return;
+  const q = libPage === "list" && document.getElementById("pm-lib-q");
+  (q || document.getElementById("pm-library"))?.focus({ preventScroll: true });
 }
 
 /** Close the sheet and hand the keyboard back to the chat box. */
