@@ -2346,7 +2346,26 @@
 
 /* One visible action until you point at a row: the clip, and only on a row
    that is attached. Hover or ↑↓ brings the rest. */
-.pm-lib .pm-lib-acts { display: none; align-items: center; gap: 2px; }
+/* A row's ⋯ and Insert lie over its bottom corner, faded into it, rather
+   than taking a column: as a column they narrowed the highlighted row's
+   words onto another line, so the sheet changed height as the pointer moved
+   from row to row. Their ground is the row's tint over the sheet's own. */
+.pm-lib .pm-lib-row { position: relative; --pm-row-tint: var(--pm-con-hover); }
+.pm-lib .pm-lib-row.pm-att { --pm-row-tint: var(--pm-accent-soft); }
+.pm-lib .pm-lib-row.pm-att.pm-sel { --pm-row-tint: rgba(80, 200, 168, 0.19); }
+.pm-lib .pm-lib-acts {
+    position: absolute;
+    right: 6px;
+    bottom: 5px;
+    display: none;
+    align-items: center;
+    gap: 2px;
+    padding-left: 22px;
+    background-color: rgb(12, 15, 14);
+    background-image: linear-gradient(var(--pm-row-tint), var(--pm-row-tint));
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 20px);
+    mask-image: linear-gradient(to right, transparent, #000 20px);
+}
 .pm-lib .pm-lib-row.pm-sel .pm-lib-acts,
 .pm-lib .pm-lib-row:hover .pm-lib-acts { display: flex; }
 
