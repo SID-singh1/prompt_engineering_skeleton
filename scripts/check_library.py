@@ -189,6 +189,33 @@ def main():
         page.set_viewport_size({"width": 1440, "height": 900})
         page.fill("#pm-lib-q", "")
 
+        # ── the keys after a click (seen live: a click left them on <body>, deaf) ──
+        page.mouse.move(5, 5)
+        page.locator("#pm-library .pm-lib-row[data-i] >> nth=2").click(position={"x": 60, "y": 10})
+        check(ev("document.activeElement.id") == "pm-lib-q", "a click on a row leaves the keyboard in the sheet")
+        page.keyboard.press("ArrowDown")
+        check(ev("libSel") == 3, f"so ↓ still moves the highlight after it, got {ev('libSel')}")
+        foot = page.inner_text("#pm-lib-foot")
+        check("1 in context" in foot and "insert" in foot and "read" in foot,
+              f"the foot keeps its keys beside what is in context, got {foot!r}")
+        page.keyboard.press("ArrowUp")
+        page.keyboard.press("Enter")
+        check(ev("selectedIds.size") == 0, "and ↵ takes the clicked one back out")
+        page.locator("#pm-library .pm-lib-row[data-i] >> nth=1").hover()
+        page.click("#pm-library .pm-lib-row[data-i] >> nth=1 >> [data-act='more']")
+        check(ev("document.activeElement.id") == "pm-lib-q", "a row's ⋯, redrawn away, hands the keyboard back too")
+        page.keyboard.press("Escape")
+        check(ev("panelOpen") and page.locator("#pm-library .pm-lib-rowmenu").count() == 0, "so esc shuts its menu, not the sheet")
+        page.locator("#pm-library .pm-lib-row >> nth=3").hover()
+        page.wait_for_selector("#pm-peek", timeout=1500)
+        page.hover("#pm-peek .pm-peek-body")
+        page.click("#pm-peek [data-act='attach']")
+        check(ev("document.activeElement.id") == "pm-lib-q", "and so does a button in the preview")
+        page.click("#pm-peek [data-act='attach']")
+        page.mouse.move(300, 150)
+        page.wait_for_timeout(300)
+        page.fill("#pm-lib-q", "")
+
         # ── ways out, every one of them on screen or in the user's hands ──
         page.click("#pm-lib-close")
         check(not ev("panelOpen") and ev("document.activeElement.id") == "composer",
