@@ -1336,6 +1336,8 @@ function watchNavigation() {
 }
 
 function onNavigated() {
+  // Another chat: the library was opened for the one the user left.
+  if (panelOpen) togglePanel(false);
   // The new composer mounts a beat after the URL changes; look twice.
   for (const delay of [300, 1200]) {
     setTimeout(() => {
@@ -1617,6 +1619,28 @@ function createLibrary() {
     }
     togglePanel(false);
   }, { capture: true, passive: true });
+  // The other ways attention leaves the sheet for the page.
+  document.addEventListener("keydown", (e) => {
+    if (!panelOpen || !PAGE_SCROLL_KEYS.has(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
+    const t = e.target;
+    if (t.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, .pm-modal-overlay") || isTypingTarget(t)) return;
+    // Arrows from <body> are the sheet's (see keepSheetKeyboard); PageDown,
+    // Home, End and Space from there scroll the conversation.
+    if (keyboardFell() && SHEET_KEYS.has(e.key)) return;
+    togglePanel(false);
+  }, true);
+  document.addEventListener("focusin", (e) => {
+    if (!panelOpen) return;
+    const t = e.target;
+    // The chat box is the host's to focus, and does so on its own; typing in
+    // it is what closes the sheet (see watchComposer). Tab to anything else
+    // on the page, and the sheet goes.
+    if (t === window || t === document.body || t.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-trigger, #pm-library-btn, #pm-help-btn, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (t === findComposer() || findComposer()?.contains(t)) return;
+    togglePanel(false);
+  });
+  // Another tab: the user went somewhere else entirely.
+  document.addEventListener("visibilitychange", () => { if (document.hidden && panelOpen) togglePanel(false); });
 
   storageGet(["pm_slash", SHEET_SIZE_KEY], (r) => {
     slashEnabled = r.pm_slash !== false;
@@ -1672,6 +1696,7 @@ function openShortcuts() {
 }
 
 const SHEET_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", "Escape"]);
+const PAGE_SCROLL_KEYS = new Set(["PageUp", "PageDown", "Home", "End", " ", "ArrowUp", "ArrowDown"]);
 // One turn of the wheel arrives as a train of events, then the coast after
 // it; the first decides for the rest (see sheetTakesWheel).
 let sheetWheel = { at: -Infinity, takes: false, sum: 0 };
