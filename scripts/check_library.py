@@ -661,9 +661,44 @@ def main():
         check(not errors, f"page errors: {errors}")
         page.close()
         reach_the_chip_from_anywhere(browser, url)
+        keys_on_windows(browser, url)
         browser.close()
     httpd.shutdown()
     print(f"{checks} library checks PASS")
+
+
+WINDOWS_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
+
+
+def keys_on_windows(browser, url):
+    """The same sheet on Windows: every key spelled the way a Windows keyboard
+    prints it. Gluing Ctrl+ to Mac glyphs drew Ctrl+↵ and Ctrl+⇧V."""
+    ctx = browser.new_context(viewport={"width": 1440, "height": 900}, user_agent=WINDOWS_UA)
+    ctx.add_init_script("Object.defineProperty(navigator, 'platform', { get: () => 'Win32' })")
+    page = ctx.new_page()
+    page.goto(url)
+    page.wait_for_function("document.getElementById('pm-library')")
+    page.evaluate("localStorage.clear(); sessionStorage.clear(); H.signIn()")
+    page.goto(url)
+    page.wait_for_function("document.getElementById('pm-library')")
+    page.wait_for_timeout(300)
+    page.keyboard.press("Control+Shift+L")
+    page.wait_for_selector("#pm-library:not([hidden])")
+    page.wait_for_function("!document.querySelector('#pm-library .pm-lib-skeleton')")
+    foot = page.locator("#pm-lib-foot kbd").all_inner_texts()
+    check(foot[:2] == ["Enter", "Ctrl+Enter"], f"Windows: the sheet's foot says Enter and Ctrl+Enter, got {foot}")
+    page.hover("#pm-library .pm-lib-row[aria-checked] >> nth=0")
+    page.hover("#pm-library .pm-lib-row[aria-checked] >> nth=0 >> [data-act='insert']")
+    page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
+    check(page.locator("#pm-keytip kbd").all_inner_texts() == ["Ctrl", "Enter"], "Windows: Insert's tooltip draws Ctrl and Enter")
+    page.click("#pm-lib-more")
+    check(page.inner_text(".pm-lib-mi[data-act='voice'] span") == "Ctrl+Shift+V", "Windows: the menu writes Ctrl+Shift+V")
+    page.click("[data-act='shortcuts']")
+    page.wait_for_selector("#pm-keys:not([hidden])")
+    caps = page.locator("#pm-keys kbd").all_inner_texts()
+    check(not any(c in ("↵", "⇧", "⌘", "⇥") for c in caps), f"Windows: no Mac glyph anywhere on the map, got {sorted(set(caps))}")
+    check("Enter" in caps and "Shift" in caps and "Ctrl" in caps, "but Enter, Shift and Ctrl are there")
+    ctx.close()
 
 
 def reach_the_chip_from_anywhere(browser, url):
