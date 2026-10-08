@@ -1971,21 +1971,23 @@ function libFootHtml() {
     parts.push(`<span class="pm-lib-low">${left <= 0 ? "No rewrites left today" : left === 1 ? "1 rewrite left today" : `${left} rewrites left today`}</span>`);
   }
   if (selectedIds.size) {
-    const n = selectedIds.size, them = n === 1 ? "it" : "them";
-    parts.push(`<span class="pm-lib-att-count">${n} in context</span>` +
+    parts.push(`<span class="pm-lib-att-count">${selectedIds.size} in context</span>` +
       `<button type="button" class="pm-lib-link" data-act="clear">Clear</button>`);
+  }
+  // The keys stay once something is in context: ticking a prompt is when
+  // the user is learning ↵ and ⌘↵, and the foot used to drop them right then.
+  const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
+  parts.push(`<span class="pm-lib-hints${parts.length ? " pm-lib-hints-also" : ""}">` + (libView === "recent"
+    ? k(ENTER_KEY, libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
+    : k(ENTER_KEY, selectedIds.size ? "add" : "add to context") + k(CMD_ENTER, libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
+  if (selectedIds.size) {
     // What the ticks are for, said where they are ticked. Context shapes the
     // ⊕ rewrite and is never sent to the chat on its own, so with text in the
     // box the next step is offered here, and without it the foot says so.
+    const them = selectedIds.size === 1 ? "it" : "them";
     parts.push(norm(getCurrentInputText()).length >= 3
       ? `<button type="button" class="pm-lib-verb pm-lib-foot-go" data-act="rewrite" title="Rewrite what is in the chat box with ${them} as context">Rewrite with ${them}</button>`
       : `<span class="pm-lib-foot-note">for your next ⊕ rewrite</span>`);
-  }
-  if (!parts.length) {
-    const k = (key, what) => `<span><kbd>${key}</kbd>${what}</span>`;
-    parts.push(`<span class="pm-lib-hints">` + (libView === "recent"
-      ? k(ENTER_KEY, libVerb().toLowerCase()) + k("→", "read") + k("esc", "close")
-      : k(ENTER_KEY, "add to context") + k(CMD_ENTER, libVerb().toLowerCase()) + k("→", "read")) + `</span>`);
   }
   return parts.join("");
 }
