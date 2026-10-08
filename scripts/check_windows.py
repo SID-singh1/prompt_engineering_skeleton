@@ -103,7 +103,12 @@ def main():
         page.wait_for_function("(document.querySelector('#pm-card .pm-card-title')?.textContent || '').includes('Rewrite')", timeout=6000)
         check(ev("FAKE.calls") == ["deep"], "Ctrl+Shift+E rewrites on Windows")
         foot = page.inner_text("#pm-card .pm-card-foot")
-        check("Ctrl+S" in foot and "⌘" not in foot, f"the card's keys read Ctrl+: {foot!r}")
+        check("⌘" not in foot and "Ctrl" not in foot, f"the card's foot is buttons, no keycaps: {foot!r}")
+        page.hover("#pm-card-save")
+        page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
+        caps = page.locator("#pm-keytip kbd").all_inner_texts()
+        check(caps == ["Ctrl", "S"], f"Save's tooltip reads Ctrl S, got {caps}")
+        page.mouse.move(5, 5)
         tip = page.inner_text("#pm-card-tip") if page.locator("#pm-card-tip").count() else ""
         check("⌘" not in tip, "the card's tip has no Mac symbols")
         page.click("#pm-card-accept")
