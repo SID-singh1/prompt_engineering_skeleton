@@ -196,7 +196,7 @@ def main():
         page.keyboard.press("ArrowDown")
         check(ev("libSel") == 3, f"so ↓ still moves the highlight after it, got {ev('libSel')}")
         foot = page.inner_text("#pm-lib-foot")
-        check("1 in context" in foot and "insert" in foot and "read" in foot,
+        check("1 in context" in foot and "add" in foot and "insert" in foot,
               f"the foot keeps its keys beside what is in context, got {foot!r}")
         page.keyboard.press("ArrowUp")
         page.keyboard.press("Enter")
@@ -393,6 +393,38 @@ def main():
         page.keyboard.press("Escape")
         ev("document.body.classList.remove('center'); document.getElementById('composer').textContent = ''")
         page.wait_for_timeout(100)
+
+        # ── the sheet holds still as chips land (seen live: a second pick shrank it) ──
+        for size, centred in (((1440, 900), False), ((1440, 820), True)):
+            page.set_viewport_size({"width": size[0], "height": size[1]})
+            ev(f"document.body.classList.toggle('center', {str(centred).lower()}); clearAttachments()")
+            page.wait_for_timeout(100)
+            open_lib()
+            page.wait_for_timeout(200)
+            sizes = [rect("#pm-library")]
+            for i in range(4):
+                page.locator("#pm-library .pm-lib-row[data-i]").nth(i).click(position={"x": 60, "y": 10})
+                page.wait_for_timeout(150)
+                sizes.append(rect("#pm-library"))
+            where = "centred box" if centred else "box at the foot"
+            check(all(sz == sizes[0] for sz in sizes), f"{where}: ticking one prompt after another neither moves nor resizes the sheet, got {sizes}")
+            rail = rect("#pm-rail")
+            check(rail["b"] - rail["t"] <= 27 and not overlaps(rail, rect("#pm-library")),
+                  f"{where}: the chips keep to their one row, clear of the sheet, got {rail}")
+            more = page.locator("#pm-rail .pm-rail-more")
+            titles = ev("[...selectedIds].map((id) => attachTitles.get(id))")
+            n = int(more.inner_text().lstrip("+")) if more.count() == 1 else 0
+            shown = page.locator("#pm-rail .pm-rail-chip:not([hidden])").count()
+            check(n >= 1 and shown + n == 4 and more.get_attribute("title") == ", ".join(titles[:n]),
+                  f"{where}: the oldest fold into +{n}, which names them, got {shown} shown")
+            check(page.locator("#pm-rail .pm-rail-chip:not([hidden])").last.inner_text().strip() == titles[-1],
+                  f"{where}: and the one just picked stays in view")
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(100)
+            check(page.locator("#pm-rail .pm-rail-more").count() == 0 and page.locator("#pm-rail .pm-rail-chip[hidden]").count() == 0,
+                  f"{where}: with the sheet closed every chip shows again")
+        ev("clearAttachments(); document.body.classList.remove('center')")
+        page.set_viewport_size({"width": 1440, "height": 900})
 
         # ── keys where they act: tooltips with keycaps ──
         open_lib()
