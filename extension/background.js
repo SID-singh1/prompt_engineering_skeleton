@@ -468,12 +468,21 @@ async function activateExistingTabs() {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "update") {
+    // Simple mode (content.js) is the default for new installs only. Someone
+    // updating has learned the pill, and keeps it until they switch from the
+    // library's ⋯ menu.
+    chrome.storage.local.get("pm_simple_mode", (r) => {
+      if (r.pm_simple_mode === undefined) chrome.storage.local.set({ pm_simple_mode: false });
+    });
     // Do not inject another copy into a tab that already has the old one.
     // The old isolated world cannot be revived, and two copies race to own
     // the same UI. The tab's next page load gets the current manifest script.
     return;
   }
   if (reason !== "install") return;
+
+  // Before the tabs below get their content script, so it starts simple.
+  await chrome.storage.local.set({ pm_simple_mode: true });
 
   await activateExistingTabs();
 

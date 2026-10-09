@@ -1251,6 +1251,7 @@ function placePill() {
   const hlpOff = document.getElementById("pm-help-btn");
   if (hlpOff && panelOpen) hlpOff.hidden = true;
   positionCard();
+  positionSimple();   // after the card: with Compare open, the bar sits on it
   positionToasts();
   positionLibrary();
   positionRail();
@@ -1351,6 +1352,10 @@ function onNavigated() {
 
 /** Bring a draft back from storage after a reload or a new tab. */
 async function restoreDraft() {
+  // Simple mode has nothing to bring back: its rewrite went into the chat box,
+  // and the box is where the host keeps it. A draft the pill was holding from
+  // before the switch waits for the pill.
+  if (simpleMode) return;
   const draft = await draftStore.load();
   if (!draft || cardState !== "idle") return;
   // Drafts saved before versions existed carry a single result.
@@ -1595,7 +1600,7 @@ function createLibrary() {
   // raised (edit, delete, consent) do not count as "elsewhere".
   document.addEventListener("pointerdown", (e) => {
     if (!panelOpen) return;
-    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (e.target.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-library-btn, #pm-help-btn, #pm-trigger, #pm-simple, #pm-simple-menu, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     togglePanel(false);
   }, true);
   // So does scrolling the page: the user has gone back to the conversation.
@@ -1636,7 +1641,7 @@ function createLibrary() {
     // The chat box is the host's to focus, and does so on its own; typing in
     // it is what closes the sheet (see watchComposer). Tab to anything else
     // on the page, and the sheet goes.
-    if (t === window || t === document.body || t.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-trigger, #pm-library-btn, #pm-help-btn, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
+    if (t === window || t === document.body || t.closest?.("#pm-library, #pm-peek, #pm-save, #pm-keys, #pm-trigger, #pm-simple, #pm-simple-menu, #pm-library-btn, #pm-help-btn, #pm-rail, .pm-modal-overlay, #pm-toast-stack")) return;
     if (t === findComposer() || findComposer()?.contains(t)) return;
     togglePanel(false);
   });
@@ -1876,7 +1881,7 @@ const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 /** Where the sheet goes: on the pill's side, above it if there is room, else below. */
 function positionLibrary() {
   const lib = document.getElementById("pm-library");
-  const pill = document.getElementById("pm-trigger");
+  const pill = anchorEl();
   if (!lib || lib.hidden || !pill) return;
   const p = pill.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
@@ -2171,6 +2176,7 @@ function libMenuHtml() {
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="shortcuts">Keyboard shortcuts<span>?</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
+    (simpleMode ? "" : `<button type="button" class="pm-lib-mi" role="menuitem" data-act="simple">Simple controls on the chat box</button>`) +
     (libSignedIn && usageData.known
       ? `<hr><div class="pm-lib-menu-meta">${Math.max(0, usageData.count)} of ${usageData.limit} rewrites used today${left <= 0 ? " — none left" : ""}</div>`
       : "") +
@@ -2618,6 +2624,7 @@ function onLibraryClick(e) {
       loadRecentFeedback();
       return;
     case "voice": closeLibrary(); toggleVoice(); return;
+    case "simple": closeLibrary(); setSimpleMode(true); return;
     case "signin": openSettings(); return;
     case "clear": clearAttachments(); return;
     case "new": libMenu = false; openNewPrompt(); return;
@@ -3183,18 +3190,34 @@ function composerFrameBox(el) {
  * beside the text has no row below it, and gives null.
  */
 function composerControlsTop(el) {
+  return composerControlsRow(el)?.top ?? null;
+}
+
+/**
+ * composerControlsTop()'s row in full: its height, where its right-hand
+ * buttons begin (left), and where the buttons on its left end (leftEdge), so
+ * something can stand between the two. Null where composerControlsTop is.
+ */
+function composerControlsRow(el) {
   const box = composerFrameBox(el);
   if (!box || box.node === el) return null;
   const text = el.getBoundingClientRect(), frame = box.rect;
-  let top = null;
-  for (const b of box.node.querySelectorAll("button, [role='button']")) {
-    if (el.contains(b)) continue;
-    const r = b.getBoundingClientRect();
-    if (!r.width || !r.height || r.left + r.width / 2 < frame.left + frame.width * 0.6) continue;
-    if (r.top < text.top + 20) continue;
-    top = top === null ? r.top : Math.min(top, r.top);
-  }
-  return top;
+  const split = frame.left + frame.width * 0.6;
+  const rows = [...box.node.querySelectorAll("button, [role='button']")]
+    .filter((b) => !el.contains(b))
+    .map((b) => b.getBoundingClientRect())
+    .filter((r) => r.width && r.height && r.top >= text.top + 20);
+  const right = rows.filter((r) => r.left + r.width / 2 >= split);
+  if (!right.length) return null;
+  const top = Math.min(...right.map((r) => r.top));
+  const bottom = Math.max(...right.map((r) => r.bottom));
+  const leftOnRow = rows.filter((r) => r.left + r.width / 2 < split && r.bottom > top && r.top < bottom);
+  return {
+    top,
+    height: bottom - top,
+    left: Math.min(...right.map((r) => r.left)),
+    leftEdge: leftOnRow.length ? Math.max(...leftOnRow.map((r) => r.right)) : frame.left,
+  };
 }
 
 /**
@@ -3254,7 +3277,7 @@ function positionRail() {
   // The pill steps up onto the box's top corner when it would sit on the box
   // (a draft makes it wide), which is this same row: on Claude the chips ran
   // under it (seen live). They stop short of it and wrap upward instead.
-  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  const pill = anchorEl()?.getBoundingClientRect();
   if (pill && pill.bottom > r.top - 40 && pill.top < r.top && pill.left > r.left) {
     maxWidth = Math.min(maxWidth, Math.max(180, Math.round(pill.left - r.left - 8)));
   }
@@ -3600,6 +3623,7 @@ function onComposerChanged() {
     checkSlash();
     refreshCardStaleness();
     positionRail();
+    simpleOnComposerChanged();
     tipsOnComposerChanged();
   });
 }
@@ -3871,6 +3895,9 @@ async function handleEnhance({ reveal = false } = {}) {
     onOrphaned();
     return;
   }
+  // The button on the chat box, the shortcut and the library's Rewrite all
+  // land here; in simple mode the rewrite goes into the box, not a card.
+  if (simpleMode) { simpleEnhance(); return; }
   if (enhanceInFlight) {
     if (reveal && cardState === "streaming") revealCard();
     else showToast("Already enhancing — hang on a moment.", "info");
@@ -3903,8 +3930,18 @@ async function handleEnhance({ reveal = false } = {}) {
   }
 }
 
+/**
+ * Where a stream's text goes. The card by default; simple mode passes its own,
+ * which writes into the chat box instead (see SIMPLE_SINK).
+ */
+const CARD_SINK = {
+  token: (text) => updateStreamingText(text),
+  done: (result) => finalizeStreamingModal(result),
+  fail: (message) => failStreamingModal(message),
+};
+
 /** No account, no server: the service worker calls the user's own provider. */
-async function runDirectEnhance(inputText, route, style = currentMode) {
+async function runDirectEnhance(inputText, route, style = currentMode, sink = CARD_SINK) {
   return new Promise((resolve) => {
     let port;
     try {
@@ -3931,7 +3968,7 @@ async function runDirectEnhance(inputText, route, style = currentMode) {
     port.onMessage.addListener((msg) => {
       if (msg.type === "token") {
         parts.push(msg.token);
-        updateStreamingText(parts.join(""));
+        sink.token(parts.join(""));
       } else if (msg.type === "done") {
         finish(() => {
           lastEnhanceResult = {
@@ -3943,16 +3980,16 @@ async function runDirectEnhance(inputText, route, style = currentMode) {
             direct: true,
             model: msg.model,
           };
-          finalizeStreamingModal(lastEnhanceResult);
+          sink.done(lastEnhanceResult);
         });
       } else if (msg.type === "error") {
-        finish(() => failStreamingModal(msg.error));
+        finish(() => sink.fail(msg.error));
       }
     });
 
     // If the worker dies mid-flight the modal must not spin forever.
     port.onDisconnect.addListener(() => {
-      finish(() => failStreamingModal("Connection to the extension worker was lost."));
+      finish(() => sink.fail("Connection to the extension worker was lost."));
     });
 
     port.postMessage({ type: "PM_ENHANCE_STREAM", prompt: inputText, mode: style });
@@ -3960,7 +3997,7 @@ async function runDirectEnhance(inputText, route, style = currentMode) {
 }
 
 /** Signed in: go through the backend so memory features still apply. */
-async function runBackendEnhance(inputText, inputMetadata = {}, style = currentMode) {
+async function runBackendEnhance(inputText, inputMetadata = {}, style = currentMode, sink = CARD_SINK) {
   let parts = [];
   let finished = false;
 
@@ -3969,7 +4006,7 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
     Array.from(selectedIds),
     (token) => {
       parts.push(token);
-      updateStreamingText(parts.join(""));
+      sink.token(parts.join(""));
     },
     (metadata) => {
       finished = true;
@@ -3977,7 +4014,7 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
       // model produced an empty stream, a done event, and a modal that
       // cheerfully presented nothing as the finished enhancement.
       if (metadata.failed || !parts.length) {
-        failStreamingModal(
+        sink.fail(
           metadata.detail || metadata.error ||
           "The enhancement came back empty. Please try again."
         );
@@ -4009,7 +4046,7 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
         context_details: metadata.context_details,
         excluded: inputMetadata.excluded || [],
       };
-      finalizeStreamingModal(lastEnhanceResult);
+      sink.done(lastEnhanceResult);
     },
     inputMetadata,
     style
@@ -4019,7 +4056,7 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
   // itself threw. Leaving the modal on "Enhancing..." forever was the visible
   // symptom of every backend outage.
   if (!finished) {
-    failStreamingModal("Could not reach the server. Check your connection and try again.");
+    sink.fail("Could not reach the server. Check your connection and try again.");
   }
 }
 
@@ -4343,7 +4380,7 @@ const CARD_MAX_SHARE = 0.45;   // of the window's height, for a card on the chat
 
 function positionCard() {
   const card = document.getElementById("pm-card");
-  const pill = document.getElementById("pm-trigger");
+  const pill = anchorEl();
   if (!card || !pill) return;
 
   const composer = findComposer();
@@ -4512,10 +4549,12 @@ function hideCard() {
     // draft went, and the motion says so. The id is dropped at once so a
     // re-open during the 160ms builds a fresh card instead of reviving this one.
     card._pmEndGesture?.();
-    if (card.contains(document.activeElement)) document.getElementById("pm-trigger")?.focus({ preventScroll: true });
+    // Focus goes where the draft went: the pill, or in simple mode the chat
+    // box the rewrite is already in (the pill is not on the page to take it).
+    if (card.contains(document.activeElement)) (simpleMode ? findComposer() : document.getElementById("pm-trigger"))?.focus({ preventScroll: true });
     card.id = "";
     card._pmResize?.disconnect();
-    const pill = document.getElementById("pm-trigger");
+    const pill = anchorEl();
     const up = pill && pill.getBoundingClientRect().top < card.getBoundingClientRect().top;
     card.classList.remove("pm-card-visible");
     card.classList.add("pm-card-leaving", up ? "pm-card-leaving-up" : "pm-card-leaving-down");
@@ -4546,7 +4585,7 @@ function hideCard() {
 // pointer passes on its way to the chat box.
 
 /** What counts as "the page" and not the extension's own surfaces. */
-const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-keys, #pm-caret, #pm-rail, " +
+const PM_SURFACES = "#pm-card, #pm-trigger, #pm-simple, #pm-simple-menu, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-keys, #pm-caret, #pm-rail, " +
   "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
 
 function renderStrip() {
@@ -5435,7 +5474,7 @@ function positionToasts() {
   // extension's own action, and it belongs by the extension. Centred over
   // the chat box it sat on the context chips and the last lines of the
   // conversation (a tester called it out as covering what they were reading).
-  const pill = document.getElementById("pm-trigger")?.getBoundingClientRect();
+  const pill = anchorEl()?.getBoundingClientRect();
   const right = !pill || pill.left + pill.width / 2 > vw / 2;
   stack.style.transform = "none";
   stack.style.alignItems = right ? "flex-end" : "flex-start";
@@ -5450,7 +5489,7 @@ function positionToasts() {
   // box itself. Highest first wins, so it clears the whole stack.
   let floor = pill ? pill.top : vh - 80;
   const obstacles = [document.getElementById("pm-card"), document.getElementById("pm-library"),
-    document.getElementById("pm-save"), document.getElementById("pm-rail")]
+    document.getElementById("pm-save"), document.getElementById("pm-rail"), document.getElementById("pm-simple-menu")]
     .filter((el) => el && !el.hidden).map((el) => el.getBoundingClientRect());
   const box = composerFrame(findComposer());
   if (box) obstacles.push(box);
@@ -6507,6 +6546,750 @@ function applyTheme(theme) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// SIMPLE MODE: one button on the chat box, and the rewrite lands in it
+// ══════════════════════════════════════════════════════════════
+//
+// Friends who tried the extension liked the idea and got lost in the
+// controls. The action was a dim ⊕ in the window's corner, away from the box
+// it rewrites. One click brought up a pill and a card that both said
+// Replace, and the card carried nine controls. Library and Shortcuts only
+// appeared on hover, and timed tips could land on the host's Send. Simple
+// mode is the flow a first-time user needs, with the rest one click further
+// in:
+//
+//   - "Improve" sits on the chat box itself, labelled, with its shortcut in
+//     its tooltip.
+//   - A click (or the shortcut) streams the rewrite straight into the box,
+//     replacing the draft. The same bar then reads "Improved · Undo · More
+//     detail · Compare". Undo writes back the exact text that was there.
+//   - The card never opens on its own. Compare opens it, and it is the same
+//     card, versions and Save included, because the finished rewrite is
+//     handed to it folded (simpleSyncCard).
+//   - Library, context, styles, versions, voice, shortcuts and settings are
+//     under ⋯. Only one tip is shown, once, the first time there is a draft
+//     to improve, and it never runs on a timer.
+//
+// The flag is pm_simple_mode. background.js sets it on for a new install
+// and off for anyone updating, since they already know the pill. Both ⋯
+// menus (this one and the library's) switch between the two.
+
+const SIMPLE_KEY = "pm_simple_mode";
+const SIMPLE_STYLE_KEY = "pm_simple_style";
+// Quick, not Deep: the evals (evals/) find Deep over-expands a short ask, and
+// here the rewrite replaces the user's words before they have read it.
+const SIMPLE_DEFAULT_STYLE = "quick";
+// The strip's two style buttons, named by what they do to the text in the
+// box. The one matching the version already there is left off: "Shorter" on
+// a Quick rewrite would spend a call to say the same thing again.
+const SIMPLE_STEPS = { quick: "Shorter", deep: "More detail" };
+// A breath between streamed writes. Each write selects and replaces the
+// whole box, so one per token would flicker and fill the editor's undo stack.
+const SIMPLE_WRITE_GAP_MS = 90;
+
+let simpleMode = false;
+let simpleStyle = SIMPLE_DEFAULT_STYLE;
+let simpleMenuOpen = false;
+let simpleSignature = "";
+const simple = {
+  phase: "idle",     // idle | streaming | done | edited (the user changed the rewrite)
+  original: "",      // the chat box exactly as it was before Improve: Undo writes this back
+  written: "",       // what we last put in the box
+  composer: null,    // the box it went into, to tell a Send from a new chat
+  versions: [],      // finished rewrites of `original`, one per style, oldest first
+  index: 0,          // the version in the box
+  fallback: "",      // put back if the stream in flight is stopped or fails
+  pending: null,     // the newest streamed text, not yet written
+  streamed: false,   // this stream has written into the box: later writes append
+  queued: false,     // a write of `pending` is waiting its turn
+  writing: false,    // one of our writes is under way: the box's changes are ours
+  queue: Promise.resolve(),
+};
+
+const SPARK_SVG =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M6.5 3Q7 8.5 12.5 9 7 9.5 6.5 15 6 9.5.5 9 6 8.5 6.5 3Z"/>' +
+  '<path d="M12.5 1q.2 2.3 2.5 2.5-2.3.2-2.5 2.5-.2-2.3-2.5-2.5 2.3-.2 2.5-2.5Z" opacity=".75"/></svg>';
+const MORE_SVG =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<circle cx="3.5" cy="8" r="1.35"/><circle cx="8" cy="8" r="1.35"/><circle cx="12.5" cy="8" r="1.35"/></svg>';
+
+const simpleWait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Read the flag. It is unset only where background.js has not written it
+ * (the test harness, or a tab that loaded before the update hook ran): then
+ * someone who has rewritten before keeps the controls they learned.
+ */
+function loadSimpleMode() {
+  return new Promise((resolve) => {
+    storageGet([SIMPLE_KEY, SIMPLE_STYLE_KEY, "pm_stats"], (r) => {
+      simpleMode = r[SIMPLE_KEY] === undefined
+        ? !((r.pm_stats?.rewrites || 0) > 0)
+        : r[SIMPLE_KEY] === true;
+      simpleStyle = STYLES.includes(r[SIMPLE_STYLE_KEY]) ? r[SIMPLE_STYLE_KEY] : SIMPLE_DEFAULT_STYLE;
+      resolve();
+    });
+  });
+}
+
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    // Switched in another tab: this one follows, once its UI exists.
+    if (changes[SIMPLE_KEY] && document.getElementById("pm-trigger")) {
+      setSimpleMode(changes[SIMPLE_KEY].newValue === true, false);
+    }
+    if (changes[SIMPLE_STYLE_KEY]) {
+      const s = changes[SIMPLE_STYLE_KEY].newValue;
+      simpleStyle = STYLES.includes(s) ? s : SIMPLE_DEFAULT_STYLE;
+    }
+  });
+} catch (error) { onOrphaned(error); }
+
+/** Turn simple mode on or off here, and with `persist` in every tab. */
+function setSimpleMode(on, persist = true) {
+  on = Boolean(on);
+  if (persist) storageSet({ [SIMPLE_KEY]: on });
+  if (!on && simpleMode) simpleForget();
+  simpleMode = on;
+  closeSimpleMenu();
+  hideTip();
+  // The pill and its chips stay in the page, hidden. Their code runs either
+  // way, so switching back only has to show them.
+  for (const id of ["pm-trigger", "pm-library-btn", "pm-help-btn"]) {
+    document.getElementById(id)?.toggleAttribute("data-pm-simple", on);
+  }
+  if (on) createSimpleBar();
+  else document.getElementById("pm-simple")?.remove();
+  simpleSignature = "";
+  renderPill();
+  placePill();
+}
+
+/** What the library, card, toasts and tips hang off: the pill, or in simple mode the bar. */
+function anchorEl() {
+  return (simpleMode && document.getElementById("pm-simple")) || document.getElementById("pm-trigger");
+}
+
+function createSimpleBar() {
+  if (document.getElementById("pm-simple")) return;
+  const bar = document.createElement("div");
+  bar.id = "pm-simple";
+  bar.className = "pm-simple";
+  bar.setAttribute("role", "toolbar");
+  bar.setAttribute("aria-label", "Prompt Memory");
+  // A press on the bar must not take focus from the chat box: the caret
+  // stays where the user was typing, and Esc still reaches the stream.
+  bar.addEventListener("pointerdown", (e) => { if (e.target.closest("button")) e.preventDefault(); });
+  bar.addEventListener("click", onSimpleClick);
+  document.body.appendChild(bar);
+  storageGet("pm_theme", (r) => bar.setAttribute("data-pm-theme", r.pm_theme || "dark"));
+  new ResizeObserver(() => placePill()).observe(bar);
+}
+
+/** Draw the bar for the state it is in. Cheap when nothing it shows changed. */
+function renderSimpleBar() {
+  const bar = document.getElementById("pm-simple");
+  if (!bar) return;
+  const empty = norm(getCurrentInputText()).length < 3;
+  const on = simple.versions[simple.index]?.mode || "";
+  const sig = [simple.phase, on, simple.versions.map((v) => v.mode).join(","), empty,
+    simpleMenuOpen, cardExpanded].join("|");
+  if (sig === simpleSignature) return;
+  simpleSignature = sig;
+
+  bar.dataset.phase = simple.phase;
+  bar.toggleAttribute("data-empty", empty && simple.phase !== "streaming" && simple.phase !== "done");
+  // `keycap` is written out as a literal data-pm-key attribute, as on every
+  // other control, so the keymap test can hold it to the list of shortcuts.
+  const btn = (act, label, tip, keycap = "") =>
+    `<button type="button" class="pm-simple-btn" data-act="${act}" data-pm-tip="${escHtml(tip)}"${keycap}>${label}</button>`;
+  const spark = (busy = false) => `<span class="pm-simple-spark${busy ? " pm-simple-busy" : ""}">${SPARK_SVG}</span>`;
+
+  let html;
+  if (simple.phase === "streaming") {
+    html = `<span class="pm-simple-status" role="status">${spark(true)}Improving…</span>` +
+      btn("stop", "Stop", "Stop, and put your text back", ' data-pm-key="Esc"');
+  } else if (simple.phase === "done") {
+    const steps = Object.keys(SIMPLE_STEPS).filter((s) => s !== on).map((s) =>
+      btn(s, SIMPLE_STEPS[s], simple.versions.some((v) => v.mode === s)
+        ? `Back to the ${STYLE_NAMES[s]} version you already made`
+        : `Rewrite your original again, ${STYLE_HINTS[s]}`)).join("");
+    html = `<span class="pm-simple-status pm-simple-ok" role="status">${spark()}Improved</span>` +
+      `<span class="pm-simple-sep" aria-hidden="true"></span>` +
+      btn("undo", "Undo", "Put back exactly what you wrote") + steps +
+      btn("compare", cardExpanded ? "Hide compare" : "Compare", "See the rewrite beside your original", ` data-pm-key="${MOD_SHIFT}P"`);
+  } else {
+    // idle, or edited: the user changed the rewrite, which Improve can now
+    // rewrite again, and Undo can still take back to what they first wrote.
+    html = `<button type="button" class="pm-simple-improve" data-act="improve" ` +
+      `data-pm-tip="${empty ? "Type a prompt, then make it clearer" : "Rewrite this prompt so it is clearer"}" ` +
+      `data-pm-key="${MOD_SHIFT}E" aria-keyshortcuts="${IS_MAC ? "Meta+Shift+E" : "Control+Shift+E"}">` +
+      `${spark()}Improve</button>` +
+      (simple.phase === "edited" ? btn("undo", "Undo", "Put back what you wrote before Improve") : "");
+  }
+  bar.innerHTML = html +
+    `<button type="button" class="pm-simple-more" data-act="more" aria-haspopup="menu" aria-expanded="${simpleMenuOpen}" ` +
+    `aria-controls="pm-simple-menu" aria-label="More: library, styles, shortcuts" data-pm-tip="Library, styles, context and shortcuts">${MORE_SVG}</button>`;
+}
+
+/**
+ * Put the bar on the chat box. Inside it, on its row of buttons, when the box
+ * has a row under the text with room left of the buttons there (Claude's,
+ * Gemini's); otherwise on the box's top edge, right-aligned over its buttons
+ * (ChatGPT's one-row box, where the text runs right up to the controls).
+ * With Compare open it stands on the card, which holds that edge then. With
+ * no chat box on the page, the corner the pill uses.
+ */
+function positionSimple() {
+  const bar = document.getElementById("pm-simple");
+  if (!bar) return;
+  renderSimpleBar();
+  const composer = findComposer();
+  const w = bar.offsetWidth, h = bar.offsetHeight, m = 8;
+  const place = (left, top, at) => {
+    bar.style.left = Math.round(Math.max(m, Math.min(left, window.innerWidth - w - m))) + "px";
+    bar.style.top = Math.round(Math.max(m, Math.min(top, window.innerHeight - h - m))) + "px";
+    bar.dataset.at = at;
+  };
+  const card = cardExpanded ? document.getElementById("pm-card")?.getBoundingClientRect() : null;
+  if (!composer) {
+    place(window.innerWidth - w - PILL_MARGIN, window.innerHeight - h - PILL_HOME_BOTTOM, "corner");
+  } else if (card && card.height) {
+    place(card.right - w, card.top - h - 6, "card");
+  } else {
+    const frame = composerFrame(composer);
+    const text = composer.getBoundingClientRect();
+    const row = composerControlsRow(composer);
+    const left = row ? row.left - 8 - w : 0;
+    const top = row ? row.top + row.height / 2 - h / 2 : 0;
+    const onText = left < text.right && left + w > text.left && top < text.bottom && top + h > text.top;
+    if (row && left >= row.leftEdge + 8 && left >= frame.left + 8 && !onText) place(left, top, "row");
+    else if (frame.top - h - 6 >= m) place(frame.right - w, frame.top - h - 6, "edge");
+    else place(frame.right - w, frame.bottom + 6, "below");
+  }
+  positionSimpleMenu();
+}
+
+/** The bar's buttons. One press, one thing; nothing here takes focus. */
+function onSimpleClick(e) {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  e.stopPropagation();
+  switch (b.dataset.act) {
+    case "improve": handleEnhance(); return;
+    case "stop": simpleStop(); return;
+    case "undo": simpleUndo(); return;
+    case "quick": case "deep": simpleRerun(b.dataset.act); return;
+    case "compare": simpleCompare(); return;
+    case "more": toggleSimpleMenu(); return;
+  }
+}
+
+/** Shake the bar: it is already showing what the press asked for. */
+function nudgeSimpleBar() {
+  const bar = document.getElementById("pm-simple");
+  if (!bar) return;
+  bar.classList.remove("pm-simple-nudge");
+  void bar.offsetWidth;   // restart the animation
+  bar.classList.add("pm-simple-nudge");
+}
+
+// ── The flow ──
+
+/**
+ * Whether the chat box still holds exactly `text`, whitespace aside. Stricter
+ * than composerMatches(), which lets a write through at up to 15% longer: a
+ * word the user typed mid-stream fits inside that, and was then written over.
+ */
+function composerHolds(text, el) {
+  const box = el || findComposer();
+  return Boolean(box) && norm(composerText(box)) === norm(text);
+}
+
+/** Our writes to the box, one at a time and in order. */
+function simpleSerial(fn) {
+  const run = simple.queue.then(async () => {
+    simple.writing = true;
+    try { return await fn(); } finally { simple.writing = false; }
+  });
+  simple.queue = run.catch(() => {});
+  return run;
+}
+
+/** Improve: rewrite what is in the chat box, straight into the chat box. */
+async function simpleEnhance() {
+  closeSimpleMenu();
+  if (enhanceInFlight || simple.phase === "streaming") {
+    if (simple.phase !== "streaming") showToast("Already enhancing — hang on a moment.", "info");
+    return;
+  }
+  // Pressed again on the rewrite it just wrote: rewriting the rewrite would
+  // spend a call to say the same thing. The strip is the way on from here.
+  if (simple.phase === "done" && composerHolds(simple.written)) { nudgeSimpleBar(); return; }
+  const text = getCurrentInputText();
+  if (!text || text.trim().length < 3) {
+    showToast("Type a prompt in the chat box first.", "error");
+    return;
+  }
+  const route = await resolveEnhanceRoute();
+  if (!route || enhanceInFlight || simple.phase === "streaming") return;
+  // A draft the card was holding (voice, the library's Improve) gives way:
+  // one rewrite at a time, and this is the one just asked for.
+  if (cardState !== "idle") closeCard();
+  simpleForget();
+  simple.original = text;
+  simple.composer = findComposer();
+  await simpleRun(text, simpleStyle, route, text);
+}
+
+/** Stream `input` rewritten in `style` into the box; `fallback` goes back if it stops. */
+async function simpleRun(input, style, route, fallback) {
+  enhanceInFlight = true;
+  hideTip();
+  simple.phase = "streaming";
+  simple.fallback = fallback;
+  simple.pending = null;
+  simple.streamed = false;
+  // Before each write the stream checks the box still holds this, so a user
+  // who types mid-stream keeps what they typed.
+  simple.written = composerText(simple.composer || findComposer());
+  placePill();
+  try {
+    if (route.route === "direct") await runDirectEnhance(input, route, style, SIMPLE_SINK);
+    else await runBackendEnhance(input, {}, style, SIMPLE_SINK);
+  } catch (err) {
+    console.error("Prompt Memory: enhance failed", err);
+    SIMPLE_SINK.fail(err?.message || "Enhancement failed. Please try again.");
+  } finally {
+    enhanceInFlight = false;
+  }
+}
+
+/** The stream runners' callbacks for simple mode. A stopped stream's late news is dropped. */
+const SIMPLE_SINK = {
+  token(text) { if (simple.phase === "streaming") simpleQueueWrite(text); },
+  done(result) { if (simple.phase === "streaming") simpleFinish(result); },
+  fail(message) { if (simple.phase === "streaming") simpleFail(message); },
+};
+
+/**
+ * Write the newest streamed text into the box. A write still waiting its
+ * turn takes whatever arrived since, so a fast stream costs a handful of
+ * writes rather than one per token.
+ */
+function simpleQueueWrite(text) {
+  simple.pending = text;
+  if (simple.queued) return;
+  simple.queued = true;
+  simpleSerial(async () => {
+    simple.queued = false;
+    const next = simple.pending;
+    simple.pending = null;
+    if (simple.phase !== "streaming" || next === null) return;
+    const el = findComposer();
+    if (!el || !composerHolds(simple.written, el)) { simpleTakenOver(); return; }
+    const wrote = await simpleWrite(el, next);
+    if (wrote === "taken") { simpleTakenOver(); return; }
+    if (!wrote) { simpleFail("Couldn’t write into the chat box on this page"); return; }
+    await simpleWait(SIMPLE_WRITE_GAP_MS);
+  });
+}
+
+/**
+ * Put streamed text in the box. The first write replaces the draft; after
+ * that the stream only grows, so the new words go on the end. Replacing the
+ * whole box every time emptied it for a frame or two per write, and the box
+ * flickered as the rewrite came in.
+ */
+async function simpleWrite(el, next) {
+  if (simple.streamed && composerHolds(next, el)) return true;
+  const before = simple.written;
+  let ok = false;
+  if (simple.streamed && next.startsWith(before) && next.length > before.length) {
+    ok = await simpleAppend(el, before, next.slice(before.length));
+    // Not taken, and the box is not as it was either: the user typed while
+    // the append waited on the editor. Replacing the box would erase that.
+    if (!ok && !composerHolds(before, el)) return "taken";
+  }
+  if (!ok) ok = await applyToInput(next);
+  // What the box really holds now, which an editor may have reflowed: the
+  // next check for the user's typing compares against this.
+  if (ok) { simple.written = composerText(el); simple.streamed = true; }
+  return ok;
+}
+
+/**
+ * Add `delta` at the end of a box that holds `before`, through the editor's
+ * own input pipeline, as typing would. False (and nothing to undo) when the
+ * editor did not take it; the caller then replaces the whole text instead.
+ */
+async function simpleAppend(el, before, delta) {
+  if (!delta) return true;
+  try {
+    if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return applyToInput(before + delta);
+    el.focus();
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    await nextFrame();   // editors with their own selection model learn of it a beat later
+    // The user may have typed during that beat: then it is their box, not ours.
+    if (!composerHolds(before, el)) return false;
+    const notCancelled = el.dispatchEvent(new InputEvent("beforeinput", {
+      bubbles: true, cancelable: true, inputType: "insertText", data: delta,
+    }));
+    if (notCancelled) document.execCommand("insertText", false, delta);
+    await nextFrame();
+    return composerMatches(el, before + delta);
+  } catch {
+    return false;
+  }
+}
+
+/** The rewrite is complete: the whole of it into the box, and the strip. */
+function simpleFinish(result) {
+  statsBump("rewrites");
+  tipDone("meet");
+  tipDone("simple");
+  simpleSerial(async () => {
+    if (simple.phase !== "streaming") return;   // stopped while the last write waited
+    const el = findComposer();
+    if (!el || !composerHolds(simple.written, el)) { simpleTakenOver(); return; }
+    const wrote = await simpleWrite(el, result.enhanced);
+    if (wrote === "taken") { simpleTakenOver(); return; }
+    if (!wrote) {
+      await applyToInput(simple.fallback);
+      try {
+        await navigator.clipboard.writeText(result.enhanced);
+        showToast("Couldn't update the chat box, so the rewrite is on your clipboard.", "error");
+      } catch {
+        showToast("Couldn't update the chat box on this page.", "error");
+      }
+      simpleSettle(simple.fallback);
+      return;
+    }
+    simple.versions.push(result);
+    simple.index = simple.versions.length - 1;
+    simple.phase = "done";
+    simpleSyncCard(result);
+    placePill();
+  });
+}
+
+/** The user typed into the box mid-stream: those words are theirs. Stop, and leave them. */
+function simpleTakenOver() {
+  cancelActiveStream?.();
+  const original = simple.original;
+  simpleForget();
+  showToast("Stopped, since you were typing. Your text stays as it is.", "info", {
+    label: "Put back my original",
+    // Not over a rewrite started since: that one has its own Undo.
+    run: () => { if (simple.phase === "idle") simpleSerial(() => applyOrFallback(original, null)); },
+  });
+}
+
+/** After a stop or a failure: back to the last finished version, or to nothing. */
+function simpleSettle(restored) {
+  if (simple.versions.length) {
+    simple.phase = "done";
+    simple.written = composerText(findComposer()) || restored;
+  } else {
+    simpleForget();
+  }
+  simpleSignature = "";
+  placePill();
+}
+
+/** Stop the stream and put back what the box held before it started. */
+function simpleStop() {
+  if (simple.phase !== "streaming") return;
+  cancelActiveStream?.();
+  simple.phase = "idle";   // tokens still on their way are dropped from here
+  const back = simple.fallback;
+  simpleSerial(async () => {
+    if (!composerHolds(back)) await applyOrFallback(back, null);
+    simpleSettle(back);
+  });
+}
+
+function simpleFail(message) {
+  simple.phase = "idle";
+  const back = simple.fallback;
+  simpleSerial(async () => {
+    if (!composerHolds(back)) await applyToInput(back);
+    simpleSettle(back);
+    showToast(`Couldn’t rewrite it (${String(message).replace(/[.\s]+$/, "")}). Your text is as it was.`, "error");
+  });
+}
+
+/** Undo: the exact text the box held before Improve, whatever has happened since. */
+function simpleUndo() {
+  const original = simple.original;
+  if (!original) return;
+  if (simple.phase === "streaming") cancelActiveStream?.();
+  simpleForget();   // idle: no stray token lands after this
+  simpleSerial(() => applyOrFallback(original, null));
+}
+
+/** Drop this rewrite: back to the plain Improve button. The card goes with it. */
+function simpleForget() {
+  if (cardState !== "idle" && simple.versions.includes(cardResult)) closeCard();
+  Object.assign(simple, {
+    phase: "idle", original: "", written: "", composer: null, versions: [], index: 0,
+    fallback: "", pending: null,
+  });
+  simpleSignature = "";
+  renderSimpleBar();
+}
+
+/** Shorter / More detail: a version made already is free; a new one streams in. */
+async function simpleRerun(style) {
+  if (simple.phase !== "done" || enhanceInFlight || !STYLES.includes(style)) return;
+  if (!composerHolds(simple.written)) { simpleOnComposerChanged(); return; }
+  const made = simple.versions.findIndex((v) => v.mode === style);
+  if (made !== -1) {
+    if (made === simple.index) return;
+    const v = simple.versions[made];
+    simpleSerial(async () => {
+      if (!(await applyOrFallback(v.enhanced, null))) return;
+      simple.written = composerText(findComposer());
+      simple.index = made;
+      simpleSyncCard(v);
+      placePill();
+    });
+    return;
+  }
+  if (!simple.versions[0]?.direct && usageData.limit - usageData.count <= 0) {
+    showToast("No rewrites left today.", "error");
+    return;
+  }
+  const route = await resolveEnhanceRoute();
+  if (!route || simple.phase !== "done" || enhanceInFlight || !composerHolds(simple.written)) return;
+  // From the user's own words, as the card's style buttons do; the version
+  // in the box comes back if this one is stopped or fails.
+  await simpleRun(simple.original, style, route, simple.written);
+}
+
+/**
+ * Hand the finished rewrite to the card, folded, so Compare, ⌘⇧P, Save and
+ * the card's versions work on it as on any draft. Its baseline is the box as
+ * it is now: the card judges staleness against the chat box, which holds the
+ * rewrite here, not the original.
+ */
+function simpleSyncCard(result) {
+  cardSubject = null;
+  cardOriginal = simple.original;
+  cardVersions = simple.versions.slice();
+  cardBasedOn = norm(simple.written);
+  cardHasBaseline = true;
+  cardShowingOriginal = false;
+  cardMinimized = !cardExpanded;
+  cardResult = result;   // the same draft, so showDiffModal() keeps it folded
+  cardState = "ready";
+  showDiffModal(result);
+}
+
+/** Compare: the full card, beside the box, with the original to read against. */
+function simpleCompare() {
+  if (simple.phase !== "done") return;
+  if (cardExpanded) { hideCard(); return; }
+  // The card may have let go of it (its own Discard or Replace).
+  if (cardState !== "ready" || !simple.versions.includes(cardResult)) simpleSyncCard(simple.versions[simple.index]);
+  cardShowingOriginal = false;
+  expandCard();
+}
+
+/**
+ * The chat box changed. Ours (a write under way) does not count. The user's
+ * edit to the rewrite turns the strip back into Improve, keeping Undo; an
+ * emptied box was sent.
+ */
+function simpleOnComposerChanged() {
+  if (!simpleMode) return;
+  if (!simple.writing && simple.phase === "done") {
+    const el = findComposer();
+    if (!composerHolds(simple.written, el)) {
+      const result = simple.versions[simple.index];
+      const original = simple.original;
+      const sent = el && el === simple.composer && !norm(composerText(el));
+      simpleForget();
+      if (sent) {
+        // The rewrite went out as it was: the same signal as Replace on the
+        // card, so it is approved the same way (see acceptCard).
+        if (result?.log_id) approveEnhancement(result.log_id);
+      } else if (!composerHolds(original, el)) {
+        simple.original = original;
+        simple.phase = "edited";
+      }
+    }
+  } else if (simple.phase === "edited" && !norm(getCurrentInputText())) {
+    simpleForget();
+  }
+  positionSimple();   // the box grows and shrinks as it fills
+}
+
+// ── ⋯: everything else ──
+
+const simpleMenuItem = (act, label, key = "") =>
+  `<button type="button" class="pm-simple-mi" role="menuitem" data-act="${act}">` +
+  `<span>${escHtml(label)}</span>${key ? `<kbd>${escHtml(key)}</kbd>` : ""}</button>`;
+
+function simpleMenuHtml() {
+  const on = simple.versions[simple.index]?.mode;
+  const seg = (act, s, pressed, made) =>
+    `<button type="button" role="menuitemradio" aria-checked="${pressed}" data-act="${act}" data-style="${s}" ` +
+    `title="${escHtml(STYLE_HINTS[s])}">${STYLE_NAMES[s]}${made ? '<span class="pm-simple-made" title="Made already: switching is free"></span>' : ""}</button>`;
+  const n = selectedIds.size;
+  const thisOne = simple.phase === "done"
+    ? `<div class="pm-simple-menu-cap">This rewrite</div>` +
+      `<div class="pm-simple-seg" role="group" aria-label="Versions of this rewrite">` +
+      STYLES.map((s) => seg("version", s, s === on, s !== on && simple.versions.some((v) => v.mode === s))).join("") + `</div>` +
+      simpleMenuItem("compare", cardExpanded ? "Hide the comparison" : "Compare with your original", `${MOD_SHIFT}P`) +
+      simpleMenuItem("save", "Save to your library", `${CMD_KEY}S`) + `<hr>`
+    : "";
+  return thisOne +
+    `<div class="pm-simple-menu-cap">Style for Improve</div>` +
+    `<div class="pm-simple-seg" role="group" aria-label="Style for Improve">` +
+    STYLES.map((s) => seg("style", s, s === simpleStyle, false)).join("") + `</div>` +
+    simpleMenuItem("context", n ? `Context: ${n} saved prompt${n === 1 ? "" : "s"} attached` : "Attach saved prompts as context") +
+    `<hr>` +
+    simpleMenuItem("library", "Library", `${MOD_SHIFT}L`) +
+    simpleMenuItem("voice", "Voice input", `${MOD_SHIFT}V`) +
+    simpleMenuItem("shortcuts", "Keyboard shortcuts", "?") +
+    simpleMenuItem("settings", "Settings") +
+    `<hr>` +
+    simpleMenuItem("classic", "Switch to the classic controls");
+}
+
+function toggleSimpleMenu(force) {
+  const open = force === undefined ? !simpleMenuOpen : Boolean(force);
+  if (!open) { closeSimpleMenu(); return; }
+  hideTip();
+  simpleMenuOpen = true;
+  let menu = document.getElementById("pm-simple-menu");
+  if (!menu) {
+    menu = document.createElement("div");
+    menu.id = "pm-simple-menu";
+    menu.className = "pm-simple-menu";
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "More from Prompt Memory");
+    menu.addEventListener("click", onSimpleMenuClick);
+    menu.addEventListener("keydown", onSimpleMenuKeydown);
+    document.body.appendChild(menu);
+  }
+  menu.innerHTML = simpleMenuHtml();
+  renderSimpleBar();
+  positionSimpleMenu();
+  positionToasts();   // a notice up from before steps above the menu, off its items
+  menu.querySelector("button")?.focus({ preventScroll: true });
+}
+
+function closeSimpleMenu(restoreFocus = false) {
+  const menu = document.getElementById("pm-simple-menu");
+  if (!menu && !simpleMenuOpen) return;
+  const hadFocus = menu?.contains(document.activeElement);
+  menu?.remove();
+  simpleMenuOpen = false;
+  renderSimpleBar();
+  positionToasts();
+  if (restoreFocus || hadFocus) document.querySelector("#pm-simple .pm-simple-more")?.focus({ preventScroll: true });
+}
+
+/** Above the ⋯, right-aligned to it; below when there is no room above. */
+function positionSimpleMenu() {
+  const menu = document.getElementById("pm-simple-menu");
+  const more = document.querySelector("#pm-simple .pm-simple-more");
+  if (!menu || !more) return;
+  const r = more.getBoundingClientRect();
+  const w = menu.offsetWidth, h = menu.offsetHeight, m = 8, gap = 6;
+  const up = r.top - gap - h >= m || r.top > window.innerHeight / 2;
+  menu.style.left = Math.round(Math.max(m, Math.min(r.right - w, window.innerWidth - w - m))) + "px";
+  menu.style.top = Math.round(up ? Math.max(m, r.top - gap - h) : r.bottom + gap) + "px";
+  menu.dataset.side = up ? "above" : "below";
+}
+
+function onSimpleMenuClick(e) {
+  const b = e.target.closest("button[data-act]");
+  if (!b) return;
+  e.stopPropagation();
+  const act = b.dataset.act, style = b.dataset.style;
+  if (act === "style") {
+    // A setting, not an action: the menu stays, showing the new choice.
+    simpleStyle = style;
+    storageSet({ [SIMPLE_STYLE_KEY]: style });
+    b.closest(".pm-simple-seg").querySelectorAll("button").forEach((x) =>
+      x.setAttribute("aria-checked", String(x.dataset.style === style)));
+    return;
+  }
+  closeSimpleMenu(act === "version");
+  switch (act) {
+    case "version": simpleRerun(style); return;
+    case "compare": simpleCompare(); return;
+    case "save": {
+      const v = simple.versions[simple.index];
+      if (v) openSaveForm({ text: v.enhanced, anchor: document.getElementById("pm-simple")?.getBoundingClientRect() });
+      return;
+    }
+    case "context": case "library": togglePanel(true); return;
+    case "voice": toggleVoice(); return;
+    case "shortcuts": openShortcuts(); return;
+    case "settings": openSettings(); return;
+    case "classic":
+      setSimpleMode(false);
+      showToast("Classic controls: ⊕ in the corner. The simple ones are in the library’s ⋯ menu.", "info");
+      return;
+  }
+}
+
+function onSimpleMenuKeydown(e) {
+  if (e.key !== "ArrowDown" && e.key !== "ArrowUp" && e.key !== "Home" && e.key !== "End") {
+    if (e.key === "Tab") closeSimpleMenu();
+    return;
+  }
+  e.preventDefault();
+  const items = [...e.currentTarget.querySelectorAll("button")];
+  const i = items.indexOf(document.activeElement);
+  const next = e.key === "Home" ? 0 : e.key === "End" ? items.length - 1
+    : (i + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+  items[next]?.focus({ preventScroll: true });
+}
+
+// Esc closes the menu, or stops a rewrite that is still writing into the box.
+// Capture, after the card's handler: with Compare open, Esc is the card's.
+document.addEventListener("keydown", (e) => {
+  if (!simpleMode || e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
+  if (simpleMenuOpen) { e.preventDefault(); e.stopPropagation(); closeSimpleMenu(true); return; }
+  const bar = document.getElementById("pm-simple");
+  if (simple.phase === "streaming" && (composerHasFocus() || bar?.contains(document.activeElement))) {
+    e.preventDefault(); e.stopPropagation(); simpleStop();
+  }
+}, true);
+document.addEventListener("pointerdown", (e) => {
+  if (simpleMenuOpen && !e.target.closest?.("#pm-simple-menu, #pm-simple .pm-simple-more")) closeSimpleMenu();
+}, true);
+
+/**
+ * Simple mode's one tip: the first time there is a draft to improve. Not on
+ * a timer, shown once, and it points at the bar, above the chat box, so it
+ * cannot land on the host's Send.
+ */
+function maybeTipSimple() {
+  if (!simpleMode || !tips.loaded || tips.off || tips.seen.simple || (tips.shows.simple || 0) >= 1) return;
+  if (activeTip || (tips.stats.rewrites || 0) > 0 || simple.phase !== "idle") return;
+  if (cardExpanded || panelOpen || simpleMenuOpen || overlayHasInput()) return;
+  if (norm(getCurrentInputText()).length < 3 || !document.getElementById("pm-simple")) return;
+  showTip("simple", {
+    title: "Make this prompt clearer",
+    body: `Press <b>Improve</b>${orShortcut()} and a clearer version replaces your draft in the box. <b>Undo</b> puts your words back.`,
+    actions: [{ label: "Got it" }],
+    hint: true,
+  });
+}
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 
@@ -6577,7 +7360,8 @@ function tipDone(id) {
 }
 
 function tipAllowed(id) {
-  return tips.loaded && !tips.off && !tips.seen[id] && (tips.shows[id] || 0) < TIP_MAX_SHOWS &&
+  // Simple mode has one hint, its own (maybeTipSimple); none of these.
+  return !simpleMode && tips.loaded && !tips.off && !tips.seen[id] && (tips.shows[id] || 0) < TIP_MAX_SHOWS &&
     !cardExpanded && !panelOpen && !slash && !overlayHasInput() &&
     Boolean(document.getElementById("pm-trigger"));
 }
@@ -6629,7 +7413,7 @@ function showTip(id, { title, body, actions = [], autoHideMs = 0, hint = false }
   activeTip = { id, el, timer: autoHideMs ? setTimeout(() => { if (activeTip?.el === el) hideTip(); }, autoHideMs) : null };
   tips.shows = { ...tips.shows, [id]: (tips.shows[id] || 0) + 1 };
   storageSet({ pm_tip_shows: tips.shows });
-  if (hint) document.getElementById("pm-trigger")?.classList.add("pm-pill-hint");
+  if (hint) anchorEl()?.classList.add("pm-pill-hint");
   positionTip();
   requestAnimationFrame(() => el.classList.add("pm-tip-visible"));
 }
@@ -6639,20 +7423,21 @@ function hideTip() {
   clearTimeout(activeTip.timer);
   activeTip.el.remove();
   activeTip = null;
-  document.getElementById("pm-trigger")?.classList.remove("pm-pill-hint");
+  anchorEl()?.classList.remove("pm-pill-hint");
 }
 
 /** Beside the pill: above it when there is room (it lives low on the page). */
 function positionTip() {
   const el = activeTip?.el;
-  const pill = document.getElementById("pm-trigger");
+  const pill = anchorEl();
   if (!el || !pill) return;
   const p = pill.getBoundingClientRect();
   const w = el.offsetWidth, h = el.offsetHeight, gap = 12, m = 12;
   const above = p.top - gap - h >= m || p.top > window.innerHeight / 2;
   const top = above ? p.top - gap - h : p.bottom + gap;
   // Aligned to the pill's edge on its docked side, so the tip grows inward.
-  let left = pillDock === "left" ? p.left : p.right - w;
+  const dockLeft = simpleMode ? p.left + p.width / 2 < window.innerWidth / 2 : pillDock === "left";
+  let left = dockLeft ? p.left : p.right - w;
   left = Math.max(m, Math.min(left, window.innerWidth - w - m));
   el.style.left = `${Math.round(left)}px`;
   el.style.top = `${Math.round(Math.max(m, top))}px`;
@@ -6663,6 +7448,7 @@ function positionTip() {
 
 /** Tip 1: what the ⊕ is. Shown on a chat page until the first rewrite. */
 async function maybeTipMeet() {
+  if (simpleMode) return;
   if (!tipAllowed("meet") || (tips.stats.rewrites || 0) > 0 || cardState !== "idle" || !findComposer()) return;
   const route = await askWorker({ type: "PM_GET_ROUTE" });
   if (!route || !tipAllowed("meet") || cardState !== "idle") return;
@@ -6697,6 +7483,7 @@ async function maybeTipMeet() {
 
 /** While the meet tip is up, keep its wording in step with the chat box. */
 function tipsOnComposerChanged() {
+  if (simpleMode) { maybeTipSimple(); return; }
   if (activeTip?.id === "meet") {
     const typed = norm(getCurrentInputText()).length >= 3;
     const says = activeTip.el.querySelector(".pm-tip-title")?.textContent || "";
@@ -6710,7 +7497,7 @@ function tipsOnComposerChanged() {
 
 /** Tip 2 (inside the card): the markup, or "" once it has done its job. */
 function cardTipHtml() {
-  if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
+  if (simpleMode || !tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
   return `<div class="pm-card-tip" id="pm-card-tip"><span><b>Replace draft</b> puts this in your chat box. Not quite right? ` +
     `The buttons below make another version, and every version is kept.</span>` +
     `<button type="button" id="pm-card-tip-x" aria-label="Dismiss this tip" title="Dismiss">${TIP_X_SVG}</button></div>`;
@@ -6781,6 +7568,7 @@ async function init() {
   }
 
   await restoreCardLayout();
+  await loadSimpleMode();
   if (orphaned || !extensionAlive()) { onOrphaned(); return; }
   createTrigger();
   createLibrary();
@@ -6790,6 +7578,7 @@ async function init() {
   watchNavigation();
   restoreDraft();
   setupTips();
+  setSimpleMode(simpleMode, false);
 }
 
 if (document.readyState === "loading") {
