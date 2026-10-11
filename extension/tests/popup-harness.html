@@ -40,7 +40,7 @@
     },
     runtime: {
       lastError: null,
-      getManifest: () => ({ version: "4.9.0" }),
+      getManifest: () => ({ version: "5.0.0" }),
       sendMessage(msg, cb) {
         if (msg.type === "PM_START_GOOGLE_AUTH") {
           setTimeout(() => { chrome.storage.local.set({ token: "t", user_id: "u", email: "friend@example.com" }); cb && cb({ ok: true }); }, 800);
