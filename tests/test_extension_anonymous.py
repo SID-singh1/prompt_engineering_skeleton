@@ -72,3 +72,19 @@ def test_the_free_tier_bar_offers_only_what_it_can_deliver():
     assert "const steps = anon ? \"\"" in bar, "no More detail: the free tier is Quick only"
     menu = _body(CONTENT, "simpleMenuHtml")
     assert "if (isAnonymous())" in menu and "Sign in with Google for more" in menu
+
+
+def test_the_empty_library_offers_to_save_the_users_details():
+    """What people retype in every long chat is their own background; the
+    empty library says so and starts that prompt in one click."""
+    rows = _body(CONTENT, "libRowsHtml")
+    assert 'data-act="aboutme"' in rows and "<kbd>//</kbd>" in rows
+    assert 'case "aboutme": libMenu = false; openAboutMe(); return;' in CONTENT
+    about = _body(CONTENT, "openAboutMe")
+    assert 'title: "About me"' in about and "//about" in about
+
+
+def test_simple_mode_still_teaches_slash():
+    """Simple mode is the default now; the // tip must not be classic-only."""
+    body = _body(CONTENT, "tipsOnComposerChanged")
+    assert "if (simpleMode) { maybeTipSimple(); if (!activeTip) maybeTipSlash(); return; }" in body

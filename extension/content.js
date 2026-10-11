@@ -2098,8 +2098,14 @@ function libRowsHtml() {
   if (!list.length) {
     const q = searchQuery.trim();
     if (q) return `<div class="pm-lib-empty"><b>Nothing matches “${escHtml(q)}”</b>Search looks at titles, text and tags. Start with # to match a tag.</div>`;
-    if (libView === "recent") return `<div class="pm-lib-empty"><b>No history yet</b>Every rewrite you make with ⊕ shows up here. Save the ones worth keeping.</div>`;
-    return `<div class="pm-lib-empty"><b>Your library is empty</b>Write one with + New, or save a rewrite from its card.</div>`;
+    if (libView === "recent") return `<div class="pm-lib-empty"><b>No history yet</b>Every rewrite you make shows up here. Save the ones worth keeping.</div>`;
+    // The thing people retype in every long chat is their own background.
+    // Saved once, // drops it into any chat; so that is what the empty
+    // library offers first, rather than a blank "+ New".
+    return `<div class="pm-lib-empty"><b>Stop retyping the same details</b>` +
+      `Save what you keep explaining to AI, like your role, your resume basics or the project you are on, ` +
+      `and type <kbd>//</kbd> in any chat to drop it in.` +
+      `<button type="button" class="pm-lib-empty-cta" data-act="aboutme">Save my details</button></div>`;
   }
   const verb = libVerb();
   return list.map((it, i) => {
@@ -2638,6 +2644,7 @@ function onLibraryClick(e) {
     case "signin": openSettings(); return;
     case "clear": clearAttachments(); return;
     case "new": libMenu = false; openNewPrompt(); return;
+    case "aboutme": libMenu = false; openAboutMe(); return;
     case "rewrite": libFoldedCard = null; closeLibrary(); handleEnhance(); return;
     case "sendfeedback": sendLibraryFeedback(); return;
   }
@@ -5628,20 +5635,34 @@ function openNewPrompt() {
   showEditModal({ content: String(getCurrentInputText() || "").trim(), title: "", tags: [] });
 }
 
-/** The edit window, for a saved prompt or (with no id) a new one. */
-function showEditModal(prompt) {
+/** A first saved prompt that pays off in every long chat: the user's own details. */
+function openAboutMe() {
+  showEditModal({ content: "", title: "About me", tags: ["me"] }, {
+    placeholder: "For example:\nI'm a data analyst with 2 years of experience in Python, SQL and Tableau.\n" +
+      "I'm applying for data science roles in fintech.\nI prefer short answers with examples.",
+    heading: "Your details, saved once",
+    saved: "Saved. Type //about in any chat to drop it in.",
+  });
+}
+
+/**
+ * The edit window, for a saved prompt or (with no id) a new one. `opts`:
+ * its heading, a placeholder for the text, and the toast to show once a new
+ * one is saved.
+ */
+function showEditModal(prompt, opts = {}) {
   const isNew = prompt.id == null;
   const overlay = getOrCreateModalOverlay();
   const modal = overlay.querySelector(".pm-modal");
 
   modal.innerHTML = `
     <div class="pm-modal-header">
-      <span class="pm-modal-title">${isNew ? "New prompt" : "Edit prompt"}</span>
+      <span class="pm-modal-title">${escHtml(opts.heading || (isNew ? "New prompt" : "Edit prompt"))}</span>
       <button class="pm-header-close pm-modal-close-btn" aria-label="Close">×</button>
     </div>
     <div class="pm-modal-body">
       <label class="pm-label" for="pm-edit-content">Prompt</label>
-      <textarea class="pm-edit-textarea" id="pm-edit-content" placeholder="The prompt you want to reuse">${escHtml(prompt.content)}</textarea>
+      <textarea class="pm-edit-textarea" id="pm-edit-content" placeholder="${escHtml(opts.placeholder || "The prompt you want to reuse")}">${escHtml(prompt.content)}</textarea>
       <label class="pm-label" for="pm-edit-title">Name <span style="color:var(--pm-text-muted)">(optional)</span></label>
       <input class="pm-edit-input" id="pm-edit-title" value="${escHtml(prompt.title || "")}" placeholder="What you will look for it by" />
       <label class="pm-label" for="pm-edit-tags">Tags <span style="color:var(--pm-text-muted)">(optional, comma-separated)</span></label>
@@ -5692,7 +5713,7 @@ function showEditModal(prompt) {
       const id = lastSavedPromptId;
       statsBump("saves");
       tipDone("save");
-      showToast(title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library",
+      showToast(opts.saved || (title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library"),
         "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
       await fetchSavedPrompts();
       if (panelOpen) {
@@ -7634,7 +7655,7 @@ async function maybeTipMeet() {
 
 /** While the meet tip is up, keep its wording in step with the chat box. */
 function tipsOnComposerChanged() {
-  if (simpleMode) { maybeTipSimple(); return; }
+  if (simpleMode) { maybeTipSimple(); if (!activeTip) maybeTipSlash(); return; }
   if (activeTip?.id === "meet") {
     const typed = norm(getCurrentInputText()).length >= 3;
     const says = activeTip.el.querySelector(".pm-tip-title")?.textContent || "";
