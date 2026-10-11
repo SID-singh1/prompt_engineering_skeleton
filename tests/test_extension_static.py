@@ -1430,19 +1430,26 @@ POPUP_JS = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
 BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
 
 
-def test_the_setup_page_has_three_screens_chosen_by_state():
-    for screen in ("screen-welcome", "screen-setup", "screen-ready"):
-        assert f'id="{screen}"' in POPUP_HTML
-    body = _function_bodies(POPUP_JS, r"screenFor")["screenFor"]
-    assert '"welcome"' in body and '"setup"' in body and '"ready"' in body
+def test_the_setup_page_is_one_screen_with_no_wall():
+    """Testers stalled at a consent wall and then a Google-or-key choice. The
+    free tier works on install, consent is asked on the chat page, so the
+    page has nothing to gate."""
+    assert 'id="screen-home"' in POPUP_HTML
+    for gone in ("screen-welcome", "screen-setup", "pm-consent-agree", "screenFor"):
+        assert gone not in POPUP_HTML and gone not in POPUP_JS, gone
+    # Signing in is offered, not required; the key is folded into settings.
+    assert 'id="plan-free"' in POPUP_HTML and 'id="google-login-btn"' in POPUP_HTML
+    advanced = POPUP_HTML[POPUP_HTML.index('id="advanced"'):]
+    assert 'id="key-row"' in advanced
 
 
-def test_the_ready_screen_says_what_to_do_next():
-    """People finished setup and did not know the plus button existed."""
+def test_the_home_screen_says_what_to_do_next():
+    """People finished setup and did not know the button existed: the page
+    names it, draws it, and links the chats it works in."""
     for site in ("https://chatgpt.com/", "https://claude.ai/new", "https://gemini.google.com/app",
                  "https://www.perplexity.ai/", "https://grok.com/"):
         assert f'href="{site}"' in POPUP_HTML
-    assert "You're ready. Try it now:" in POPUP_JS
+    assert "You're all set" in POPUP_JS and 'id="hero-mock"' in POPUP_HTML
 
 
 def test_the_setup_page_draws_nothing_from_the_network():

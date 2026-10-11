@@ -73,7 +73,15 @@
   };
 })();
 // Consent is a one-time prompt in the real extension; the harness has given it.
-(() => { const s = JSON.parse(localStorage.getItem("pm") || "{}"); if (s.pm_data_consent_v1 === undefined) { s.pm_data_consent_v1 = true; localStorage.setItem("pm", JSON.stringify(s)); } })();
+// The controls: a new install gets the simple ones, but the check scripts
+// drive the classic ones, so the harness starts classic unless the URL asks
+// for simple (?simple=1) or the free tier (?anon=1, which is simple-only).
+(() => {
+  const s = JSON.parse(localStorage.getItem("pm") || "{}");
+  if (s.pm_data_consent_v1 === undefined) s.pm_data_consent_v1 = true;
+  if (s.pm_simple_mode === undefined) s.pm_simple_mode = /[?&](simple|anon)=1/.test(location.search);
+  localStorage.setItem("pm", JSON.stringify(s));
+})();
 // A fake Prompt Memory server for the library: saved prompts, history, usage,
 // feedback. Signed out until H.signIn(); every call is logged in FAKE_API.calls.
 window.FAKE_ANON = /[?&]anon=1/.test(location.search);

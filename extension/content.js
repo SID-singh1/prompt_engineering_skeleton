@@ -2,6 +2,12 @@
 // One-click prompt engineering. Conversation-aware. Mode-aware. Platform-aware.
 // Streaming enhancement. History. Token auto-refresh. Multi-language voice.
 
+// Marks this isolated world as having the script, so the worker's injection
+// into tabs that were already open on install (activateExistingTabs) can skip
+// a tab the manifest's own injection reached first. A second copy would stop
+// at its first const with "already been declared".
+globalThis.__pmContentLoaded = true;
+
 // The release extension sends signed-in requests only to our published API.
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
@@ -6790,10 +6796,7 @@ function renderSimpleBar() {
       `${spark(busy)}${busy ? "Finish signing in in the new tab\u2026" : "Free rewrites used up for today"}</span>` +
       (busy ? "" : `<button type="button" class="pm-simple-improve" data-act="signin" ` +
         `data-pm-tip="Free with Google: more rewrites each day, all three styles and a library">Sign in for more</button>`);
-    bar.innerHTML = html;
-    return;
-  }
-  if (simple.phase === "streaming") {
+  } else if (simple.phase === "streaming") {
     html = `<span class="pm-simple-status" role="status">${spark(true)}Improving…</span>` +
       btn("stop", "Stop", "Stop, and put your text back", ' data-pm-key="Esc"');
   } else if (simple.phase === "done") {

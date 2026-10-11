@@ -2,20 +2,16 @@
 // Prompt Memory — the toolbar popup, the install tab and the options page
 // ════════════════════════════════════════════════════════════════
 //
-// One page with three screens, picked by render() from what is in storage:
-//
-//   welcome  no consent yet: what it does, what is sent, Agree and continue
-//   setup    consented, but nothing to rewrite with: Google, or your own key
-//   ready    signed in and/or a key: how to use it now, then the settings
-//
-// It used to be a consent wall, then a login card with a hidden key form under
-// an "or", and nothing after setup said what to do next: people finished
-// setting up and did not know the plus button existed.
+// One screen. It used to be three: a consent wall, then a choice between
+// Google and an API key, then "ready". Friends testing it stalled at the
+// first two. The extension now works the moment it is installed (without an
+// account it gives free Quick rewrites), and the chat page asks for consent
+// the first time Improve is pressed, worded for what that press sends. So
+// this page says what to do now, what signing in adds, and folds the rest.
 
 const DEFAULT_API_URL = "https://siddhm11-prompt-engine.hf.space";  // ← production
 // const DEFAULT_API_URL = "http://localhost:8000";  // ← local testing
 const API_URL = DEFAULT_API_URL;
-const DATA_CONSENT_KEY = "pm_data_consent_v1";
 
 // The header shows the manifest's version rather than a number typed into the
 // HTML, which stayed at 4.4 while the extension itself moved on.
@@ -30,33 +26,65 @@ if (location.search.includes("onboarding") || window.innerWidth > 420) {
 }
 
 const $ = (id) => document.getElementById(id);
-const state = { consent: false, email: "", token: "", key: null, tipsOff: false, tipsSeen: 0, rewrites: 0 };
+const state = { email: "", token: "", key: null, tipsOff: false, tipsSeen: 0, rewrites: 0, simple: true, anonLimit: 0 };
 
 // ════════════════════════════════════════════════════════════════
 // RENDER
 // ════════════════════════════════════════════════════════════════
 
-function screenFor(s) {
-    if (!s.consent) return "welcome";
-    if (!s.token && !s.key) return "setup";
-    return "ready";
-}
+const IMPROVE_CHIP = '<b class="improve-chip"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l1.6 4.9 4.9 1.6-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z" fill="currentColor"/></svg>Improve</b>';
 
 function render() {
-    const screen = screenFor(state);
-    for (const name of ["welcome", "setup", "ready"]) $(`screen-${name}`).hidden = name !== screen;
+    const signedIn = Boolean(state.token && state.email);
+    const fresh = state.rewrites === 0;
+
+    // Before the first rewrite this is the whole page; after it, a reminder.
+    $("hero-title").textContent = fresh ? "You're all set" : "Prompt Memory";
+    $("hero-lead").innerHTML = state.simple
+        ? (fresh
+            ? `Open any AI chat, type a rough draft, and press ${IMPROVE_CHIP} on the chat box. The clearer version replaces your draft, and Undo puts it back.`
+            : `Press ${IMPROVE_CHIP} on the chat box in any of these chats. Undo puts your draft back.`)
+        : "Type a draft in any of these chats and press the ⊕ in the corner of the page.";
+    $("hero-mock").hidden = !state.simple || !fresh;
 
     const head = $("head-state");
-    head.hidden = screen === "welcome";
-    head.className = `head-state ${screen === "ready" ? "on" : "off"}`;
-    $("head-state-text").textContent = screen === "ready" ? "Ready" : "Setup needed";
+    head.className = "head-state on";
+    $("head-state-text").textContent = signedIn ? "Signed in" : state.key ? "Your key" : "Free";
 
-    if (screen === "ready") renderReady();
-    renderPinHint(screen);
-    // Deep link from the chat page ("Add my key"): open the key form once.
-    if (location.hash === "#key" && !deepLinked && screen !== "welcome") {
+    // With a key and no account, the free tier is not in play: the key is.
+    $("plan-free").hidden = signedIn;
+    $("plan-in").hidden = !signedIn;
+    if (signedIn) {
+        $("user-display").textContent = state.email;
+        $("profile-avatar").textContent = state.email.charAt(0).toUpperCase();
+    } else if (state.key) {
+        $("plan-free-title").textContent = `Using your ${providerLabel(state.key.provider)} key`;
+        $("plan-free-sub").textContent = "Rewrites go straight to your provider · nothing saved by us";
+    } else {
+        $("plan-free-title").textContent = "Free, no account";
+        $("plan-free-sub").textContent = `${state.anonLimit || 10} Quick rewrites a day · nothing saved`;
+    }
+    $("danger-wrap").hidden = !signedIn;
+
+    const k = state.key;
+    $("key-icon").classList.toggle("on", Boolean(k));
+    $("key-title").textContent = k ? `${providerLabel(k.provider)} key connected` : "Your own API key";
+    $("key-sub").textContent = k
+        ? `Ends in ${k.last4} · ${signedIn ? "used instead of the shared allowance" : "your provider's limits"}`
+        : "Optional, for people who already have one";
+    $("key-manage").textContent = $("key-panel-slot").hidden ? (k ? "Change" : "Add") : "Close";
+
+    $("tips-toggle").checked = !state.tipsOff;
+    $("tips-reset-row").hidden = state.tipsOff || state.tipsSeen === 0;
+
+    renderPinHint();
+    // Deep links from the chat page: #key opens the key form, #signin the sign-in.
+    if (location.hash === "#key" && !deepLinked) {
         deepLinked = true;
-        openKeyForm(screen);
+        openKeyForm();
+    } else if (location.hash === "#signin" && !deepLinked && !signedIn) {
+        deepLinked = true;
+        $("google-login-btn").focus();
     }
 }
 let deepLinked = false;
@@ -69,47 +97,21 @@ function notice(text) {
     notice.timer = setTimeout(() => { el.hidden = true; }, 6000);
 }
 
-// Only when the icon really is hidden, and not over the welcome screen,
-// which has one job. getUserSettings() is Chrome 91+; older builds skip it.
-function renderPinHint(screen) {
+// Only when the icon really is hidden, and only in the install tab: whoever is
+// reading the toolbar popup has found the icon already, and at the top of the
+// 600px popup the hint pushed Sign in below the fold. getUserSettings() is
+// Chrome 91+.
+function renderPinHint() {
     const el = $("pin-hint");
-    if (screen === "welcome" || !chrome.action?.getUserSettings) { el.hidden = true; return; }
+    if (!chrome.action?.getUserSettings || !document.body.classList.contains("pm-standalone")) { el.hidden = true; return; }
     chrome.action.getUserSettings().then((s) => { el.hidden = Boolean(s?.isOnToolbar); }, () => { el.hidden = true; });
-}
-
-function renderReady() {
-    // Before the first rewrite this card is the whole point of the page. After
-    // it, the steps are known; the chat links and the shortcut stay.
-    const fresh = state.rewrites === 0;
-    $("ready-heading").textContent = fresh ? "You're ready. Try it now:" : "Use it in any of these chats";
-    $("ready-card").querySelector(".steps").hidden = !fresh;
-
-    const signedIn = Boolean(state.token && state.email);
-    $("acct-in").hidden = !signedIn;
-    $("acct-out").hidden = signedIn;
-    $("danger-wrap").hidden = !signedIn;
-    if (signedIn) {
-        $("user-display").textContent = state.email;
-        $("profile-avatar").textContent = state.email.charAt(0).toUpperCase();
-    }
-
-    const k = state.key;
-    $("key-icon").classList.toggle("on", Boolean(k));
-    $("key-title").textContent = k ? `${providerLabel(k.provider)} key connected` : "Your own key";
-    $("key-sub").textContent = k
-        ? `Ends in ${k.last4} · ${signedIn ? "used instead of the shared allowance" : "your provider's free limits"}`
-        : signedIn ? "Optional · use your own provider instead of 15 a day" : "Optional";
-    $("key-manage").textContent = $("key-panel-slot").hidden ? (k ? "Change" : "Add") : "Close";
-
-    $("tips-toggle").checked = !state.tipsOff;
-    $("tips-reset-row").hidden = state.tipsOff || state.tipsSeen === 0;
 }
 
 function load() {
     chrome.storage.local.get(
-        [DATA_CONSENT_KEY, "email", "token", "user_id", "byok_provider", "byok_key", "byok_model", "pm_tips_off", "pm_tips", "pm_stats"],
+        ["email", "token", "user_id", "byok_provider", "byok_key", "byok_model", "pm_tips_off", "pm_tips", "pm_stats",
+         "pm_simple_mode", "anon_limit"],
         (r) => {
-            state.consent = r[DATA_CONSENT_KEY] === true;
             state.email = r.email || "";
             state.token = r.token && r.user_id ? r.token : "";
             state.key = r.byok_key
@@ -118,29 +120,18 @@ function load() {
             state.tipsOff = r.pm_tips_off === true;
             state.tipsSeen = Object.keys(r.pm_tips || {}).length;
             state.rewrites = (r.pm_stats && r.pm_stats.rewrites) || 0;
+            state.simple = r.pm_simple_mode !== false;
+            state.anonLimit = r.anon_limit || 0;
             render();
         });
 }
 
 // ════════════════════════════════════════════════════════════════
-// WELCOME
-// ════════════════════════════════════════════════════════════════
-
-$("pm-consent-agree").addEventListener("click", () => {
-    chrome.storage.local.set({ [DATA_CONSENT_KEY]: true }, () => {
-        state.consent = true;
-        refreshSession();
-        render();
-    });
-});
-
-// ════════════════════════════════════════════════════════════════
 // ACCOUNT
 // ════════════════════════════════════════════════════════════════
 
-// Refresh only after the user has accepted the data disclosure.
+// Keep a signed-in session alive: a token near its end is swapped for a new one.
 async function refreshSession() {
-    if (!state.consent) return;
     const r = await chrome.storage.local.get(["user_id", "email", "token"]);
     if (r.user_id && r.email && r.token && isTokenExpiringSoon(r.token, 2)) {
         await tryRefreshToken(r.token);
@@ -198,12 +189,12 @@ function startGoogleSignIn(button) {
     });
 }
 $("google-login-btn").addEventListener("click", (e) => startGoogleSignIn(e.currentTarget));
-$("acct-signin").addEventListener("click", (e) => startGoogleSignIn(e.currentTarget));
 
 // Reflect a sign-in (or anything else) that changed while this page was open.
 chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== "local") return;
-    const watched = ["token", "email", "user_id", "byok_key", "byok_provider", "pm_tips", "pm_tips_off", "pm_stats", DATA_CONSENT_KEY];
+    const watched = ["token", "email", "user_id", "byok_key", "byok_provider", "pm_tips", "pm_tips_off", "pm_stats",
+        "pm_simple_mode", "anon_limit"];
     if (watched.some((k) => k in changes)) load();
 });
 
@@ -326,32 +317,27 @@ function setKeyStatus(text, kind) {
     el.className = `status ${kind || ""}`;
 }
 
-function openKeyForm(where) {
+function openKeyForm() {
     const provider = state.key?.provider || "groq";
     kf("key-provider").value = provider;
     renderProvider(provider, state.key?.model);
     kf("key-clear").hidden = !state.key;
-    if (where === "setup") {
-        $("key-form-slot").appendChild(keyForm);
-        $("key-open").hidden = true;
-    } else {
-        $("key-panel-slot").appendChild(keyForm);
-        $("key-panel-slot").hidden = false;
-        $("key-manage").setAttribute("aria-expanded", "true");
-        renderReady();
-    }
+    $("advanced").open = true;
+    $("key-panel-slot").appendChild(keyForm);
+    $("key-panel-slot").hidden = false;
+    $("key-manage").setAttribute("aria-expanded", "true");
+    render();
     kf("key-input").focus();
 }
 
 function closeKeyPanel() {
     $("key-panel-slot").hidden = true;
     $("key-manage").setAttribute("aria-expanded", "false");
-    renderReady();
+    render();
 }
 
-$("key-open").addEventListener("click", () => openKeyForm("setup"));
 $("key-manage").addEventListener("click", () => {
-    if ($("key-panel-slot").hidden) openKeyForm("ready");
+    if ($("key-panel-slot").hidden) openKeyForm();
     else closeKeyPanel();
 });
 
@@ -385,7 +371,7 @@ kf("key-save").addEventListener("click", () => {
         chrome.storage.local.set({ byok_provider: provider, byok_key: key, byok_model: model }, () => {
             kf("key-input").value = "";
             setKeyStatus(`${res.detail || "Key works."} Saved on this computer only.`, "ok");
-            // The storage listener re-renders; from setup that is the ready screen.
+            // The storage listener re-renders.
         });
     });
 });
@@ -424,11 +410,6 @@ chrome.commands.getAll((commands) => {
     });
     $("shortcut-fix").hidden = Boolean(keys);
 });
-
-// Deep links from the chat page: #key opens the key form, #signin points at Google.
-if (location.hash === "#signin") {
-    window.addEventListener("load", () => $("google-login-btn").focus(), { once: true });
-}
 
 load();
 refreshSession();

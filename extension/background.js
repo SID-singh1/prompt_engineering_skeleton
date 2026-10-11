@@ -498,6 +498,12 @@ async function activateExistingTabs() {
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
     try {
+      // A tab that was still loading when the extension installed may have
+      // had the script from the manifest already.
+      const [probe] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id }, func: () => Boolean(globalThis.__pmContentLoaded),
+      });
+      if (probe?.result) continue;
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["styles.css"] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
     } catch {

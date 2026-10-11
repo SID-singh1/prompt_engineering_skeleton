@@ -95,14 +95,15 @@ def main():
 
     with sync_playwright() as p, tempfile.TemporaryDirectory() as profile:
         ctx = p.chromium.launch_persistent_context(
-            profile, channel="chromium", headless=True, viewport={"width": 1440, "height": 900},
+            profile, channel=os.environ.get("PM_BROWSER_CHANNEL", "chromium"), headless=True, viewport={"width": 1440, "height": 900},
             args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
         )
         ctx.route("https://chatgpt.com/**", lambda r: r.fulfill(status=200, content_type="text/html", body=CHAT))
         ctx.route("https://api.groq.com/**", provider)
         sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event("serviceworker")
         sw.evaluate("""chrome.storage.local.set({ byok_provider: 'groq', byok_key: 'gsk_test',
-            byok_model: 'qwen/qwen3.8-27b', pm_data_consent_v1: true, pm_onboarded: true })""")
+            byok_model: 'qwen/qwen3.8-27b', pm_data_consent_v1: true, pm_onboarded: true,
+            pm_simple_mode: false })""")   # the card's style flow lives in the classic controls
 
         page = ctx.new_page()
         errors = []
