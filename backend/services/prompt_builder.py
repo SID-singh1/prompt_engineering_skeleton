@@ -285,8 +285,14 @@ def _already_in_prompt(item: dict, prompt: str) -> bool:
     return float(item.get("score") or 0) >= _NEAR_DUPLICATE_SCORE
 
 
-def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None) -> dict:
-    """Shared context builder for every enhance route (text, stream, voice)."""
+def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None,
+                           use_memory: bool = True) -> dict:
+    """
+    Shared context builder for every enhance route (text, stream, voice).
+
+    use_memory=False is the anonymous tier: no saved prompts, no past
+    patterns, no feedback summary, so nothing about any user is read.
+    """
     start_time = time.time()
     mode = (request.mode or "deep").lower()
     if mode not in MODE_INSTRUCTIONS:
@@ -297,7 +303,7 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
 
     selected_context_parts = []
     selected_prompts = []
-    selected_ids = [str(pid) for pid in (request.selected_prompt_ids or [])]
+    selected_ids = [str(pid) for pid in (request.selected_prompt_ids or [])] if use_memory else []
     for pid in selected_ids:
         doc = fetch_saved_prompt_fn(pid, user_id) if fetch_saved_prompt_fn else None
         if doc:
@@ -316,7 +322,7 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
             exclude_ids=selected_ids + excluded_ids,
         )
         if not _already_in_prompt(item, request.prompt)
-    ]
+    ] if use_memory else []
     similarity_context_parts = []
     for item in similar_saved:
         label = item.get("title") or "Saved Prompt"
@@ -329,14 +335,14 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
         user_id=user_id,
         query_text=request.prompt,
         limit=3,
-    )
+    ) if use_memory else []
     for pm in passive_matches:
         if pm["original"] != pm["refined"]:
             passive_context_parts.append(
                 f'[Past pattern] User asked: "{pm["original"]}" → Was refined to: "{pm["refined"]}"'
             )
 
-    feedback_summary = MemoryService.get_user_feedback_summary(user_id)
+    feedback_summary = MemoryService.get_user_feedback_summary(user_id) if use_memory else ""
 
     system_parts = [
         SYSTEM_PROMPT_BASE,

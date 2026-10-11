@@ -3120,6 +3120,9 @@
 .pm-simple-spark svg, .pm-simple .pm-simple-more svg { width: 14px; height: 14px; }
 .pm-simple-status { display: inline-flex; align-items: center; gap: 6px; padding: 0 8px 0 7px; color: var(--pm-con-text); }
 .pm-simple-ok .pm-simple-spark { color: var(--pm-accent); }
+.pm-simple-left { margin-left: 2px; color: var(--pm-con-muted); font-weight: 400; }
+.pm-simple-limit { color: var(--pm-con-text-2); }
+.pm-simple-limit .pm-simple-spark { color: var(--pm-con-muted); }
 .pm-simple-busy { color: var(--pm-accent); animation: pm-simple-busy 1.1s ease-in-out infinite; }
 @keyframes pm-simple-busy { 0%, 100% { opacity: .45; transform: scale(.85); } 50% { opacity: 1; transform: scale(1.05); } }
 .pm-simple-sep { width: 1px; height: 14px; margin: 0 3px; background: var(--pm-con-border); }
@@ -3141,6 +3144,8 @@
     font: 400 12.5px/1.3 var(--pm-font);
 }
 .pm-simple-menu hr { margin: 5px 2px; border: 0; border-top: 1px solid var(--pm-con-border); }
+.pm-simple-menu-note { padding: 6px 8px 4px; color: var(--pm-con-text-2); line-height: 1.4; }
+.pm-simple-menu-sub { padding-top: 0; color: var(--pm-con-muted); font-size: 11.5px; }
 .pm-simple-menu-cap {
     padding: 6px 8px 6px;
     color: var(--pm-con-muted);

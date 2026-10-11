@@ -20,7 +20,23 @@
       // Routes every enhancement to the direct path, which the port below fakes.
       sendMessage(msg, cb) {
         // PM_GET_SHORTCUT: window.FAKE_SHORTCUT, "" for "Chrome left it unassigned".
-        const r = msg?.type === "PM_GET_ROUTE" ? { route: "direct", hasKey: true }
+        // ?anon=1, or H.anon(): the free tier, served by the fake server below.
+        // Signed in (a token in storage) goes to the server too; otherwise direct.
+        const store = JSON.parse(localStorage.getItem("pm") || "{}");
+        const tier = store.token ? "backend" : window.FAKE_ANON ? "anon" : "direct";
+        if (msg?.type === "PM_START_GOOGLE_AUTH") {
+          setTimeout(() => {
+            const s2 = JSON.parse(localStorage.getItem("pm") || "{}");
+            s2.token = "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6InUxIn0.x";
+            s2.email = "friend@example.com";
+            localStorage.setItem("pm", JSON.stringify(s2));
+            cb && cb({ ok: true, email: "friend@example.com" });
+          }, 700);
+          return Promise.resolve();
+        }
+        const r = msg?.type === "PM_GET_ROUTE"
+            ? (tier === "anon" ? { route: "anon", anonToken: "anon.fake", anonLimit: window.FAKE_API.anonLimit }
+              : tier === "backend" ? { route: "backend", signedIn: true } : { route: "direct", hasKey: true })
           : msg?.type === "PM_GET_SHORTCUT" ? { shortcut: window.FAKE_SHORTCUT ?? "Ctrl+Shift+E" }
           : undefined;
         if (cb) setTimeout(() => cb(r), 0); return Promise.resolve(r);
@@ -60,8 +76,11 @@
 (() => { const s = JSON.parse(localStorage.getItem("pm") || "{}"); if (s.pm_data_consent_v1 === undefined) { s.pm_data_consent_v1 = true; localStorage.setItem("pm", JSON.stringify(s)); } })();
 // A fake Prompt Memory server for the library: saved prompts, history, usage,
 // feedback. Signed out until H.signIn(); every call is logged in FAKE_API.calls.
+window.FAKE_ANON = /[?&]anon=1/.test(location.search);
 window.FAKE_API = {
   calls: [], usage: { count: 9, limit: 15 }, nextId: 100,
+  // The free tier's allowance; anonUsed counts this page's rewrites against it.
+  anonLimit: 10, anonUsed: 0,
   prompts: [
     { id: "p1", title: "Code review template", content: "Review this diff like a senior engineer: correctness first, then naming, then tests. Flag anything that changes behaviour.", tags: ["coding", "review"], created_at: new Date(Date.now() - 2 * 864e5).toISOString() },
     { id: "p2", title: "", content: "You are my writing editor. Cut every sentence that does not earn its place and keep my voice.", tags: ["writing"] },
@@ -97,7 +116,35 @@ window.FAKE_API = {
     if (one && method === "DELETE") { A.prompts = A.prompts.filter((p) => p.id !== one[1]); return json({ ok: true }); }
     if (one && method === "PUT") { const p = A.prompts.find((x) => x.id === one[1]); Object.assign(p || {}, body); return json({ ok: true }); }
     if (path === "/enhance/history") return json({ history: A.history });
-    if (path === "/enhance/usage") return json(A.usage);
+    const anon = /anon\.fake/.test(opts.headers?.Authorization || "");
+    if (path === "/enhance/usage") return json(anon ? { count: A.anonUsed, limit: A.anonLimit, tier: "anon" } : A.usage);
+    if (path === "/enhance/stream") {
+      // As routers/prompts.py streams it: tokens, then a done event. The free
+      // tier is Quick only and refuses past its allowance, offering sign-in.
+      const F = window.FAKE, mode = anon ? "quick" : body.mode;
+      F.calls.push(mode);
+      const enc = new TextEncoder();
+      const ev = (o) => enc.encode(`data: ${JSON.stringify(o)}\n\n`);
+      const stream = new ReadableStream({
+        start(c) {
+          if (anon && A.anonUsed >= A.anonLimit) {
+            const refusal = { error: "daily_limit_reached", detail: `You've used today's ${A.anonLimit} free rewrites. Sign in with Google (it's free) for more each day.`, sign_in_available: true };
+            c.enqueue(ev(refusal)); c.enqueue(ev({ done: true, failed: true, ...refusal })); c.close(); return;
+          }
+          const words = (F.text[mode] || F.text.deep).split(/(?<= )/);
+          let i = 0;
+          const tick = () => {
+            if (i < words.length) { c.enqueue(ev({ token: words[i++] })); setTimeout(tick, F.delay); return; }
+            if (anon) A.anonUsed++;
+            c.enqueue(ev({ done: true, failed: false, log_id: anon ? null : "L" + Date.now(), mode,
+              usage_today: anon ? { used: A.anonUsed, limit: A.anonLimit, tier: "anon" } : { used: ++A.usage.count, limit: A.usage.limit } }));
+            c.close();
+          };
+          setTimeout(tick, F.delay);
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    }
     if (path === "/feedback/mine") return json({ feedback: [] });
     return json({});
   };

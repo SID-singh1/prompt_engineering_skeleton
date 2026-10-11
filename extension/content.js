@@ -411,10 +411,14 @@ async function enhancePrompt(prompt, selectedPromptIds) {
 }
 
 async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, inputMetadata = {}, style = currentMode) {
-  const auth = await getAuth();
-  if (!auth || isTokenExpired(auth.token)) return null;
+  // The free tier: the worker's anonymous token, and only the draft goes. No
+  // chat messages, no saved prompts, no key; the server ignores them anyway.
+  const anonToken = lastRoute?.route === "anon" ? lastRoute.anonToken : "";
+  // The worker hands out an anonymous token only while it is valid.
+  const auth = anonToken ? { token: anonToken } : await getAuth();
+  if (!auth || (!anonToken && isTokenExpired(auth.token))) return null;
 
-  const conversation = scrapeConversation();
+  const conversation = anonToken ? [] : scrapeConversation();
   const body = {
     prompt,
     platform: window.location.hostname,
@@ -422,7 +426,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
     conversation_context: conversation,
     tracking_enabled: promptTrackingEnabled,
   };
-  if (selectedPromptIds && selectedPromptIds.length > 0) {
+  if (!anonToken && selectedPromptIds && selectedPromptIds.length > 0) {
     body.selected_prompt_ids = selectedPromptIds;
   }
   // Saved prompts the user dropped from the card ("Don't use"): not searched.
@@ -443,7 +447,7 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   // memory features while spending their own quota instead of the shared one.
   // It is fetched from the service worker per request and never stored here —
   // this script shares a process with the host page.
-  const byok = await askWorker({ type: "PM_GET_BYOK_FOR_BACKEND" });
+  const byok = anonToken ? null : await askWorker({ type: "PM_GET_BYOK_FOR_BACKEND" });
   if (byok && byok.key) {
     body.byok_provider = byok.provider;
     body.byok_key = byok.key;
@@ -2906,6 +2910,9 @@ let keytipWarmUntil = 0;
 
 function showKeytip(el) {
   clearTimeout(keytipTimer);
+  // A button whose menu or panel is open is labelled by what it opened; a tip
+  // on it would sit on top of that.
+  if (el.getAttribute("aria-expanded") === "true") return;
   keytipFor = el;
   let tip = document.getElementById("pm-keytip");
   if (!tip) {
@@ -3858,9 +3865,9 @@ function revealCard() {
  * Shared by ⊕ and by the card's style buttons, which must fail the same way.
  */
 async function resolveEnhanceRoute() {
-  if (!(await ensureDataConsent())) return null;
   // Ask the service worker how this request should be routed. It owns the API
-  // key, so the decision cannot be made here.
+  // key, so the decision cannot be made here. Asked before consent, so the
+  // consent can say what this route actually sends.
   const route = await askWorker({ type: "PM_GET_ROUTE" });
   if (orphaned) return null;
   if (!route) {
@@ -3886,8 +3893,65 @@ async function resolveEnhanceRoute() {
     showSetupRequiredModal();
     return null;
   }
+  if (!(await ensureDataConsent(route.route))) return null;
+  if (route.route === "anon") {
+    if (!route.anonToken) {
+      showToast("Couldn\u2019t reach Prompt Memory. Check your connection and try again.", "error");
+      return null;
+    }
+    // Said once a session: their library is still there, behind a sign-in.
+    if (route.tokenExpired && !expiredNoticeShown) {
+      expiredNoticeShown = true;
+      showToast("Your sign-in expired, so this is a free Quick rewrite. Sign in again for your library.", "info");
+    }
+  }
+  lastRoute = route;
+  renderSimpleBar();
   return route;
 }
+
+/** The route the last rewrite took: "anon" is the free tier, no account. */
+let lastRoute = null;
+let expiredNoticeShown = false;
+const isAnonymous = () => lastRoute?.route === "anon";
+
+/**
+ * Learn which tier this page is on before the first click, so the bar and ⋯
+ * offer the free tier's choices from the start rather than controls that
+ * would need an account. Nothing is sent but the worker's question and, on
+ * the free tier, a request for today's count. Consent still gates every
+ * rewrite in resolveEnhanceRoute.
+ */
+async function refreshAccount() {
+  const route = await askWorker({ type: "PM_GET_ROUTE" });
+  if (!route || orphaned) return;
+  lastRoute = route;
+  if (route.route === "anon") {
+    if (route.anonLimit) usageData.limit = route.anonLimit;
+    if (route.anonToken) {
+      try {
+        const res = await fetch(`${API_URL}/enhance/usage`, {
+          headers: { Authorization: `Bearer ${route.anonToken}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          usageData = { count: data.count || 0, limit: data.limit || usageData.limit, known: true };
+        }
+      } catch { /* offline: the count arrives with the next rewrite */ }
+    }
+  }
+  simpleSignature = "";
+  renderSimpleBar();
+}
+
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    // Signed in or out, or a key added or removed, in this tab or another.
+    if (area !== "local" || !(changes.token || changes.byok_key)) return;
+    if (simple.phase === "limit" && changes.token?.newValue) simpleForget();
+    refreshAccount();
+  });
+} catch (error) { onOrphaned(error); }
 
 /** `reveal`: the keyboard shortcut, which shows a pending draft but never hides it. */
 async function handleEnhance({ reveal = false } = {}) {
@@ -4016,7 +4080,8 @@ async function runBackendEnhance(inputText, inputMetadata = {}, style = currentM
       if (metadata.failed || !parts.length) {
         sink.fail(
           metadata.detail || metadata.error ||
-          "The enhancement came back empty. Please try again."
+          "The enhancement came back empty. Please try again.",
+          metadata
         );
         return;
       }
@@ -5707,7 +5772,21 @@ function showModal(title, body, buttons = []) {
 }
 
 let consentRequest = null;
-async function ensureDataConsent() {
+/** What Improve sends on this route, in the words the consent shows. */
+function consentCopy(route) {
+  if (route === "anon") {
+    return "Improve sends the text in your chat box to Prompt Memory\u2019s server and an AI provider to rewrite it. " +
+      "Without an account nothing is saved: not your draft, not the rewrite.";
+  }
+  if (route === "direct") {
+    return "Improve sends the text in your chat box straight from this browser to the AI provider you chose, using your key. " +
+      "Prompt Memory\u2019s server is not involved.";
+  }
+  return "Improve sends the text in your chat box, and up to six recent messages for context, to Prompt Memory\u2019s server " +
+    "and an AI provider. Your drafts and rewrites are kept in your History; you can turn chat context off in the library\u2019s settings.";
+}
+
+async function ensureDataConsent(route = "backend") {
   if (dataConsent) return true;
   const stored = await new Promise((resolve) =>
     storageGet("pm_data_consent_v1", (result) => resolve(result.pm_data_consent_v1 === true))
@@ -5719,16 +5798,14 @@ async function ensureDataConsent() {
     const overlay = getOrCreateModalOverlay();
     const modal = overlay.querySelector(".pm-modal");
     modal.innerHTML = `
-      <div class="pm-modal-header"><span class="pm-modal-title">How Prompt Memory handles your data</span></div>
+      <div class="pm-modal-header"><span class="pm-modal-title">Before your first rewrite</span></div>
       <div class="pm-modal-body pm-consent-body">
-        <p><strong>Only when you ask:</strong> Enhance sends your draft to an AI provider. When signed in, our server also receives it, saves the draft and rewrite in History, and includes up to six recent chat messages for context by default. You can switch that context off in the Library: ⋯ → Privacy settings.</p>
-        <p><strong>Your own key:</strong> Without sign-in, the draft goes directly from your browser to the provider. If you also sign in, the key is forwarded through our server for each enhancement request so memory features can work.</p>
-        <p><strong>Other choices:</strong> Sign-in shares your Google email with us. Voice sends audio to our server and Groq when you record. Prompt Tracking logs submitted prompts only if you turn it on.</p>
-        <a href="https://prompt-engineering-skeleton-seven.vercel.app/privacy" target="_blank" rel="noreferrer">Read the full privacy policy</a>
+        <p>${escHtml(consentCopy(route))} It only ever happens when you press Improve.</p>
+        <a href="https://prompt-engineering-skeleton-seven.vercel.app/privacy" target="_blank" rel="noreferrer">Privacy policy</a>
       </div>
       <div class="pm-modal-footer">
         <button class="pm-btn pm-btn-secondary" id="pm-consent-cancel">Not now</button>
-        <button class="pm-btn pm-btn-primary" id="pm-consent-accept">Agree &amp; continue</button>
+        <button class="pm-btn pm-btn-primary" id="pm-consent-accept">OK, improve it</button>
       </div>`;
 
     const finish = (accepted) => {
@@ -6694,7 +6771,7 @@ function renderSimpleBar() {
   const empty = norm(getCurrentInputText()).length < 3;
   const on = simple.versions[simple.index]?.mode || "";
   const sig = [simple.phase, on, simple.versions.map((v) => v.mode).join(","), empty,
-    simpleMenuOpen, cardExpanded].join("|");
+    simpleMenuOpen, cardExpanded, isAnonymous(), usageData.count].join("|");
   if (sig === simpleSignature) return;
   simpleSignature = sig;
 
@@ -6707,15 +6784,29 @@ function renderSimpleBar() {
   const spark = (busy = false) => `<span class="pm-simple-spark${busy ? " pm-simple-busy" : ""}">${SPARK_SVG}</span>`;
 
   let html;
+  if (simple.phase === "limit" || simple.phase === "signing-in") {
+    const busy = simple.phase === "signing-in";
+    html = `<span class="pm-simple-status pm-simple-limit" role="status" title="${escHtml(simple.limitMessage || "")}">` +
+      `${spark(busy)}${busy ? "Finish signing in in the new tab\u2026" : "Free rewrites used up for today"}</span>` +
+      (busy ? "" : `<button type="button" class="pm-simple-improve" data-act="signin" ` +
+        `data-pm-tip="Free with Google: more rewrites each day, all three styles and a library">Sign in for more</button>`);
+    bar.innerHTML = html;
+    return;
+  }
   if (simple.phase === "streaming") {
     html = `<span class="pm-simple-status" role="status">${spark(true)}Improving…</span>` +
       btn("stop", "Stop", "Stop, and put your text back", ' data-pm-key="Esc"');
   } else if (simple.phase === "done") {
-    const steps = Object.keys(SIMPLE_STEPS).filter((s) => s !== on).map((s) =>
+    // The free tier is Quick only, so the other style would come back Quick:
+    // the bar offers only what it can deliver, and says what is left.
+    const anon = isAnonymous();
+    const left = anon && usageData.limit ? usageData.limit - usageData.count : Infinity;
+    const steps = anon ? "" : Object.keys(SIMPLE_STEPS).filter((s) => s !== on).map((s) =>
       btn(s, SIMPLE_STEPS[s], simple.versions.some((v) => v.mode === s)
         ? `Back to the ${STYLE_NAMES[s]} version you already made`
         : `Rewrite your original again, ${STYLE_HINTS[s]}`)).join("");
-    html = `<span class="pm-simple-status pm-simple-ok" role="status">${spark()}Improved</span>` +
+    html = `<span class="pm-simple-status pm-simple-ok" role="status">${spark()}Improved` +
+      (left <= 3 ? `<span class="pm-simple-left">\u00b7 ${left > 0 ? `${left} free left today` : "last free one today"}</span>` : "") + `</span>` +
       `<span class="pm-simple-sep" aria-hidden="true"></span>` +
       btn("undo", "Undo", "Put back exactly what you wrote") + steps +
       btn("compare", cardExpanded ? "Hide compare" : "Compare", "See the rewrite beside your original", ` data-pm-key="${MOD_SHIFT}P"`);
@@ -6730,7 +6821,7 @@ function renderSimpleBar() {
   }
   bar.innerHTML = html +
     `<button type="button" class="pm-simple-more" data-act="more" aria-haspopup="menu" aria-expanded="${simpleMenuOpen}" ` +
-    `aria-controls="pm-simple-menu" aria-label="More: library, styles, shortcuts" data-pm-tip="Library, styles, context and shortcuts">${MORE_SVG}</button>`;
+    `aria-controls="pm-simple-menu" aria-label="More: library, styles, shortcuts" data-pm-tip="${isAnonymous() ? "More options" : "Library, styles, context and shortcuts"}">${MORE_SVG}</button>`;
 }
 
 /**
@@ -6783,6 +6874,7 @@ function onSimpleClick(e) {
     case "quick": case "deep": simpleRerun(b.dataset.act); return;
     case "compare": simpleCompare(); return;
     case "more": toggleSimpleMenu(); return;
+    case "signin": simpleSignIn(); return;
   }
 }
 
@@ -6870,7 +6962,11 @@ async function simpleRun(input, style, route, fallback) {
 const SIMPLE_SINK = {
   token(text) { if (simple.phase === "streaming") simpleQueueWrite(text); },
   done(result) { if (simple.phase === "streaming") simpleFinish(result); },
-  fail(message) { if (simple.phase === "streaming") simpleFail(message); },
+  fail(message, meta) {
+    if (simple.phase !== "streaming") return;
+    if (meta?.sign_in_available) simpleLimit(message);
+    else simpleFail(message);
+  },
 };
 
 /**
@@ -7025,6 +7121,43 @@ function simpleFail(message) {
   });
 }
 
+/**
+ * The free tier ran out (this install's daily allowance, or everyone's). The
+ * text goes back as it was and the bar itself offers the way on, a sign-in,
+ * rather than a toast that leaves the user to find it.
+ */
+function simpleLimit(message) {
+  const back = simple.fallback;
+  simple.phase = "limit";
+  simple.limitMessage = message;
+  simpleSerial(async () => {
+    if (!composerHolds(back)) await applyToInput(back);
+    simple.written = back;
+    simpleSignature = "";
+    renderSimpleBar();
+    placePill();
+  });
+}
+
+/** Sign in from the chat page: the worker opens Google and brings the user back here. */
+async function simpleSignIn() {
+  const was = simple.phase;
+  simple.phase = "signing-in";
+  simpleSignature = "";
+  renderSimpleBar();
+  const res = await askWorker({ type: "PM_START_GOOGLE_AUTH" });
+  if (res?.ok) {
+    simpleForget();
+    refreshAccount();
+    showToast(`Signed in${res.email ? ` as ${res.email}` : ""}. Improve is ready, with all three styles and your library.`, "success");
+    return;
+  }
+  simple.phase = was === "signing-in" ? "idle" : was;
+  simpleSignature = "";
+  renderSimpleBar();
+  if (res?.error) showToast(res.error, "error");
+}
+
 /** Undo: the exact text the box held before Improve, whatever has happened since. */
 function simpleUndo() {
   const original = simple.original;
@@ -7150,6 +7283,19 @@ function simpleMenuHtml() {
       simpleMenuItem("compare", cardExpanded ? "Hide the comparison" : "Compare with your original", `${MOD_SHIFT}P`) +
       simpleMenuItem("save", "Save to your library", `${CMD_KEY}S`) + `<hr>`
     : "";
+  if (isAnonymous()) {
+    return (simple.phase === "done"
+      ? simpleMenuItem("compare", cardExpanded ? "Hide the comparison" : "Compare with your original", `${MOD_SHIFT}P`) + `<hr>`
+      : "") +
+      `<div class="pm-simple-menu-note">Free without an account: Quick rewrites, ${usageData.limit || 10} a day, nothing saved.</div>` +
+      simpleMenuItem("signin", "Sign in with Google for more") +
+      `<div class="pm-simple-menu-note pm-simple-menu-sub">More rewrites, the Deep and Creative styles, and a library you can reuse with //.</div>` +
+      `<hr>` +
+      simpleMenuItem("shortcuts", "Keyboard shortcuts", "?") +
+      simpleMenuItem("settings", "Settings") +
+      `<hr>` +
+      simpleMenuItem("classic", "Switch to the classic controls");
+  }
   return thisOne +
     `<div class="pm-simple-menu-cap">Style for Improve</div>` +
     `<div class="pm-simple-seg" role="group" aria-label="Style for Improve">` +
@@ -7168,6 +7314,7 @@ function toggleSimpleMenu(force) {
   const open = force === undefined ? !simpleMenuOpen : Boolean(force);
   if (!open) { closeSimpleMenu(); return; }
   hideTip();
+  hideKeytip();
   simpleMenuOpen = true;
   let menu = document.getElementById("pm-simple-menu");
   if (!menu) {
@@ -7237,6 +7384,7 @@ function onSimpleMenuClick(e) {
     case "voice": toggleVoice(); return;
     case "shortcuts": openShortcuts(); return;
     case "settings": openSettings(); return;
+    case "signin": simpleSignIn(); return;
     case "classic":
       setSimpleMode(false);
       showToast("Classic controls: ⊕ in the corner. The simple ones are in the library’s ⋯ menu.", "info");
@@ -7579,6 +7727,7 @@ async function init() {
   restoreDraft();
   setupTips();
   setSimpleMode(simpleMode, false);
+  refreshAccount();
 }
 
 if (document.readyState === "loading") {

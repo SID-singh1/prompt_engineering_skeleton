@@ -1804,8 +1804,12 @@ def test_the_stream_goes_into_the_box_not_the_card():
         assert "sink = CARD_SINK" in body and "sink.done(" in body and "sink.fail(" in body
         assert "finalizeStreamingModal(" not in body, f"{fn} still writes to the card directly"
     sink = _const_block("SIMPLE_SINK")
-    for cb in ("token", "done", "fail"):
+    for cb in ("token", "done"):
         assert re.search(rf'{cb}\(\w+\) {{ if \(simple\.phase === "streaming"\)', sink), cb
+    # fail also takes the server's reason, and routes a free-tier limit to the
+    # bar's sign-in; a stopped stream's failure is still dropped first.
+    assert re.search(r'fail\(\w+, \w+\) \{\s*if \(simple\.phase !== "streaming"\) return;', sink)
+    assert "simpleLimit(" in sink and "simpleFail(" in sink
     run = _function_bodies(CONTENT_JS, r"simpleRun")["simpleRun"]
     assert "SIMPLE_SINK" in run and "showStreamingDiffModal" not in run
 
