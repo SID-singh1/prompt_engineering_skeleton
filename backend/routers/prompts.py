@@ -13,7 +13,7 @@ from ..core.config import settings
 from ..core.security import verify_jwt
 from ..core.ratelimit import enhance_limit, voice_limit
 from ..core import usage
-from ..core.database import MongoDB, in_memory_users, in_memory_saved_prompts
+from ..core.database import MongoDB, in_memory_users, in_memory_saved_prompts, in_memory_prompt_logs
 from ..services.analytics_service import AnalyticsService
 from ..services.memory_service import MemoryService
 from ..services.llm_service import get_groq_client, mark_groq_rate_limited

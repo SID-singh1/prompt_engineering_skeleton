@@ -105,7 +105,7 @@ def test_no_generated_credential_is_hardcoded_in_the_config():
         )
 
     offenders = []
-    for line in Path(config.__file__).read_text().splitlines():
+    for line in Path(config.__file__).read_text(encoding="utf-8").splitlines():
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
