@@ -552,8 +552,10 @@ def test_toasts_are_placed_above_the_card_not_over_it():
     body = _function_bodies(CONTENT_JS, r"positionToasts")["positionToasts"]
     assert "findComposer()" in body and "pm-card" in body, \
         "positionToasts does not consider both anchors"
-    for surface in ("pm-library", "pm-save", "pm-rail", "pm-trigger"):
+    for surface in ("pm-library", "pm-save", "pm-rail", "pm-simple-menu"):
         assert surface in body, f"a toast can land on {surface}"
+    # The pill, or in simple mode the bar on the chat box (see anchorEl).
+    assert "anchorEl()" in body and _anchor_is_the_pill_unless_simple()
     assert "floor = o.top" in body, "the stack is not placed above what stands in its column"
 
 
@@ -1014,9 +1016,16 @@ def test_the_pill_position_is_remembered_per_host():
     assert "storageSet({ [pillStorageKey()]" in body
 
 
+def _anchor_is_the_pill_unless_simple():
+    """anchorEl() is the pill, except in simple mode, where the bar on the chat
+    box stands in for it: what used to hang off the pill hangs off that."""
+    body = _function_bodies(CONTENT_JS, r"anchorEl")["anchorEl"]
+    return ('(simpleMode && document.getElementById("pm-simple")) || document.getElementById("pm-trigger")' in body)
+
+
 def test_the_card_still_clears_the_composer():
     body = _function_bodies(CONTENT_JS, r"positionCard")["positionCard"]
-    assert 'document.getElementById("pm-trigger")' in body, "the card no longer knows where the pill is"
+    assert "const pill = anchorEl();" in body and _anchor_is_the_pill_unless_simple(),         "the card no longer knows where the pill is"
     assert "overlapsComposer" in body, "the card may cover the text it is a comment on"
 
 
@@ -1421,19 +1430,26 @@ POPUP_JS = (ROOT / "extension" / "popup.js").read_text(encoding="utf-8")
 BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
 
 
-def test_the_setup_page_has_three_screens_chosen_by_state():
-    for screen in ("screen-welcome", "screen-setup", "screen-ready"):
-        assert f'id="{screen}"' in POPUP_HTML
-    body = _function_bodies(POPUP_JS, r"screenFor")["screenFor"]
-    assert '"welcome"' in body and '"setup"' in body and '"ready"' in body
+def test_the_setup_page_is_one_screen_with_no_wall():
+    """Testers stalled at a consent wall and then a Google-or-key choice. The
+    free tier works on install, consent is asked on the chat page, so the
+    page has nothing to gate."""
+    assert 'id="screen-home"' in POPUP_HTML
+    for gone in ("screen-welcome", "screen-setup", "pm-consent-agree", "screenFor"):
+        assert gone not in POPUP_HTML and gone not in POPUP_JS, gone
+    # Signing in is offered, not required; the key is folded into settings.
+    assert 'id="plan-free"' in POPUP_HTML and 'id="google-login-btn"' in POPUP_HTML
+    advanced = POPUP_HTML[POPUP_HTML.index('id="advanced"'):]
+    assert 'id="key-row"' in advanced
 
 
-def test_the_ready_screen_says_what_to_do_next():
-    """People finished setup and did not know the plus button existed."""
+def test_the_home_screen_says_what_to_do_next():
+    """People finished setup and did not know the button existed: the page
+    names it, draws it, and links the chats it works in."""
     for site in ("https://chatgpt.com/", "https://claude.ai/new", "https://gemini.google.com/app",
                  "https://www.perplexity.ai/", "https://grok.com/"):
         assert f'href="{site}"' in POPUP_HTML
-    assert "You're ready. Try it now:" in POPUP_JS
+    assert "You're all set" in POPUP_JS and 'id="hero-mock"' in POPUP_HTML
 
 
 def test_the_setup_page_draws_nothing_from_the_network():
@@ -1731,3 +1747,275 @@ def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
 def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
     body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
     assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS
+
+
+# ── simple mode: one button on the chat box ───────────────────────────────
+# Testers got lost in the pill, the card and the hover-only chips. Simple mode
+# (pm_simple_mode) puts "Improve" on the chat box, writes the rewrite straight
+# into it, and keeps everything else behind ⋯. It is a flag, not a rewrite of
+# the classic flow, so both have to keep working.
+
+def _const_block(name):
+    """`const name = {...};` at the top level, brace-matched."""
+    start = CONTENT_JS.index(f"const {name} = {{")
+    i, depth = CONTENT_JS.index("{", start), 0
+    while True:
+        if CONTENT_JS[i] == "{":
+            depth += 1
+        elif CONTENT_JS[i] == "}":
+            depth -= 1
+            if depth == 0:
+                return CONTENT_JS[start:i + 2]
+        i += 1
+
+
+def test_simple_mode_is_a_stored_flag_on_for_new_installs_only():
+    assert 'const SIMPLE_KEY = "pm_simple_mode";' in CONTENT_JS
+    load = _function_bodies(CONTENT_JS, r"loadSimpleMode")["loadSimpleMode"]
+    assert "storageGet([SIMPLE_KEY" in load and "r[SIMPLE_KEY] === true" in load
+    # Read before the UI is built, and applied once it is.
+    init = _function_bodies(CONTENT_JS, r"init")["init"]
+    assert init.index("await loadSimpleMode()") < init.index("createTrigger()")
+    assert "setSimpleMode(simpleMode, false)" in init
+    # background.js: on for an install, off for an update that never had it.
+    install = BACKGROUND_JS.split('if (reason !== "install") return;', 1)[1]
+    assert "pm_simple_mode: true" in install.split("activateExistingTabs()", 1)[0], \
+        "the flag must be set before the existing tabs get their content script"
+    update = BACKGROUND_JS.split('if (reason === "update") {', 1)[1].split('if (reason !== "install")', 1)[0]
+    assert "r.pm_simple_mode === undefined" in update and "pm_simple_mode: false" in update
+
+
+def test_every_way_into_a_rewrite_honours_the_flag():
+    """The shortcut, the bar's button and the library's Rewrite all go through
+    handleEnhance; in simple mode it hands over before any card is opened."""
+    handle = _function_bodies(CONTENT_JS, r"handleEnhance")["handleEnhance"]
+    assert "if (simpleMode) { simpleEnhance(); return; }" in handle
+    assert handle.index("simpleEnhance()") < handle.index("showStreamingDiffModal(")
+    click = _function_bodies(CONTENT_JS, r"onSimpleClick")["onSimpleClick"]
+    assert 'case "improve": handleEnhance(); return;' in click
+
+
+def test_simple_mode_defaults_to_quick():
+    assert 'const SIMPLE_DEFAULT_STYLE = "quick";' in CONTENT_JS
+    enhance = _function_bodies(CONTENT_JS, r"simpleEnhance")["simpleEnhance"]
+    assert "simpleRun(text, simpleStyle, route, text)" in enhance
+    # The classic default is its own, and untouched.
+    assert 'const DEFAULT_STYLE = "deep";' in CONTENT_JS
+
+
+def test_the_stream_goes_into_the_box_not_the_card():
+    """The runners take a sink; simple mode's writes the chat box, and a
+    stopped stream's late tokens are dropped."""
+    for fn in ("runDirectEnhance", "runBackendEnhance"):
+        body = _function_bodies(CONTENT_JS, fn)[fn]
+        assert "sink = CARD_SINK" in body and "sink.done(" in body and "sink.fail(" in body
+        assert "finalizeStreamingModal(" not in body, f"{fn} still writes to the card directly"
+    sink = _const_block("SIMPLE_SINK")
+    for cb in ("token", "done"):
+        assert re.search(rf'{cb}\(\w+\) {{ if \(simple\.phase === "streaming"\)', sink), cb
+    # fail also takes the server's reason, and routes a free-tier limit to the
+    # bar's sign-in; a stopped stream's failure is still dropped first.
+    assert re.search(r'fail\(\w+, \w+\) \{\s*if \(simple\.phase !== "streaming"\) return;', sink)
+    assert "simpleLimit(" in sink and "simpleFail(" in sink
+    run = _function_bodies(CONTENT_JS, r"simpleRun")["simpleRun"]
+    assert "SIMPLE_SINK" in run and "showStreamingDiffModal" not in run
+
+
+def test_undo_writes_back_the_exact_original():
+    """The original is the chat box's text as it was, taken before anything is
+    written, and Undo puts that back, not a normalised copy of it."""
+    enhance = _function_bodies(CONTENT_JS, r"simpleEnhance")["simpleEnhance"]
+    assert "const text = getCurrentInputText();" in enhance
+    assert enhance.index("simple.original = text;") < enhance.index("simpleRun(")
+    undo = _function_bodies(CONTENT_JS, r"simpleUndo")["simpleUndo"]
+    assert "const original = simple.original;" in undo
+    assert "simpleSerial(() => applyOrFallback(original, null))" in undo
+    # Idle before the write is queued, so no stray token lands after it.
+    assert undo.index("simpleForget()") < undo.index("simpleSerial(")
+    assert "cancelActiveStream?.()" in undo
+
+
+def test_typing_mid_stream_is_never_written_over():
+    """A word typed while the rewrite streams in fits inside composerMatches'
+    15% tolerance, and was then replaced. The check is exact, before every
+    write and again before a failed append falls back to replacing."""
+    holds = _function_bodies(CONTENT_JS, r"composerHolds")["composerHolds"]
+    assert "norm(composerText(box)) === norm(text)" in holds
+    queue = _function_bodies(CONTENT_JS, r"simpleQueueWrite")["simpleQueueWrite"]
+    assert "!composerHolds(simple.written, el)) { simpleTakenOver(); return; }" in queue
+    write = _function_bodies(CONTENT_JS, r"simpleWrite")["simpleWrite"]
+    assert 'if (!ok && !composerHolds(before, el)) return "taken";' in write
+
+
+def test_simple_mode_never_opens_the_card_on_its_own():
+    sync = _function_bodies(CONTENT_JS, r"simpleSyncCard")["simpleSyncCard"]
+    assert sync.index("cardMinimized = !cardExpanded;") < sync.index("showDiffModal(result)")
+    assert "cardResult = result;" in sync, "a new result un-minimizes the card in showDiffModal"
+    compare = _function_bodies(CONTENT_JS, r"simpleCompare")["simpleCompare"]
+    assert "expandCard()" in compare
+
+
+def test_every_old_feature_is_one_menu_away():
+    """Library, shortcuts, styles, versions, context, voice and settings are
+    all behind ⋯, and each item does something."""
+    menu = _function_bodies(CONTENT_JS, r"simpleMenuHtml")["simpleMenuHtml"]
+    click = _function_bodies(CONTENT_JS, r"onSimpleMenuClick")["onSimpleMenuClick"]
+    for act, does in (("library", "togglePanel(true)"), ("context", "togglePanel(true)"),
+                      ("shortcuts", "openShortcuts()"), ("voice", "toggleVoice()"),
+                      ("settings", "openSettings()"), ("version", "simpleRerun(style)"),
+                      ("compare", "simpleCompare()"), ("save", "openSaveForm("),
+                      ("classic", "setSimpleMode(false)")):
+        assert f'"{act}"' in menu, f"⋯ has no {act}"
+        assert f'case "{act}"' in click and does in click, f"⋯ {act} does nothing"
+    assert '"style"' in menu and "simpleStyle = style;" in click
+    # And the way back in, from the classic library's menu.
+    assert 'data-act="simple"' in _function_bodies(CONTENT_JS, r"libMenuHtml")["libMenuHtml"]
+    assert 'case "simple": closeLibrary(); setSimpleMode(true); return;' in CONTENT_JS
+
+
+def test_simple_mode_hides_the_pill_and_its_chips():
+    setter = _function_bodies(CONTENT_JS, r"setSimpleMode")["setSimpleMode"]
+    assert '["pm-trigger", "pm-library-btn", "pm-help-btn"]' in setter
+    assert 'toggleAttribute("data-pm-simple", on)' in setter
+    assert re.search(r"\[data-pm-simple\]\s*{\s*display:\s*none !important;", STYLES_CSS)
+
+
+def test_simple_mode_shows_one_tip_and_no_timed_ones():
+    allowed = _function_bodies(CONTENT_JS, r"tipAllowed")["tipAllowed"]
+    assert "return !simpleMode &&" in allowed, "the classic tips must stay off in simple mode"
+    assert "if (simpleMode) return;" in _function_bodies(CONTENT_JS, r"maybeTipMeet")["maybeTipMeet"]
+    assert "if (simpleMode ||" in _function_bodies(CONTENT_JS, r"cardTipHtml")["cardTipHtml"]
+    tip = _function_bodies(CONTENT_JS, r"maybeTipSimple")["maybeTipSimple"]
+    assert "autoHideMs" not in tip and "(tips.shows.simple || 0) >= 1" in tip
+    timers = "".join(re.findall(r"setTimeout\([^;]*", CONTENT_JS))
+    assert "maybeTipSimple" not in timers, "the hint is not on a timer"
+
+
+def test_the_bar_is_anchored_to_the_chat_box():
+    place = _function_bodies(CONTENT_JS, r"positionSimple")["positionSimple"]
+    for helper in ("composerFrame(composer)", "composerControlsRow(composer)"):
+        assert helper in place
+    assert '"row"' in place and '"edge"' in place
+    assert "positionSimple();" in _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    # composerControlsTop is the same row, so the library and the bar agree on it.
+    top = _function_bodies(CONTENT_JS, r"composerControlsTop")["composerControlsTop"]
+    assert "composerControlsRow(el)?.top ?? null" in top
+
+
+# The undo path at runtime: the real functions from content.js, against a
+# fake chat box and a fake stream, under node. Skipped where node is missing.
+SIMPLE_RUNTIME = r"""
+let box = { text: "" };
+const calls = [], approved = [], toasts = [];
+let hooks = {}, cardState = "idle", cardResult = null, cardExpanded = false, enhanceInFlight = false;
+let cancelActiveStream = null, simpleMode = true, simpleStyle = "quick", simpleSignature = "";
+const usageData = { count: 0, limit: 30 };
+const STYLES = ["quick", "deep", "creative"];
+const FULL = {
+  quick: "How do I sort Python dicts by a key some lack?",
+  deep: "Show me how to sort a list of dictionaries by a key that some of them lack, with an example.",
+};
+const tick = () => new Promise((r) => setTimeout(r, 0));
+const norm = (s) => (s || "").replace(/\s+/g, " ").trim();
+function findComposer() { return box; }
+function composerText(el) { return el ? el.text : ""; }
+function getCurrentInputText() { return box.text; }
+async function applyToInput(t) { await tick(); box.text = t; return true; }
+async function applyOrFallback(t) { return applyToInput(t); }
+async function simpleAppend(el, before, delta) {
+  await tick();
+  if (box.text !== before) return false;
+  box.text = before + delta;
+  return true;
+}
+function simpleWait() { return tick(); }
+async function resolveEnhanceRoute() { return { route: "direct" }; }
+async function runDirectEnhance(input, route, style, sink) {
+  let stopped = false;
+  cancelActiveStream = () => { stopped = true; };
+  calls.push(style);
+  let sent = "";
+  for (const w of FULL[style].split(/(?<= )/)) {
+    if (stopped) return;
+    sent += w;
+    sink.token(sent);
+    await tick(); await tick(); await tick();
+    hooks.afterToken?.();
+  }
+  if (!stopped) sink.done({ original: input, enhanced: FULL[style], log_id: "log1", mode: style });
+}
+async function runBackendEnhance() { throw Error("not used"); }
+function closeCard() { cardState = "idle"; cardResult = null; }
+function simpleSyncCard(r) { cardState = "ready"; cardResult = r; }
+function approveEnhancement(id) { approved.push(id); }
+function showToast(m) { toasts.push(m); }
+for (const f of ["statsBump", "tipDone", "hideTip", "placePill", "renderSimpleBar", "positionSimple",
+  "closeSimpleMenu", "nudgeSimpleBar"]) globalThis[f] = () => {};
+%FUNCTIONS%
+let n = 0;
+const ok = (c, m) => { n++; if (!c) throw Error(m); };
+const settle = async () => { for (let i = 0; i < 20; i++) { await simple.queue; await tick(); } };
+(async () => {
+  // 1. Improve, then Undo: exactly the text that was there, spacing and all.
+  const ORIGINAL = "  hw do i sort\n dicts   by key ";
+  box.text = ORIGINAL;
+  await simpleEnhance(); await settle();
+  ok(simple.phase === "done" && box.text === FULL.quick, "the rewrite lands in the box: " + JSON.stringify(box.text));
+  ok(cardState === "ready" && cardResult.enhanced === FULL.quick, "the card holds it, for Compare");
+  simpleUndo(); await settle();
+  ok(box.text === ORIGINAL, "Undo restores the exact original: " + JSON.stringify(box.text));
+  ok(simple.phase === "idle" && cardState === "idle", "and drops the rewrite");
+
+  // 2. Undo while it is still streaming: nothing lands after it.
+  hooks.afterToken = () => { hooks.afterToken = null; simpleUndo(); };
+  await simpleEnhance(); await settle();
+  ok(box.text === ORIGINAL && simple.phase === "idle", "Undo mid-stream: " + JSON.stringify(box.text));
+
+  // 3. More detail, then back to Quick, then Undo: still the original.
+  await simpleEnhance(); await settle();
+  await simpleRerun("deep"); await settle();
+  ok(box.text === FULL.deep && simple.versions.length === 2, "More detail replaces the rewrite");
+  const quickCalls = calls.filter((c) => c === "quick").length;
+  await simpleRerun("quick"); await settle();
+  ok(box.text === FULL.quick && calls.filter((c) => c === "quick").length === quickCalls,
+    "a version made already costs no call");
+  simpleUndo(); await settle();
+  ok(box.text === ORIGINAL, "Undo after versions restores the original");
+
+  // 4. The user types mid-stream: their words stay, and the stream stops.
+  hooks.afterToken = () => { hooks.afterToken = null; box.text += " MINE"; };
+  await simpleEnhance(); await settle();
+  ok(box.text.endsWith(" MINE") && simple.phase === "idle", "typing mid-stream is kept: " + JSON.stringify(box.text));
+
+  // 5. Sent as it was: approved, as Replace on the card is. Edited: not.
+  box.text = ORIGINAL;
+  await simpleEnhance(); await settle();
+  box.text = ""; simpleOnComposerChanged();
+  ok(approved.length === 1 && simple.phase === "idle", "a sent rewrite is approved");
+  box.text = ORIGINAL;
+  await simpleEnhance(); await settle();
+  box.text = FULL.quick + " please"; simpleOnComposerChanged();
+  ok(simple.phase === "edited" && simple.original === ORIGINAL, "an edit keeps Undo");
+  box.text = ""; simpleOnComposerChanged();
+  ok(approved.length === 1, "an edited rewrite is not approved");
+  console.log(`${n} simple-mode runtime assertions PASS`);
+})().catch((e) => { console.log("FAIL " + e.message); process.exit(1); });
+"""
+
+
+def test_simple_mode_undo_path_at_runtime():
+    import shutil
+    import subprocess
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("node is not installed")
+    names = ("composerHolds", "simpleSerial", "simpleEnhance", "simpleRun", "simpleQueueWrite",
+             "simpleWrite", "simpleFinish", "simpleTakenOver", "simpleSettle", "simpleStop",
+             "simpleFail", "simpleUndo", "simpleForget", "simpleRerun", "simpleOnComposerChanged")
+    fns = _function_bodies(CONTENT_JS, "|".join(names))
+    missing = set(names) - set(fns)
+    assert not missing, f"not found: {missing}"
+    src = "\n".join([_const_block("simple"), _const_block("SIMPLE_SINK"), *fns.values()])
+    out = subprocess.run([node, "-"], input=SIMPLE_RUNTIME.replace("%FUNCTIONS%", src),
+                         capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert out.returncode == 0 and "PASS" in out.stdout, out.stdout + out.stderr

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Prompt Memory",
-  "version": "4.9.0",
-  "description": "One-click prompt engineering — turns your raw thoughts into precision-crafted LLM queries. Free, with your own API key.",
+  "version": "5.0.0",
+  "description": "Make a rough AI prompt clearer in one click, right in ChatGPT, Claude, Gemini, Perplexity and Grok. Free, no account needed.",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",
@@ -34,7 +34,7 @@
         "default": "Ctrl+Shift+E",
         "mac": "Command+Shift+E"
       },
-      "description": "Enhance the current prompt"
+      "description": "Improve the prompt in the chat box"
     },
     "voice-prompt": {
       "suggested_key": {

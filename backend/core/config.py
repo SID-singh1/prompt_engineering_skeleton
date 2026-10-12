@@ -172,7 +172,18 @@ class Settings:
     SHARED_KEY_DAILY_LIMIT = int(os.getenv("SHARED_KEY_DAILY_LIMIT", "15"))
     BYOK_DAILY_LIMIT = int(os.getenv("BYOK_DAILY_LIMIT", "1000"))
 
+    # Anonymous tier: an install that has not signed in. Quick rewrites only,
+    # no memory, nothing stored. Two caps: one per install, and one across all
+    # anonymous installs together, because a token is free to mint and the
+    # global cap is what actually bounds spend on the server key.
+    ANON_DAILY_LIMIT = int(os.getenv("ANON_DAILY_LIMIT", "10"))
+    ANON_GLOBAL_DAILY_LIMIT = int(os.getenv("ANON_GLOBAL_DAILY_LIMIT", "2000"))
+    ANON_TOKEN_DAYS = int(os.getenv("ANON_TOKEN_DAYS", "90"))
+    # New anonymous tokens per client address per hour.
+    ANON_MINT_PER_HOUR = int(os.getenv("ANON_MINT_PER_HOUR", "10"))
+
     TIER_LIMITS = {
+        "anon":       ANON_DAILY_LIMIT,
         "free":       int(os.getenv("FREE_TIER_LIMIT", str(SHARED_KEY_DAILY_LIMIT))),
         "byok":       int(os.getenv("BYOK_DAILY_LIMIT", "1000")),
         "pro":        int(os.getenv("PRO_TIER_LIMIT", "200")),

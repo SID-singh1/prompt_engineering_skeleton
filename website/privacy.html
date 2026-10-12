@@ -76,7 +76,7 @@
 <body>
     <div class="container">
         <h1>Privacy Policy</h1>
-        <p class="last-updated">Last updated: September 14, 2026</p>
+        <p class="last-updated">Last updated: October 11, 2026</p>
 
         <p>Prompt Memory ("we", "our", "the extension") is a browser extension that enhances your AI prompts. This policy explains what data we collect, how we use it, and how you can control it.</p>
 
@@ -87,15 +87,22 @@
             <li><strong>Email address</strong> — collected via Google OAuth when you sign in. Used to identify your account and for optional follow-up on feedback you submit.</li>
         </ul>
 
+        <p><strong>Using Prompt Memory without an account</strong></p>
+        <ul>
+            <li><strong>No account and no key needed.</strong> Without signing in, each time you press Improve the text in the chat box is sent to our server and on to an AI provider (Groq) to be rewritten, and the rewrite is sent back. Only that text is sent: no chat messages, no saved prompts, no email or name.</li>
+            <li><strong>Nothing is stored.</strong> We do not save the draft or the rewrite, do not write them to our logs, and do not use them to build a profile. The first time you press Improve the extension tells you this and asks before sending anything.</li>
+            <li><strong>An anonymous token.</strong> To apply the daily free limit, the extension gets a random token from our server and keeps it in your browser. It does not identify you; our server only counts how many rewrites it has made today, in memory. Signing in replaces it.</li>
+        </ul>
+
         <p><strong>Prompt Data (with your control)</strong></p>
         <ul>
             <li><strong>Prompts you enhance</strong> — when you explicitly click "Enhance" or use the keyboard shortcut, your prompt text is sent to our server for AI-powered enhancement. This is the core functionality of the extension.</li>
             <li><strong>Conversation context</strong> — when you enhance a prompt, the last few messages from the current chat page may be read to provide better context for enhancement. This only happens when you initiate an enhancement.</li>
-            <li><strong>Passive prompt tracking</strong> — when enabled (off by default), prompts you submit on AI platforms are logged to improve future suggestions. <strong>You can disable this at any time</strong> via the ⚙ settings gear in the sidebar.</li>
+            <li><strong>Passive prompt tracking</strong> — when enabled (off by default), prompts you submit on AI platforms are logged to improve future suggestions. <strong>You can disable this at any time</strong> in the library's privacy settings.</li>
         </ul>
 
         <div class="highlight-box">
-            <p>💡 <strong>Prompt Tracking is OFF unless you turn it on.</strong> With it off, prompts you submit normally to an AI chat are not logged by Prompt Memory. A prompt you explicitly enhance is different: signed-in enhancements send your draft and optional recent conversation context to our server and AI provider. We save the draft and rewrite in your enhancement history even if you dismiss the preview. With your own key and no sign-in, the draft goes directly to your chosen provider and we do not store it.</p>
+            <p>💡 <strong>Prompt Tracking is OFF unless you turn it on.</strong> With it off, prompts you submit normally to an AI chat are not logged by Prompt Memory. A prompt you explicitly enhance is different: signed-in enhancements send your draft and optional recent conversation context to our server and AI provider. We save the draft and rewrite in your enhancement history even if you dismiss the preview. With your own key and no sign-in, the draft goes directly to your chosen provider and we do not store it. Without an account or a key, the draft passes through our server to be rewritten and is not stored.</p>
             <p>Conversation context reading is separate and is on by default: while fulfilling an enhancement you
             asked for, the extension reads the last few visible messages so the rewrite makes sense in context.
             It is sent with that single request and is not kept as a profile. Its own toggle sits alongside the first.</p>

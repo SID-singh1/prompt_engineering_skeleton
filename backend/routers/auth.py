@@ -4,12 +4,13 @@ import uuid
 import secrets
 import httpx
 import jwt
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 from fastapi.responses import HTMLResponse
 from ..models.schemas import RefreshRequest
 from ..core.config import settings
 from ..core.database import MongoDB, in_memory_users
-from ..core.security import create_jwt_token
+from ..core.security import create_jwt_token, create_anon_token
+from ..core import ratelimit
 
 router = APIRouter()
 _oauth_state_store = {}   # state -> expiry.  CSRF protection for OAuth.
@@ -180,6 +181,38 @@ def google_poll(state: str):
     if entry is None:
         return {"status": "pending"}
     return {"status": "ready", **entry[1]}
+
+
+# --- ANONYMOUS INSTALLS ---
+
+def _client_address(request: Request) -> str:
+    """The caller's address. The Space sits behind a proxy, so the first
+    X-Forwarded-For hop is the real client; the socket peer is the proxy."""
+    forwarded = request.headers.get("x-forwarded-for", "")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
+@router.post("/auth/anonymous")
+def anonymous_token(request: Request):
+    """
+    A token for an install that has not signed in, so a new user's first
+    rewrite needs no account and no API key. Nothing is stored. Minting is
+    capped per address; the real bound on spend is the global anonymous cap
+    in /enhance.
+    """
+    allowed, retry_after = ratelimit._check(
+        f"anon_mint:{_client_address(request)}", settings.ANON_MINT_PER_HOUR, 3600
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many new sessions from this network. Try again later.",
+            headers={"Retry-After": str(retry_after)},
+        )
+    token, user_id = create_anon_token()
+    return {"token": token, "anon": True, "daily_limit": settings.ANON_DAILY_LIMIT}
 
 
 # --- TOKEN REFRESH ---

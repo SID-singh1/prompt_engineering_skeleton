@@ -133,4 +133,5 @@ def test_the_daily_count_is_recorded_before_the_card_is_drawn():
     # lagged one rewrite behind and were blank on the first of the day.
     js = CONTENT_JS.read_text(encoding="utf-8")
     run = js[js.index("async function runBackendEnhance("):js.index("function askWorker(")]
-    assert run.index("usageData.count = metadata.usage_today.used") < run.index("finalizeStreamingModal(lastEnhanceResult)")
+    # Handed on through the stream's sink: the card's by default (CARD_SINK).
+    assert run.index("usageData.count = metadata.usage_today.used") < run.index("sink.done(lastEnhanceResult)")

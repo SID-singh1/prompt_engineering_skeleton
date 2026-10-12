@@ -25,7 +25,7 @@ from collections import defaultdict, deque
 from fastapi import Depends, HTTPException
 
 from .config import settings
-from .security import verify_jwt
+from .security import verify_jwt, verify_jwt_or_anon
 
 _lock = threading.Lock()
 _hits: dict = defaultdict(deque)   # bucket key -> deque[timestamp]
@@ -62,14 +62,16 @@ def _check(key: str, limit: int, window: int) -> tuple:
         return True, 0
 
 
-def limit(rule: str, scope: str):
+def limit(rule: str, scope: str, allow_anon: bool = False):
     """
     Build a dependency enforcing `rule` for the authenticated user.
 
     Depends on verify_jwt, so an unauthenticated caller is still rejected with
     the usual 401 before any counting happens.
     """
-    def dependency(user_id: str = Depends(verify_jwt)) -> str:
+    auth = verify_jwt_or_anon if allow_anon else verify_jwt
+
+    def dependency(user_id: str = Depends(auth)) -> str:
         limit_n, window = parse_rule(rule)
         allowed, retry_after = _check(f"{scope}:{user_id}", limit_n, window)
         if not allowed:
@@ -82,5 +84,6 @@ def limit(rule: str, scope: str):
     return dependency
 
 
-enhance_limit = limit(settings.RATE_LIMIT_ENHANCE, "enhance")
+# The rewrite is the one thing an install can do before signing in.
+enhance_limit = limit(settings.RATE_LIMIT_ENHANCE, "enhance", allow_anon=True)
 voice_limit = limit(settings.RATE_LIMIT_VOICE, "voice")
