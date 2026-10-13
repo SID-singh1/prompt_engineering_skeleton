@@ -812,48 +812,6 @@
     color: var(--pm-danger);
 }
 
-/* ── Edit Modal ── */
-.pm-edit-textarea {
-    width: 100%;
-    min-height: 120px;
-    padding: 10px 12px;
-    border: 1px solid var(--pm-border);
-    border-radius: var(--pm-radius-sm);
-    font-family: var(--pm-font);
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--pm-text);
-    background: var(--pm-bg-secondary);
-    resize: vertical;
-    outline: none;
-    box-sizing: border-box;
-    margin-bottom: 10px;
-}
-
-.pm-edit-textarea:focus {
-    border-color: var(--pm-accent);
-    box-shadow: 0 0 0 3px var(--pm-accent-glow);
-}
-
-.pm-edit-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid var(--pm-border);
-    border-radius: var(--pm-radius-sm);
-    font-family: var(--pm-font);
-    font-size: 13px;
-    color: var(--pm-text);
-    background: var(--pm-bg-secondary);
-    outline: none;
-    box-sizing: border-box;
-    margin-bottom: 8px;
-}
-
-.pm-edit-input:focus {
-    border-color: var(--pm-accent);
-    box-shadow: 0 0 0 3px var(--pm-accent-glow);
-}
-
 .pm-voice-btn {
     width: 44px;
     height: 40px;
@@ -2263,7 +2221,7 @@
 .pm-lib .pm-save-head { font-size: 13px; font-weight: 600; color: var(--pm-con-text); }
 .pm-lib .pm-save-field { display: flex; flex-direction: column; gap: 5px; }
 .pm-lib .pm-save-field > span { font-size: 11px; color: var(--pm-con-muted); letter-spacing: .02em; }
-.pm-lib .pm-save .pm-lib-input {
+.pm-lib :is(.pm-save, .pm-lib-edit) .pm-lib-input {
     width: 100%;
     padding: 7px 9px;
     border-radius: 8px;
@@ -2273,8 +2231,18 @@
     font-size: 13px;
     outline: none;
 }
-.pm-lib .pm-save .pm-lib-input:focus { border-color: var(--pm-accent-border); }
-.pm-lib .pm-save .pm-lib-input::placeholder { color: var(--pm-con-muted); opacity: 1; }
+.pm-lib :is(.pm-save, .pm-lib-edit) .pm-lib-input:focus { border-color: var(--pm-accent-border); }
+.pm-lib :is(.pm-save, .pm-lib-edit) .pm-lib-input::placeholder { color: var(--pm-con-muted); opacity: 1; }
+
+/* ── New / Edit prompt: a page of the sheet, in the save form's fields ── */
+.pm-lib .pm-lib-edit { gap: 10px; padding: 12px; }
+.pm-lib .pm-lib-edit .pm-edit-text {
+    min-height: 96px;
+    max-height: 40vh;
+    resize: vertical;
+    font: 13px/1.5 var(--pm-font);
+}
+.pm-lib .pm-lib-edit .pm-save-foot { margin-top: 2px; }
 .pm-lib .pm-save-tags { display: flex; flex-wrap: wrap; gap: 5px; }
 .pm-lib .pm-save-tags[hidden] { display: none; }
 .pm-lib .pm-save-tags button {
@@ -3137,4 +3105,3 @@
     scrollbar-color: rgba(255, 255, 255, .16) transparent;
 }
 
-.pm-modal .pm-edit-status { display: block; min-height: 16px; margin-top: 8px; color: var(--pm-danger, #e5484d); font-size: 12px; }

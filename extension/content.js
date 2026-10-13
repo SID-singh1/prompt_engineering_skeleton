@@ -1547,7 +1547,10 @@ const LIB_ICON = {
 // "recent" is the History tab: every rewrite, as the popup and the consent
 // notice call it. "Recent" read as "recently saved", the same thing as Saved.
 let libView = "saved";        // "saved" | "recent" (shown as History)
-let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
+let libPage = "list";         // "list" | "privacy" | "feedback" | "signin" | "edit"
+// The New / Edit prompt page: what is typed there, kept as it is typed so a
+// redraw of the sheet (a list arriving, a save going out) never loses it.
+let libEdit = null;           // { id, original, content, title, tags: Set, tagText, busy, status, error }
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
 let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
@@ -1739,6 +1742,7 @@ function togglePanel(force) {
       hideCard();
     }
     libPage = "list";
+    libEdit = null;
     libView = "saved";
     searchQuery = "";
     libSel = 0;
@@ -2198,8 +2202,9 @@ function libHeadHtml() {
     : "";
   const more = home + `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
     `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" data-pm-tip="Close" data-pm-key="Esc">${LIB_ICON.close}</button>`;
-  if (libPage === "privacy" || libPage === "feedback") {
-    const title = { privacy: "Privacy", feedback: "Send feedback" }[libPage];
+  if (libPage === "privacy" || libPage === "feedback" || libPage === "edit") {
+    const title = { privacy: "Privacy", feedback: "Send feedback",
+      edit: libEdit?.id != null ? "Edit prompt" : "New prompt" }[libPage];
     return `<div class="pm-lib-head pm-lib-head-sub">${grip}` +
       `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
       `<span class="pm-lib-head-title">${title}</span>${more}</div>`;
@@ -2242,6 +2247,7 @@ function libBodyHtml() {
       row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
+  if (libPage === "edit" && libEdit) return libEditHtml();
   if (libPage === "feedback") {
     return `<div class="pm-lib-page pm-lib-form">` +
       `<label class="pm-lib-field"><span>Kind</span><select id="pm-feedback-type" class="pm-lib-input">` +
@@ -2727,7 +2733,7 @@ function libAct(act, i) {
       renderLibraryList();
       return;
     case "edit":
-      if (it?.kind === "saved") { libRowMenu = null; showEditModal(it.p); }
+      if (it?.kind === "saved") { libRowMenu = null; openPromptPage(it.p); }
       return;
     case "improve":
       if (it?.kind === "saved") { libRowMenu = null; improveSavedPrompt(it.p); }
@@ -2768,6 +2774,13 @@ function libAct(act, i) {
 
 function onLibraryClick(e) {
   const b = e.target.closest("button");
+  if (b?.dataset.tag !== undefined && libPage === "edit" && libEdit) {
+    // In place, not by a redraw, so the keyboard stays where it was.
+    const t = b.dataset.tag;
+    if (libEdit.tags.has(t)) libEdit.tags.delete(t); else libEdit.tags.add(t);
+    b.setAttribute("aria-pressed", String(libEdit.tags.has(t)));
+    return;
+  }
   if (b?.dataset.view) {
     libView = b.dataset.view;
     libSel = 0; libRowMenu = null; libConfirm = null;
@@ -2790,7 +2803,9 @@ function onLibraryClick(e) {
   switch (act) {
     case "close": closeLibrary(); return;
     case "home": resetSheetPosition(); return;
-    case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
+    case "back": libPage = "list"; libEdit = null; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
+    case "editcancel": leavePromptPage(); return;
+    case "editsave": savePromptPage(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
     // The search first: the map gives the keyboard back to whatever had it,
     // and the menu item that was clicked is gone once the menu closes.
@@ -2815,6 +2830,11 @@ function onLibraryClick(e) {
 }
 
 function onLibraryInput(e) {
+  if (libPage === "edit" && libEdit) {
+    const field = { "pm-edit-content": "content", "pm-edit-title": "title", "pm-edit-tags": "tagText" }[e.target.id];
+    if (field) libEdit[field] = e.target.value;
+    return;
+  }
   if (e.target.id !== "pm-lib-q") return;
   searchQuery = e.target.value;
   libSel = 0; libRowMenu = null; libConfirm = null;
@@ -2837,11 +2857,15 @@ function onLibraryKeydown(e) {
     e.preventDefault(); e.stopPropagation();
     if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
     if (libPeek !== null) { hidePeek(); return; }
+    if (libPage === "edit") { leavePromptPage(); return; }
     if (libPage === "privacy" || libPage === "feedback") {
       libPage = "list"; renderLibrary(); focusLibrarySearch(); return;
     }
     closeLibrary();
     return;
+  }
+  if (libPage === "edit" && mod && e.key === "Enter") {
+    e.preventDefault(); e.stopPropagation(); savePromptPage(); return;
   }
   // The keys below drive the list from the search box, as in a combobox.
   if (e.target.id !== "pm-lib-q" || libPage !== "list") return;
@@ -5801,126 +5825,153 @@ function showToast(message, type = "info", action = null) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// EDIT MODAL
+// NEW / EDIT PROMPT: a page of the library
 // ══════════════════════════════════════════════════════════════
+//
+// It was a window of its own: the whole page blurred behind it, a gradient
+// Save, and the look of nothing else in the extension. It is now a page of
+// the sheet, in the sheet's own fields and buttons (the ones the save form
+// uses), with the tags already in use one click away.
 
 /**
- * + New: a prompt written from scratch, in the edit window. A draft in the
- * chat box starts it off, since that is usually what the user wants to keep.
+ * + New: a prompt written from scratch. A draft in the chat box starts it
+ * off, since that is usually what the user wants to keep.
  */
 function openNewPrompt() {
-  showEditModal({ content: String(getCurrentInputText() || "").trim(), title: "", tags: [] });
+  openPromptPage({ content: String(getCurrentInputText() || "").trim(), title: "", tags: [] });
 }
 
-/** The edit window, for a saved prompt or (with no id) a new one. */
-function showEditModal(prompt) {
-  const isNew = prompt.id == null;
-  const overlay = getOrCreateModalOverlay();
-  const modal = overlay.querySelector(".pm-modal");
-
-  modal.innerHTML = `
-    <div class="pm-modal-header">
-      <span class="pm-modal-title">${isNew ? "New prompt" : "Edit prompt"}</span>
-      <button class="pm-header-close pm-modal-close-btn" aria-label="Close">×</button>
-    </div>
-    <div class="pm-modal-body">
-      <label class="pm-label" for="pm-edit-content">Prompt</label>
-      <textarea class="pm-edit-textarea" id="pm-edit-content" placeholder="The prompt you want to reuse">${escHtml(prompt.content)}</textarea>
-      <label class="pm-label" for="pm-edit-title">Name <span style="color:var(--pm-text-muted)">(optional)</span></label>
-      <input class="pm-edit-input" id="pm-edit-title" value="${escHtml(prompt.title || "")}" placeholder="What you will look for it by" />
-      <label class="pm-label" for="pm-edit-tags">Tags <span style="color:var(--pm-text-muted)">(optional, comma-separated)</span></label>
-      <input class="pm-edit-input" id="pm-edit-tags" value="${escHtml((prompt.tags || []).join(", "))}" placeholder="e.g. coding, review" />
-      <span class="pm-edit-status" id="pm-edit-status" role="status"></span>
-    </div>
-    <div class="pm-modal-footer">
-      <button class="pm-btn pm-btn-secondary" id="pm-edit-cancel">Cancel</button>
-      <button class="pm-btn pm-btn-primary" id="pm-edit-save" title="${CMD_ENTER}">${isNew ? "Save" : "Save changes"}</button>
-    </div>
-  `;
-
-  // Cancel is a button like Save, not the header's ×: it carried the ×'s
-  // class to get its click, and with it the ×'s 28px box, so Save sat on it.
-  const cancel = () => { closeModal(); if (panelOpen) focusLibrarySearch(); };
-  overlay.querySelector(".pm-modal-close-btn")?.addEventListener("click", cancel);
-  document.getElementById("pm-edit-cancel").addEventListener("click", cancel);
-
-  const save = async () => {
-    const content = document.getElementById("pm-edit-content").value.trim();
-    const title = document.getElementById("pm-edit-title").value.trim();
-    const tagsRaw = document.getElementById("pm-edit-tags").value.trim();
-    const tags = tagsRaw ? [...new Set(tagsRaw.split(",").map((t) => t.trim().replace(/^#/, "")).filter((t) => t))] : [];
-    const status = document.getElementById("pm-edit-status");
-    if (!content) {
-      if (status) status.textContent = "Write the prompt first.";
-      document.getElementById("pm-edit-content").focus();
-      return;
-    }
-    const btn = document.getElementById("pm-edit-save");
-    if (btn.disabled) return;
-
-    if (isNew) {
-      btn.disabled = true;
-      btn.textContent = "Saving\u2026";
-      const outcome = await createSavedPrompt(content, title, tags);
-      if (outcome === "failed") {
-        btn.disabled = false;
-        btn.textContent = "Save";
-        if (status) status.textContent = "Could not save. Check your connection and try again.";
-        return;
-      }
-      closeModal();
-      if (outcome === "duplicate") {
-        showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(content) });
-        return;
-      }
-      const id = lastSavedPromptId;
-      statsBump("saves");
-      tipDone("save");
-      showToast(title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library",
-        "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
-      await fetchSavedPrompts();
-      if (panelOpen) {
-        libView = "saved";
-        searchQuery = "";
-        const at = libraryItems().findIndex((it) => it.p?.id === id);
-        libSel = at >= 0 ? at : 0;
-        renderLibrary();
-        focusLibrarySearch();
-      }
-      return;
-    }
-
-    const fields = {};
-    if (content !== prompt.content) fields.content = content;
-    if (title !== (prompt.title || "")) fields.title = title || null;
-    if (JSON.stringify(tags) !== JSON.stringify(prompt.tags || [])) fields.tags = tags;
-
-    if (Object.keys(fields).length === 0) { closeModal(); return; }
-
-    btn.disabled = true;
-    btn.textContent = "Saving\u2026";
-
-    const ok = await updateSavedPrompt(prompt.id, fields);
-    if (ok) {
-      await fetchSavedPrompts();
-      renderLibrary();
-    }
-    closeModal();
-    if (panelOpen) focusLibrarySearch();
+/** The page, for a saved prompt or (with no id) a new one. */
+function openPromptPage(prompt) {
+  if (!panelOpen) togglePanel(true);
+  libEdit = {
+    id: prompt.id ?? null,
+    original: prompt,
+    content: prompt.content || "",
+    title: prompt.title || "",
+    tags: new Set(prompt.tags || []),
+    tagText: "",
+    busy: false,
+    status: "",
+    error: false,
   };
-  document.getElementById("pm-edit-save").addEventListener("click", save);
-  // esc cancels, ⌘↵ saves: the keys every other form here answers to. Kept
-  // to the window, so esc does not also close the library under it.
-  modal.onkeydown = (e) => {
-    if (e.isComposing) return;
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); }
-    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); save(); }
-  };
-
-  overlay.classList.add("pm-visible");
+  libPage = "edit";
+  libMenu = false;
+  libRowMenu = null;
+  libConfirm = null;
+  hidePeek();
+  renderLibrary();
   const ta = document.getElementById("pm-edit-content");
-  ta.focus({ preventScroll: true });
-  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta?.focus({ preventScroll: true });
+  ta?.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function libEditHtml() {
+  const e = libEdit;
+  const tags = [...new Set([...savedTagSuggestions(8), ...e.tags])];
+  const status = e.status
+    ? escHtml(e.status)
+    : `<kbd>${CMD_ENTER}</kbd>save<kbd>esc</kbd>back`;
+  return `<div class="pm-lib-page pm-lib-edit">` +
+    `<textarea id="pm-edit-content" class="pm-lib-input pm-edit-text" rows="5" spellcheck="true" ` +
+    `placeholder="The prompt you want to reuse" aria-label="Prompt">${escHtml(e.content)}</textarea>` +
+    `<label class="pm-save-field"><span>Name</span><input id="pm-edit-title" class="pm-lib-input" type="text" maxlength="120" ` +
+    `autocomplete="off" spellcheck="false" value="${escHtml(e.title)}" placeholder="Optional. Unnamed prompts show their words"></label>` +
+    `<div class="pm-save-field"><span>Tags</span>` +
+    (tags.length
+      ? `<div class="pm-save-tags">${tags.map((t) =>
+          `<button type="button" data-tag="${escHtml(t)}" aria-pressed="${e.tags.has(t)}">#${escHtml(t)}</button>`).join("")}</div>`
+      : "") +
+    `<input id="pm-edit-tags" class="pm-lib-input" type="text" autocomplete="off" spellcheck="false" value="${escHtml(e.tagText)}" ` +
+    `placeholder="New tags, comma separated" aria-label="New tags"></div>` +
+    `<div class="pm-save-foot"><span class="pm-save-status${e.error ? " pm-save-error" : ""}" id="pm-edit-status" role="status">${status}</span>` +
+    `<button type="button" class="pm-lib-verb pm-lib-verb-quiet" id="pm-edit-cancel" data-act="editcancel">Cancel</button>` +
+    `<button type="button" class="pm-lib-verb" id="pm-edit-save" data-act="editsave"${e.busy ? " disabled" : ""}>` +
+    `${e.busy ? "Saving\u2026" : e.id != null ? "Save changes" : "Save"}</button></div></div>`;
+}
+
+/** Back to the list, nothing saved. */
+function leavePromptPage() {
+  libEdit = null;
+  libPage = "list";
+  renderLibrary();
+  focusLibrarySearch();
+}
+
+/** Show a problem on the page, and give the keyboard back to `focusId`. */
+function promptPageSays(e, message, focusId = "") {
+  e.status = message;
+  e.error = true;
+  renderLibrary();
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+}
+
+async function savePromptPage() {
+  const e = libEdit;
+  if (!e || e.busy) return;
+  const content = e.content.trim();
+  const title = e.title.trim();
+  const typed = e.tagText.split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean);
+  const tags = [...new Set([...e.tags, ...typed])];
+  if (!content) { promptPageSays(e, "Write the prompt first.", "pm-edit-content"); return; }
+
+  if (e.id == null) {
+    e.busy = true;
+    e.status = ""; e.error = false;
+    renderLibrary();
+    const outcome = await createSavedPrompt(content, title, tags);
+    if (libEdit !== e) return;   // left the page while the request was out
+    e.busy = false;
+    if (outcome === "failed") { promptPageSays(e, "Could not save. Check your connection and try again."); return; }
+    libEdit = null;
+    libPage = "list";
+    if (outcome === "duplicate") {
+      renderLibrary();
+      focusLibrarySearch();
+      showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(content) });
+      return;
+    }
+    const id = lastSavedPromptId;
+    statsBump("saves");
+    tipDone("save");
+    showToast(title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library",
+      "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
+    // Back to the list at once; it is drawn again, the new prompt picked out,
+    // once the library has it.
+    renderLibrary();
+    focusLibrarySearch();
+    await fetchSavedPrompts();
+    if (panelOpen && libPage === "list") {
+      libView = "saved";
+      searchQuery = "";
+      const at = libraryItems().findIndex((it) => it.p?.id === id);
+      libSel = at >= 0 ? at : 0;
+      renderLibrary();
+      focusLibrarySearch();
+    }
+    return;
+  }
+
+  const p = e.original;
+  const fields = {};
+  if (content !== p.content) fields.content = content;
+  if (title !== (p.title || "")) fields.title = title || null;
+  if (JSON.stringify(tags) !== JSON.stringify(p.tags || [])) fields.tags = tags;
+  if (!Object.keys(fields).length) { leavePromptPage(); return; }
+  e.busy = true;
+  e.status = ""; e.error = false;
+  renderLibrary();
+  const ok = await updateSavedPrompt(p.id, fields);
+  if (libEdit !== e) return;
+  e.busy = false;
+  // The window this replaces closed on a failed save as if it had worked.
+  if (!ok) { promptPageSays(e, "Could not save the changes. Check your connection and try again."); return; }
+  libEdit = null;
+  libPage = "list";
+  renderLibrary();
+  focusLibrarySearch();
+  await fetchSavedPrompts();
+  if (panelOpen && libPage === "list") renderLibrary();
 }
 
 // ══════════════════════════════════════════════════════════════
