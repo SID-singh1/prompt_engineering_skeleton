@@ -126,6 +126,9 @@ class AnalyticsService:
                 "byok": 1,
                 "input_method": 1,
                 "enhanced": 1,
+                # Set by /enhance/accept when the rewrite went into the chat
+                # box. A timestamp, so "used" is counted without any text.
+                "accepted_at": 1,
             }
             try:
                 logs = list(MongoDB.prompts_col.find(
@@ -150,13 +153,17 @@ class AnalyticsService:
         passive = [x for x in logs if x.get("source") == "passive_tracker"]
         latencies = [float(x.get("latency") or 0) for x in active if x.get("latency") is not None]
 
-        daily = defaultdict(lambda: {"enhancements": 0, "passive_events": 0})
+        daily = defaultdict(lambda: {"enhancements": 0, "accepted": 0, "passive_events": 0})
         modes = Counter()
         platforms = Counter()
         providers = Counter()
         models = Counter()
         input_methods = Counter()
         byok_count = 0
+        accepted_count = 0
+        # Per style: how many rewrites, and how many of them were used. The
+        # rate that says which style earns its keep.
+        by_mode = defaultdict(lambda: {"enhancements": 0, "accepted": 0})
         users = set()
 
         for item in active:
@@ -168,6 +175,11 @@ class AnalyticsService:
             models[item.get("model") or "unknown"] += 1
             input_methods[item.get("input_method") or "text"] += 1
             byok_count += bool(item.get("byok"))
+            used = bool(item.get("accepted_at"))
+            accepted_count += used
+            daily[day]["accepted"] += used
+            by_mode[item.get("mode") or "unknown"]["enhancements"] += 1
+            by_mode[item.get("mode") or "unknown"]["accepted"] += used
             if item.get("user_id"):
                 users.add(item["user_id"])
 
@@ -196,7 +208,7 @@ class AnalyticsService:
 
         for item in failures:
             day = item["timestamp"].date().isoformat() if isinstance(item.get("timestamp"), datetime) else "unknown"
-            daily.setdefault(day, {"enhancements": 0, "passive_events": 0})
+            daily.setdefault(day, {"enhancements": 0, "accepted": 0, "passive_events": 0})
             daily[day]["failures"] = daily[day].get("failures", 0) + 1
 
         voice_transcriptions = 0
@@ -270,6 +282,11 @@ class AnalyticsService:
                 "feedback_down": feedback_down,
                 "feedback_total": feedback_up + feedback_down,
                 "byok_enhancements": byok_count,
+                # Rewrites the user put into the chat box. Only rewrites made
+                # through this server are logged; a rewrite made straight from
+                # the browser with the user's own key is not, so it is not here.
+                "accepted": accepted_count,
+                "acceptance_rate": round(accepted_count / len(active), 3) if active else 0.0,
                 "voice_enhancements": input_methods.get("voice", 0),
                 "voice_transcriptions": voice_transcriptions,
                 "voice_transcription_failures": sum(
@@ -287,6 +304,10 @@ class AnalyticsService:
                 for day in sorted(daily)
             ],
             "breakdowns": {
+                "acceptance_by_mode": {
+                    mode: {**counts, "rate": round(counts["accepted"] / counts["enhancements"], 3)}
+                    for mode, counts in sorted(by_mode.items(), key=lambda kv: -kv[1]["enhancements"])
+                },
                 "modes": dict(modes.most_common()),
                 "platforms": dict(platforms.most_common()),
                 "providers": dict(providers.most_common()),
