@@ -58,6 +58,7 @@
         "https://x.com/i/grok*"
       ],
       "js": [
+        "sites.js",
         "content.js"
       ],
       "css": [
