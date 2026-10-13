@@ -736,6 +736,9 @@ const draftStore = {
 
 const PILL_MARGIN = 16;
 const PILL_HOME_BOTTOM = 24;   // home: the bottom corner on the docked side
+// The narrowest an open pill gets made to fit beside the chat box: its dot,
+// verb and × with a few letters of preview. Narrower than that it steps up.
+const PILL_MIN_OPEN_W = 150;
 let pillDock = "right";        // "left" | "right" — which side the pill snaps to
 let pillBottom = PILL_HOME_BOTTOM; // distance from the viewport bottom, in px
 let pillSuppressClick = false; // a drag just ended; swallow the click it fires
@@ -1207,7 +1210,12 @@ function placePill() {
   // pill, and the pill needs its box to know whether to step aside.
   positionCard();
   if (!panelOpen || composer) {
-    const w = pill.offsetWidth, h = pill.offsetHeight;
+    // Its whole width, whatever an earlier pass capped it to, so what is
+    // decided below follows from the page alone and cannot flap.
+    pill.style.maxWidth = "";
+    pill.classList.remove("pm-pill-word-off");
+    let w = pill.offsetWidth;
+    const h = pill.offsetHeight;
     const at = () => ({
       left: pillDock === "left" ? inset : window.innerWidth - inset - w,
       top: window.innerHeight - bottom - h,
@@ -1223,13 +1231,30 @@ function placePill() {
     };
     // The box as drawn, as the card and the chips use: measured by its
     // editable, the pill came to rest 11px down over the box's frame.
-    const c = composer && pill.classList.contains("pm-pill-open") ? composerFrame(composer) : null;
+    const wide = pill.classList.contains("pm-pill-open") || pill.classList.contains("pm-pill-invite");
+    const c = composer && wide ? composerFrame(composer) : null;
     const cardEl = document.getElementById("pm-card");
     const cb = cardEl ? cardEl.getBoundingClientRect() : null;
-    if (hits(c) || hits(cb)) {
+    // Wider than the corner beside the chat box: stay home, made to fit. A
+    // draft's preview shortens to the room there (its fade still ends it);
+    // "⊕ Improve" drops its word. It used to step up onto the box's corner,
+    // and testers saw the pill wander off whenever a draft arrived.
+    if (hits(c)) {
+      const room = Math.floor(pillDock === "left" ? c.left - 8 - PILL_MARGIN : window.innerWidth - PILL_MARGIN - c.right - 8);
+      if (pill.classList.contains("pm-pill-open")) {
+        if (room >= PILL_MIN_OPEN_W) { pill.style.maxWidth = room + "px"; w = Math.min(w, room); }
+      } else {
+        pill.classList.add("pm-pill-word-off");
+        w = pill.offsetWidth;
+      }
+    }
+    // Only a pill carrying a draft steps aside; an idle one stays where the
+    // user put it, as it always has, its word dropped above if it must.
+    const box = pill.classList.contains("pm-pill-open") ? c : null;
+    if (hits(box) || hits(cb)) {
       bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);
       inset = PILL_MARGIN;
-      if (hits(c)) stepAbove(c, 8);
+      if (hits(box)) stepAbove(box, 8);
       if (hits(cb)) stepAbove(cb, 8);
     }
   }

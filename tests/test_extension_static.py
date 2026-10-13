@@ -1209,7 +1209,7 @@ def test_the_pill_steps_aside_for_the_card_not_the_reverse():
     composer and was squeezed to its minimum height.
     """
     place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
-    assert place.index("positionCard();") < place.index("if (hits(c) || hits(cb)) {"), \
+    assert place.index("positionCard();") < place.index("if (hits(box) || hits(cb)) {"), \
         "the card must be laid out before the pill decides whether to step aside"
     assert "cardEl ? cardEl.getBoundingClientRect() : null" in place
     assert "if (hits(cb)) stepAbove(cb, 8);" in place
@@ -1224,8 +1224,8 @@ def test_a_displaced_pill_goes_home_before_anywhere_new():
     card could grow over while streaming.
     """
     place = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
-    block = place[place.index("if (hits(c) || hits(cb)) {"):]
-    assert block.index("bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);") < block.index("if (hits(c)) stepAbove(c, 8);"), \
+    block = place[place.index("if (hits(box) || hits(cb)) {"):]
+    assert block.index("bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);") < block.index("if (hits(box)) stepAbove(box, 8);"), \
         "the pill must try home before stepping onto the composer or the card"
     assert "let pillBottom = PILL_HOME_BOTTOM;" in CONTENT_JS
 
