@@ -403,6 +403,46 @@ def main():
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
 
+        # ── Undo after Replace ──
+        def pill_text():
+            return ev("document.querySelector('#pm-trigger .pm-pill-label').textContent.trim()")
+
+        def box():
+            return ev("document.getElementById('composer').textContent")
+
+        ev("closeCard(); H.type(H.ORIG); H.stream(); H.done()")
+        ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[0])")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(pill_text() == "Replaced" and page.inner_text("#pm-trigger .pm-pill-insert").strip() == "Undo",
+              f"after Replace the pill says Replaced and offers Undo, got {pill_text()!r}")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_function("document.getElementById('composer').textContent === H.ORIG", timeout=3000)
+        check(box() == ev("H.ORIG"), "Undo puts back exactly what was in the chat box")
+        page.wait_for_selector("#pm-card-accept", timeout=3000)
+        check(ev("cardVersions.length") == 2 and not ev("cardStale"),
+              "and brings the rewrite back on the card, versions and all, fresh against the restored text")
+
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        ev("H.type('I kept typing after the replace')")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_timeout(200)
+        check(box() == "I kept typing after the replace", "Undo never writes over words typed since")
+        check(page.locator("#pm-toast-stack .pm-toast", has_text="changed since").count() == 1, "and says why it did not")
+
+        ev("H.type(''); H.stream(); H.done()")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(pill_text() == "Inserted", f"into an empty box it says Inserted, got {pill_text()!r}")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_function("document.getElementById('composer').textContent.trim() === ''", timeout=3000)
+        check(True, "and Undo empties the box again")
+        ev("closeCard(); clearApplied()")
+
         # ── Save: one press, no form; the bookmark says whether it is saved ──
         ev("H.signIn()")
         load()

@@ -454,7 +454,7 @@ def test_accepting_reports_once_in_the_pill():
     body = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
     assert "applyOrFallback(text, null)" in body, \
         "applyOrFallback is not told to stay quiet when the pill will confirm"
-    assert "showApplied(canRate ? result : null)" in body
+    assert "showApplied(canRate ? result : null, undo)" in body
     apply_body = _function_bodies(CONTENT_JS, r"applyOrFallback")["applyOrFallback"]
     assert "if (successMessage) showToast" in apply_body, \
         "applyOrFallback toasts unconditionally, so accept still fires two"
@@ -1135,6 +1135,22 @@ def test_every_pill_state_carries_one_verb():
     for state in ("stale", "error"):
         assert f'.pm-trigger[data-state="{state}"] .pm-pill-insert' in STYLES_CSS, \
             f"the {state} verb is not coloured for its state"
+
+
+def test_replace_can_be_undone_without_overwriting_new_words():
+    """
+    Replace had no way back, so the card's main button felt risky to press.
+    The pill offers Undo, which writes back exactly what the chat box held and
+    brings the rewrite back on the card, unless the box was edited since.
+    """
+    accept = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
+    assert accept.index("before: getCurrentInputText()") < accept.index("closeCard();"), \
+        "the chat box must be read before the rewrite is written over it"
+    undo = _function_bodies(CONTENT_JS, r"undoReplace")["undoReplace"]
+    assert "norm(getCurrentInputText()) !== norm(u.written)" in undo, "Undo would overwrite words typed since"
+    assert "restoreComposer(u.before)" in undo and "showDiffModal(d.result)" in undo
+    assert "pillApplied?.undo" in _function_bodies(CONTENT_JS, r"pillVerb")["pillVerb"]
+    assert 'verb = "Undo"' in _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
 
 
 def test_insert_does_not_advertise_a_navigation_key():
