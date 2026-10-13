@@ -29,6 +29,8 @@ function closeCard() { actions.push('close'); }
 function redoCard() { actions.push('redo'); }
 function saveCard() { actions.push('save'); }
 function cancelVoice() { actions.push('cancelVoice'); }
+function foldVoice() { actions.push('fold'); }
+let voiceState = 'recording';
 function cancelStreaming() { actions.push('cancel'); }
 function stepVersion(d) { actions.push('step' + d); }
 let cardVersions = [];
@@ -54,7 +56,10 @@ assert(key('s',{metaKey:true,isComposing:true})==='','IME ignored');
 assert(key('s',{metaKey:true,defaultPrevented:true})==='','Handled events ignored');
 blocked=true; assert(key('s',{metaKey:true})==='','Overlay blocks shortcut'); blocked=false;
 open=false;active='pill';assert(key('P',{metaKey:true,shiftKey:true,code:'KeyP'})==='prevent,stop,expand','Reopen minimized');
-voice=true;cardState='idle';assert(key('Escape')==='prevent,stop,cancelVoice','Voice escape retained');voice=false;
+voice=true;cardState='idle';assert(key('Escape')==='prevent,stop,cancelVoice','Voice escape retained');
+// A transcript under review is folded, not thrown away: discarding words is the bin button's job.
+voiceState='reviewing';assert(key('Escape')==='prevent,stop,fold','Escape folds a transcript under review');
+voiceState='recording';voice=false;
 // A streaming rewrite is cancelled through cancelStreaming(), which puts a
 // style rerun back to the version it started from instead of discarding it.
 open=true;active='card';cardState='streaming';assert(key('Escape')==='prevent,stop,cancel','Escape cancels a stream via cancelStreaming');
