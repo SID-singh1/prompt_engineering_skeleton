@@ -79,6 +79,12 @@ const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
 // Mac writes chords as glyphs, Windows and Linux spell them out. CMD_KEY
 // alone renders "Ctrl+⇧E" off-platform, which is neither convention.
 const MOD_SHIFT = IS_MAC ? "⌘⇧" : "Ctrl+Shift+";
+// Voice. It was ⌘⇧V / Ctrl+Shift+V, which is "paste as plain text" in Chrome
+// and most apps, and "paste and match style" on a Mac: taking it broke paste.
+// Space is free in Chrome on every platform and on ChatGPT, Claude and Gemini
+// (Gemini has ⌘⇧K, Claude and ChatGPT ⌘⇧O, S, C and ;), and holding it reads
+// as push to talk. Chrome lets the user change it at chrome://extensions/shortcuts.
+const VOICE_KEY = `${MOD_SHIFT}Space`;
 // The same goes for the keys themselves. ↵ and ⇥ are what a Mac keyboard and
 // its menus print; on Windows the keycap says Enter and Tab, and "Ctrl+↵" was
 // half of each convention.
@@ -104,7 +110,7 @@ const SHORTCUTS = () => [
     where: "Anywhere on the page",
     rows: [
       { keys: [`${MOD_SHIFT}E`], what: "Rewrite what is in the chat box" },
-      { keys: [`${MOD_SHIFT}V`], what: "Start voice input" },
+      { keys: [VOICE_KEY], what: "Start voice input" },
       { keys: [`${MOD_SHIFT}L`], what: "Open the library" },
       { keys: ["?"], what: "Show this list", note: "when you are not typing" },
     ],
@@ -1464,7 +1470,7 @@ function setupKeyboardShortcut() {
     if (e.code === "KeyE") {
       e.preventDefault();
       handleEnhance({ reveal: true });
-    } else if (e.code === "KeyV") {
+    } else if (e.code === "Space") {
       e.preventDefault();
       toggleVoice();
     } else if (e.code === "KeyL") {
@@ -2354,7 +2360,7 @@ function libMenuHtml() {
     `<div class="pm-lib-menu-group"><div class="pm-lib-menu-cap">Rewrite style for ⊕</div>` +
     `<div class="pm-lib-views pm-lib-views-wide" role="group" aria-label="Default rewrite style">${STYLES.map(style).join("")}</div></div>` +
     `<hr>` +
-    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${MOD_SHIFT}V</span></button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${VOICE_KEY}</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="shortcuts">Keyboard shortcuts<span>?</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
@@ -3151,10 +3157,12 @@ for (const type of ["pointerdown", "keydown", "wheel"]) {
   document.addEventListener(type, () => { if (keytipFor || document.getElementById("pm-keytip")?.hidden === false) hideKeytip(); }, { capture: true, passive: true });
 }
 
-/** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too. */
+/** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too,
+ *  and ⌘⇧Space is three as well: each glyph a key, the named key one. */
 function keyCaps(key) {
   if (key.length > 1 && key.includes("+")) return key.split("+").filter(Boolean);
-  if (/^[⌘⇧⌥⌃]/.test(key)) return Array.from(key);
+  const glyphs = /^[⌘⇧⌥⌃]+/.exec(key);
+  if (glyphs) return [...Array.from(glyphs[0]), key.slice(glyphs[0].length)].filter(Boolean);
   return [key];
 }
 
@@ -3184,7 +3192,7 @@ function keyMapHtml(here) {
     // script cannot link to chrome:// — a link there does nothing when
     // clicked. So the address is text they can copy, on its own line: a
     // broken address is one a reader cannot check.
-    `<div class="pm-keys-foot"><p>${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(`${MOD_SHIFT}V`)} are Chrome shortcuts. If another app has taken one, change it here:</p>` +
+    `<div class="pm-keys-foot"><p>${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(VOICE_KEY)} are Chrome shortcuts. If another app has taken one, change it here:</p>` +
     `<div class="pm-kb-urlrow"><code class="pm-kb-url">chrome://extensions/shortcuts</code>` +
     `<button type="button" class="pm-kb-copy" data-act="copyshortcuts">Copy</button></div></div>`;
 }
