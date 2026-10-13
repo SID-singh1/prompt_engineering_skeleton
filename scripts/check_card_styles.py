@@ -403,6 +403,42 @@ def main():
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
 
+        # ── Save: one press, no form; the bookmark says whether it is saved ──
+        ev("H.signIn()")
+        load()
+        ev("H.type(H.ORIG); H.stream(); H.done()")
+        page.wait_for_function("cardState === 'ready' && promptsLoaded", timeout=5000)
+        n0 = ev("FAKE_API.prompts.length")
+        check(page.get_attribute("#pm-card-save", "aria-pressed") == "false", "a new rewrite is not saved")
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        check(page.locator("#pm-save").count() == 0, "saving from the card opens no form")
+        check(ev("FAKE_API.prompts.length") == n0 + 1, "one press saves it, once")
+        check(ev("FAKE_API.prompts[0].content") == ev("H.DRAFT") and ev("FAKE_API.prompts[0].title") == "",
+              "the rewrite on the card is saved, and nothing is named for the user")
+        check(page.get_attribute("#pm-card-save", "aria-label").startswith("Saved"), "the bookmark says it is saved")
+        page.click("#pm-toast-stack .pm-toast-action:has-text('Undo')")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        check(ev("FAKE_API.prompts.length") == n0, "Undo takes it out of the library, and the bookmark empties")
+
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        ev("FAKE_API.prompts.shift(); fetchSavedPrompts().then(() => showDiffModal(cardResult))")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        check(True, "deleted from the library elsewhere, the bookmark empties: the library is the truth")
+
+        ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[1])")
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        ev("stepVersion(-1)")
+        check(page.get_attribute("#pm-card-save", "aria-pressed") == "false", "each version has its own saved state")
+        ev("stepVersion(1)")
+        page.click("#pm-card-save")
+        page.wait_for_function("panelOpen === true", timeout=3000)
+        check(ev("FAKE_API.prompts.filter(p => p.content === FAKE.text.quick).length") == 1,
+              "pressing a filled bookmark shows the prompt in the library, and saves nothing twice")
+        ev("togglePanel(false); closeCard()")
+
         # ── screenshots, dark and light host ──
         if args.shots:
             ev("FAKE.calls = []; H.type(H.ORIG)")
