@@ -5456,21 +5456,16 @@ function showSetupRequiredModal() {
       <button class="pm-header-close pm-modal-close-btn">×</button>
     </div>
     <div class="pm-modal-body">
-      <p class="pm-setup-intro">One step before your first rewrite: choose what does the rewriting. Both are free, and your draft stays as it is.</p>
+      <p class="pm-setup-intro">One step before your first rewrite. Your draft stays as it is.</p>
 
       <div class="pm-setup-option pm-setup-option-primary">
-        <div class="pm-setup-badge">Quickest</div>
         <div class="pm-setup-title">Sign in with Google</div>
-        <div class="pm-setup-desc">15 free rewrites a day, and your saved prompts and History on every computer.</div>
+        <div class="pm-setup-desc">Free: 15 rewrites a day, and your saved prompts and History on every computer.</div>
         <button class="pm-btn pm-btn-primary" id="pm-setup-signin">Continue with Google</button>
       </div>
 
-      <div class="pm-setup-option">
-        <div class="pm-setup-badge">Most private</div>
-        <div class="pm-setup-title">Use your own free key</div>
-        <div class="pm-setup-desc">No account with us: your drafts go straight to the AI provider. Getting a free Groq key takes about a minute.</div>
-        <button class="pm-btn pm-btn-secondary" id="pm-setup-byok">Add a free key</button>
-      </div>
+      <!-- One way in, as on the setup page; a key is for those who ask for it. -->
+      <button type="button" class="pm-setup-alt" id="pm-setup-byok">I have my own API key</button>
     </div>
   `;
 
