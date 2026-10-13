@@ -1858,3 +1858,23 @@ def test_a_draft_pill_is_fitted_beside_the_chat_box_before_it_moves():
     assert "room >= PILL_MIN_OPEN_W" in body
     assert 'const box = pill.classList.contains("pm-pill-open") ? c : null;' in body, "an idle pill never steps"
 
+
+def test_every_site_selector_lives_in_sites_js():
+    """
+    Chat sites change their markup without notice; twice in one week of
+    October 2026 the fix was a selector buried in content.js. Every selector
+    that reads a chat page is in sites.js, loaded first, so the next change is
+    an edit to that one file.
+    """
+    import json
+    scripts = json.loads(MANIFEST)["content_scripts"][0]["js"]
+    assert scripts.index("sites.js") < scripts.index("content.js"), "content.js reads PM_SITES as it loads"
+    assert "const COMPOSER_SELECTORS = PM_SITES.composer;" in CONTENT_JS
+    assert "const SENT_PROMPT_SELECTOR = PM_SITES.sentPrompt;" in CONTENT_JS
+    scrape = _function_bodies(CONTENT_JS, r"scrapeConversation")["scrapeConversation"]
+    assert "PM_SITES.conversation[" in scrape and "hostname ===" not in scrape, "a site's markings crept back into content.js"
+    for marking in ("#prompt-textarea", "data-message-author-role", "query-text", "user-query", "cdk-visually-hidden"):
+        assert marking in SITES_JS, f"{marking} is not in sites.js"
+    for host in ("chatgpt.com", "claude.ai", "gemini.google.com", "grok.com"):
+        assert f'"{host}": Object.freeze({{' in SITES_JS
+
