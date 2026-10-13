@@ -424,9 +424,12 @@ def main():
         type_prompt(ORIG)
         page.click("#pm-trigger")
         wait_title("Rewrite · Deep")
-        summary = page.inner_text("#pm-card-used-toggle").replace("\n", " ")
+        chip = page.inner_text("#pm-card-used-toggle").replace("\n", " ")
+        summary = page.get_attribute("#pm-card-used-toggle", "title")
+        check("Code review template" in chip and "+1" in chip and page.locator("#pm-card .pm-card-head #pm-card-used-toggle").count() == 1,
+              f"the title bar names the first saved prompt used, and how many more, got {chip!r}")
         check("Code review template" in summary and "Bug report triage" in summary,
-              f"the card names the saved prompts it used, got {summary!r}")
+              f"and its tooltip names them all, got {summary!r}")
         check(page.is_hidden("#pm-card-used-list"), "the list starts folded")
         page.click("#pm-card-used-toggle")
         items = [t.replace("\n", " ") for t in page.locator("#pm-card-used-list .pm-card-used-item").all_inner_texts()]
@@ -439,14 +442,14 @@ def main():
         check(len(server["stream"]) == n + 1 and last["mode"] == "deep" and last["prompt"] == ORIG,
               "Don't use rewrites the same text, same style")
         check(last.get("excluded_prompt_ids") == ["s2"], f"and asks the server to leave it out, got {last.get('excluded_prompt_ids')}")
-        check("Bug report triage" not in page.inner_text("#pm-card-used-toggle"), "the new version no longer lists it")
+        check("Bug report triage" not in page.get_attribute("#pm-card-used-toggle", "title"), "the new version no longer lists it")
         check("Left out: Bug report triage" in page.inner_text("#pm-card-used-list"), "and says it was left out")
         page.click("#pm-card-style-quick")
         wait_title("Rewrite · Quick")
         check(server["stream"][-1].get("excluded_prompt_ids") == ["s2"], "a dropped prompt stays dropped in another style")
         page.click("#pm-card-ver-prev")
         page.click("#pm-card-ver-prev")
-        check("Bug report triage" in page.inner_text("#pm-card-used-toggle"), "the first version still shows what it used")
+        check("Bug report triage" in page.get_attribute("#pm-card-used-toggle", "title"), "the first version still shows what it used")
         page.click("#pm-card-discard")
 
         # ── Improve a saved prompt ────────────────────────────────────────
