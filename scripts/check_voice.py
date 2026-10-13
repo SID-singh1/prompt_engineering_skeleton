@@ -100,6 +100,8 @@ def main():
         check(ev("getComputedStyle(document.getElementById('pm-voice')).backdropFilter").find("blur") == -1
               or ev("document.querySelectorAll('.pm-voice-overlay').length") == 0, "and no full-screen blur")
         check(ev("voiceClock(7)") == "0:07" and ev("voiceClock(75)") == "1:15", "the timer reads m:ss")
+        check(ev("keyCaps('⌘⇧Space')") == ["⌘", "⇧", "Space"] and ev("keyCaps('Ctrl+Shift+Space')") == ["Ctrl", "Shift", "Space"],
+              "the voice key is drawn as three keys on each platform, not S p a c e")
         labels = [b.strip() for b in page.locator("#pm-voice .pm-card-dock button").all_inner_texts()]
         check(labels == ["Cancel", "Stop"], f"Cancel and Stop, got {labels}")
         check("pm-btn-primary" not in ev("document.getElementById('pm-voice').innerHTML"), "no gradient buttons")
@@ -123,6 +125,8 @@ def main():
         card, box = rect("#pm-voice"), rect("form")
         check(0 <= box["t"] - card["b"] <= 16, f"the transcript is a card on the chat box: {card} vs {box}")
         check(page.input_value("#pm-voice-transcript") == WORDS, "showing the words, editable")
+        # Focus lands a frame after the card is drawn.
+        page.wait_for_function("document.activeElement?.id === 'pm-voice-transcript'", timeout=2000)
         check(ev("document.activeElement.id") == "pm-voice-transcript", "with the keyboard in them")
         check(page.inner_text("#pm-voice .pm-card-title").strip().upper() == "YOUR WORDS · EN", "named, with the language heard")
         acts = ev("[...document.querySelectorAll('#pm-voice .pm-card-dock button')].map(b => b.textContent.trim() || b.getAttribute('aria-label'))")

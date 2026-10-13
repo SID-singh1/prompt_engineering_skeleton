@@ -1039,7 +1039,7 @@ def keys_on_windows(browser, url):
     page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
     check(page.locator("#pm-keytip kbd").all_inner_texts() == ["Ctrl", "Enter"], "Windows: Insert's tooltip draws Ctrl and Enter")
     page.click("#pm-lib-more")
-    check(page.inner_text(".pm-lib-mi[data-act='voice'] span") == "Ctrl+Shift+V", "Windows: the menu writes Ctrl+Shift+V")
+    check(page.inner_text(".pm-lib-mi[data-act='voice'] span") == "Ctrl+Shift+Space", "Windows: the menu writes Ctrl+Shift+Space")
     page.click("[data-act='shortcuts']")
     page.wait_for_selector("#pm-keys:not([hidden])")
     caps = page.locator("#pm-keys kbd").all_inner_texts()

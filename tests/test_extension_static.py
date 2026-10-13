@@ -1559,7 +1559,7 @@ def test_every_listed_chord_is_one_the_code_answers():
     listed = _shortcuts_block()
     for chord, handler in (
         ("${MOD_SHIFT}E", 'e.code === "KeyE"'),
-        ("${MOD_SHIFT}V", 'e.code === "KeyV"'),
+        ("VOICE_KEY", 'e.code === "Space"'),
         ("${MOD_SHIFT}L", 'e.code === "KeyL"'),
         ("${MOD_SHIFT}P", 'e.code === "KeyP"'),
         ("CMD_ENTER", 'e.key === "Enter"'),
@@ -1809,4 +1809,18 @@ def test_voice_sits_on_the_chat_box_and_esc_never_discards_a_transcript():
     keys = _function_bodies(CONTENT_JS, r"handleCardKeydown")["handleCardKeydown"]
     assert 'if (voiceState === "reviewing") foldVoice(true); else cancelVoice();' in keys
     assert "composerFrame(findComposer())" in _function_bodies(CONTENT_JS, r"positionVoice")["positionVoice"]
+
+
+def test_voice_no_longer_takes_paste_as_plain_text():
+    """Ctrl/⌘+Shift+V is paste as plain text (paste and match style on a Mac).
+    Voice took it, both as the Chrome command and in the page's own listener,
+    which called preventDefault on it."""
+    import json
+    manifest = json.loads(MANIFEST)
+    key = manifest["commands"]["voice-prompt"]["suggested_key"]
+    assert key == {"default": "Ctrl+Shift+Space", "mac": "Command+Shift+Space"}
+    assert 'e.code === "KeyV"' not in CONTENT_JS, "the page still swallows paste as plain text"
+    assert "const VOICE_KEY = `${MOD_SHIFT}Space`;" in CONTENT_JS
+    caps = _function_bodies(CONTENT_JS, r"keyCaps")["keyCaps"]
+    assert "key.slice(glyphs[0].length)" in caps, "⌘⇧Space would be drawn as S p a c e"
 
