@@ -4678,13 +4678,20 @@ function closeCard() {
 }
 
 function cardFoot(parts) {
-  return `<div class="pm-card-foot">${parts.join("")}</div>`;
+  return `<div class="pm-card-foot"><div class="pm-card-dock" role="toolbar" aria-label="Rewrite actions">${parts.filter(Boolean).join("")}</div></div>`;
 }
 
 
 /**
+ * The card's actions, in one dock: a tray sized to what it holds, at the
+ * card's bottom left. On a wide card a row spread edge to edge left Replace
+ * on one side and the icons 600px away on the other; a tray reads as one
+ * control at any width. CARD_SEP divides the kinds of action in it.
+ */
+/**
  * The card's title bar: what this card is, and the one window control it has.
  *
+const CARD_SEP = `<span class="pm-card-sep" aria-hidden="true"></span>`;
  * Minimize, not close. The draft is never lost from here — it folds down into
  * the pill and comes back with a click (or ⌘⇧P). Discard is a footer action,
  * deliberately further from the corner the hand goes to when it wants a
@@ -4912,9 +4919,11 @@ function showDiffModal(result) {
   const saveTip = saved ? "Saved \u00b7 show it in your library" : cardSubject ? "Save as a new prompt" : "Save to your library";
   const actions = [
     lead,
-    cardStyleButtons(result),
-    // One group pushed to the far end, so a narrow card that wraps the row
-    // keeps the three together on the right rather than strewn under Replace.
+    styles && CARD_SEP + styles,
+    CARD_SEP,
+  // Use it │ change it │ keep or drop it. The middle group is absent on a
+  // stale draft and on the original, and its divider goes with it.
+  const styles = cardStyleButtons(result);
     `<span class="pm-card-tools">${truncatedNote}` +
       `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${cardShowingOriginal}">${CARD_COMPARE_SVG}</button>` +
       `<button class="pm-card-act pm-card-icon${saved ? " pm-card-saved" : ""}" id="pm-card-save" aria-pressed="${saved}" aria-label="${saveTip}" data-pm-tip="${saveTip}"${saved ? "" : ` data-pm-key="${CMD_KEY}S"`}>${BOOKMARK_SVG}</button>` +

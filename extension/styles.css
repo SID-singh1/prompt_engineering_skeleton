@@ -1601,15 +1601,19 @@
 .pm-card-free .pm-card-styles { flex: none; }
 
 /* The actions are the card's last line, not a band under it: no rule and no
-   tint. The right edge leaves room for the resize grip in the corner. */
+   tint. They sit in one dock, a tray sized to its contents at the bottom
+   left, so they read as one control however wide the card is. The right
+   edge leaves room for the resize grip in the corner. */
 .pm-card-foot {
     display: flex;
+    padding: 4px 22px 12px 12px;
+}
+.pm-card-dock {
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
     flex-wrap: wrap;
     padding: 2px 22px 12px 15px;
 }
-.pm-card-foot .pm-card-primary { margin-right: 4px; }
 
 .pm-card-act {
     display: inline-flex;
@@ -1649,7 +1653,7 @@
 .pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
 
 /* Original, Save and Discard: icons at the row's end, named on hover. */
-.pm-card-tools { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.pm-card-tools { display: inline-flex; align-items: center; gap: 2px; }
 .pm-card-act.pm-card-icon {
     flex: none;
     display: grid;
