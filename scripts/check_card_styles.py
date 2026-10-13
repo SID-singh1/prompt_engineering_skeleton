@@ -364,31 +364,120 @@ def main():
         check(not tucked(), "a card moved off the chat box by hand does not tuck")
         ev("resetCardLayout(); closeCard()")
 
-        # ── the foot: buttons, not a legend of keys ──
+        # ── the foot: one row of buttons, not a legend of keys ──
+        def foot_names():
+            # A button's words, or for an icon its name.
+            return ev("""[...document.querySelectorAll('#pm-card .pm-card-foot button')]
+                .map(b => b.textContent.trim() || b.getAttribute('aria-label'))""")
+
         ev("FAKE.calls = []; H.type(H.ORIG)")
         page.click("#pm-trigger")
         wait_title("Rewrite · Deep")
-        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
-        check(foot == ["Replace draft", "Save", "Show original", "Discard"], f"the foot is four buttons, got {foot}")
+        foot = foot_names()
+        check(foot == ["Replace draft", "Shorter", "Open-ended", "Show your original", "Save to your library", "Discard this rewrite"],
+              f"the foot is Replace, the other styles, then three named icons, got {foot}")
+        tops = ev("[...document.querySelectorAll('#pm-card .pm-card-foot button')].map(b => Math.round(b.getBoundingClientRect().top + b.offsetHeight / 2))")
+        check(max(tops) - min(tops) <= 2, f"all on one row on a wide card, centres at {tops}")
+        check(ev("getComputedStyle(document.querySelector('#pm-card .pm-card-foot')).borderTopWidth") == "0px"
+              and ev("getComputedStyle(document.querySelector('#pm-card .pm-card-head')).borderBottomWidth") == "0px",
+              "no rule above the foot or under the title: one surface, not three bands")
+        check(page.locator("#pm-card .pm-card-tip button").count() == 0, "the first-run tip is a line, with no × of its own")
         check(page.locator("#pm-card .pm-card-foot .pm-card-key, #pm-card .pm-card-foot kbd").count() == 0, "with no keycaps printed on them")
         check(page.locator("#pm-card-close").count() == 0, "and no second minimize: the head has one")
         bg = ev("getComputedStyle(document.getElementById('pm-card-accept')).backgroundColor")
         check(bg not in ("rgba(0, 0, 0, 0)", "transparent"), f"Replace draft is the one solid button, got {bg}")
         check(ev("getComputedStyle(document.getElementById('pm-card-save')).backgroundColor") in ("rgba(0, 0, 0, 0)", "transparent"),
-              "the rest are outlined")
+              "the rest are quiet")
         page.hover("#pm-card-save")
         page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
         check(page.locator("#pm-keytip kbd").all_inner_texts() == ["⌘", "S"], "Save's key shows where the pointer rests on it")
         page.mouse.move(5, 5)
         ev("H.type('something else entirely')")
         page.wait_for_selector("#pm-card-redo")
-        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
-        check(foot == ["Redo", "Save", "Show original", "Discard"], f"stale, Redo leads in accept's place, got {foot}")
+        foot = foot_names()
+        check(foot == ["Redo", "Show your original", "Save to your library", "Discard this rewrite"],
+              f"stale, Redo leads in accept's place and the styles go, got {foot}")
         check(page.locator("#pm-card-accept").count() == 0, "and the stale rewrite is not offered to use")
         ev("closeCard(); H.type(H.ORIG); H.stream(); H.fail()")
         foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
+
+        # ── Undo after Replace ──
+        def pill_text():
+            return ev("document.querySelector('#pm-trigger .pm-pill-label').textContent.trim()")
+
+        def box():
+            return ev("document.getElementById('composer').textContent")
+
+        ev("closeCard(); H.type(H.ORIG); H.stream(); H.done()")
+        ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[0])")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(pill_text() == "Replaced" and page.inner_text("#pm-trigger .pm-pill-insert").strip() == "Undo",
+              f"after Replace the pill says Replaced and offers Undo, got {pill_text()!r}")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_function("document.getElementById('composer').textContent === H.ORIG", timeout=3000)
+        check(box() == ev("H.ORIG"), "Undo puts back exactly what was in the chat box")
+        page.wait_for_selector("#pm-card-accept", timeout=3000)
+        check(ev("cardVersions.length") == 2 and not ev("cardStale"),
+              "and brings the rewrite back on the card, versions and all, fresh against the restored text")
+
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        ev("H.type('I kept typing after the replace')")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_timeout(200)
+        check(box() == "I kept typing after the replace", "Undo never writes over words typed since")
+        check(page.locator("#pm-toast-stack .pm-toast", has_text="changed since").count() == 1, "and says why it did not")
+
+        ev("H.type(''); H.stream(); H.done()")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", timeout=3000)
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(pill_text() == "Inserted", f"into an empty box it says Inserted, got {pill_text()!r}")
+        page.click("#pm-trigger .pm-pill-insert")
+        page.wait_for_function("document.getElementById('composer').textContent.trim() === ''", timeout=3000)
+        check(True, "and Undo empties the box again")
+        ev("closeCard(); clearApplied()")
+
+        # ── Save: one press, no form; the bookmark says whether it is saved ──
+        ev("H.signIn()")
+        load()
+        ev("H.type(H.ORIG); H.stream(); H.done()")
+        page.wait_for_function("cardState === 'ready' && promptsLoaded", timeout=5000)
+        n0 = ev("FAKE_API.prompts.length")
+        check(page.get_attribute("#pm-card-save", "aria-pressed") == "false", "a new rewrite is not saved")
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        check(page.locator("#pm-save").count() == 0, "saving from the card opens no form")
+        check(ev("FAKE_API.prompts.length") == n0 + 1, "one press saves it, once")
+        check(ev("FAKE_API.prompts[0].content") == ev("H.DRAFT") and ev("FAKE_API.prompts[0].title") == "",
+              "the rewrite on the card is saved, and nothing is named for the user")
+        check(page.get_attribute("#pm-card-save", "aria-label").startswith("Saved"), "the bookmark says it is saved")
+        page.click("#pm-toast-stack .pm-toast-action:has-text('Undo')")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        check(ev("FAKE_API.prompts.length") == n0, "Undo takes it out of the library, and the bookmark empties")
+
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        ev("FAKE_API.prompts.shift(); fetchSavedPrompts().then(() => showDiffModal(cardResult))")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        check(True, "deleted from the library elsewhere, the bookmark empties: the library is the truth")
+
+        ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[1])")
+        page.click("#pm-card-save")
+        page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
+        ev("stepVersion(-1)")
+        check(page.get_attribute("#pm-card-save", "aria-pressed") == "false", "each version has its own saved state")
+        ev("stepVersion(1)")
+        page.click("#pm-card-save")
+        page.wait_for_function("panelOpen === true", timeout=3000)
+        check(ev("FAKE_API.prompts.filter(p => p.content === FAKE.text.quick).length") == 1,
+              "pressing a filled bookmark shows the prompt in the library, and saves nothing twice")
+        ev("togglePanel(false); closeCard()")
 
         # ── screenshots, dark and light host ──
         if args.shots:

@@ -445,6 +445,14 @@
     border-color: rgba(239, 106, 96, 0.34);
 }
 .pm-trigger[data-state="error"] .pm-pill-insert:hover { background: rgba(239, 106, 96, 0.22); }
+/* After a Replace the verb is Undo: a way back, so it is neutral, not the
+   accent that means "use this". */
+.pm-trigger[data-state="applied"] .pm-pill-insert {
+    color: var(--pm-con-text);
+    background: var(--pm-con-elev);
+    border-color: var(--pm-con-border);
+}
+.pm-trigger[data-state="applied"] .pm-pill-insert:hover { background: var(--pm-con-hover); border-color: var(--pm-con-border-hover); }
 
 /* Applied: the rating question lives in the pill for six seconds. It was a
    separate toast beside a pill that had already collapsed — two objects
@@ -1291,16 +1299,16 @@
    The one window control the card has, and the card's name. Minimize, not
    close: from here the draft only ever folds into the pill. It also carries
    the stale and error notices, so the card has one anatomy in every state —
-   head, text, foot — and a notice is read before the text it qualifies. */
+   head, text, foot — and a notice is read before the text it qualifies.
+   No band and no rule under it: the name is the first line of the card, not
+   a box on top of it. The whole line is still the handle the card moves by. */
 .pm-card-head {
     display: flex;
     align-items: center;
     gap: 8px;
     box-sizing: border-box;
     min-height: 34px;
-    padding: 6px 6px 6px 15px;
-    border-bottom: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft);
+    padding: 8px 8px 0 17px;
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -1371,8 +1379,6 @@
 .pm-card-reset:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
 .pm-card-reset:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 
-.pm-card.pm-card-stale .pm-card-head { background: var(--pm-warn-soft); border-bottom-color: var(--pm-warn-border); }
-
 .pm-card-error-note {
     display: block;
     margin-top: 6px;
@@ -1389,7 +1395,7 @@
 }
 
 .pm-card-text {
-    padding: 15px 17px 13px;
+    padding: 8px 17px 12px;
     /* System serif, not a webfont: a content script cannot load
        fonts.googleapis.com through the host page's CSP, and a silent fallback
        is worse than choosing the fallback deliberately. Georgia and Iowan Old
@@ -1459,7 +1465,7 @@
 }
 .pm-card-wide .pm-card-reference-text { color: var(--pm-text-secondary); }
 .pm-card-free .pm-card-head,
-.pm-card-free .pm-card-chip,
+.pm-card-free .pm-card-used-list,
 .pm-card-free .pm-card-foot { flex: none; }
 
 .pm-card-resize {
@@ -1516,61 +1522,33 @@
 
 @keyframes pm-card-blink { 50% { opacity: 0; } }
 
-/* Named only when a saved prompt genuinely shaped the rewrite. The old footer
-   printed "0 selected · 0 auto-matched · 0 from history · 0 conversation msgs"
-   on every result — four zeros reporting that nothing happened. */
-.pm-card-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0 17px 12px;
-    padding: 3px 9px;
-    border-radius: 100px;
-    font-size: 10.5px;
-    letter-spacing: .03em;
-    color: var(--pm-accent);
-    background: var(--pm-accent-soft, rgba(63, 138, 118, .12));
-    border: 1px solid var(--pm-accent-border, rgba(63, 138, 118, .3));
-    max-width: calc(100% - 34px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
 /* ── Other styles, and the versions already made ─────────────────────────
-   Quiet on purpose: the rewrite is what the card is for, and this row is
-   what you reach for only when the rewrite missed. The two buttons are named
+   Quiet on purpose, beside Replace: the rewrite is what the card is for, and
+   these are what you reach for only when the rewrite missed. The two buttons are named
    by what they would change ("Shorter"), not by the style's name. A style
    already made wears the accent dot: switching back to it costs nothing. */
 .pm-card-styles {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    margin: 0 17px 12px;
-}
-.pm-card-styles-try {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px;
 }
 .pm-card-style {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 24px;
+    height: 28px;
     padding: 0 10px;
-    border-radius: 100px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft, rgba(127, 127, 127, .06));
+    border-radius: 7px;
+    border: 0;
+    background: transparent;
     color: var(--pm-text-secondary);
-    font: 500 11px/1 var(--pm-font);
+    font: 500 12px/1 var(--pm-font);
     white-space: nowrap;
     cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
 }
-.pm-card-style:hover { color: var(--pm-text); border-color: var(--pm-accent-border, rgba(63, 138, 118, .3)); }
-.pm-card-style:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+.pm-card-style:hover { color: var(--pm-text); background: var(--pm-bg-hover); }
+.pm-card-style:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 .pm-card-style-made::before {
     content: "";
     width: 5px;
@@ -1580,10 +1558,11 @@
 }
 .pm-card-style[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .pm-card-versions {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    margin-right: auto;
+    cursor: default;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 10.5px;
     color: var(--pm-text-secondary);
@@ -1605,14 +1584,60 @@
 .pm-card-ver:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 .pm-card-free .pm-card-styles { flex: none; }
 
+/* The actions are the card's last line, not a band under it: no rule and no
+   tint. They sit in one dock, a tray sized to its contents at the bottom
+   left, so they read as one control however wide the card is. The right
+   edge leaves room for the resize grip in the corner. */
 .pm-card-foot {
     display: flex;
+    padding: 4px 22px 12px 12px;
+}
+.pm-card-dock {
+    display: inline-flex;
     align-items: center;
-    gap: 8px;
     flex-wrap: wrap;
-    padding: 9px 30px 9px 15px;
-    border-top: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft, rgba(127, 127, 127, .04));
+    gap: 2px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px;
+    border-radius: 14px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-bg-soft);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.pm-card-sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--pm-border); }
+.pm-card-dock .pm-card-meta { padding: 0 8px; }
+
+/* In the dock every control is the same height and corner. */
+.pm-card-dock .pm-card-act.pm-card-btn {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 12.5px;
+}
+.pm-card-dock .pm-card-act.pm-card-btn.pm-card-primary {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 4px 14px rgba(80, 200, 168, .22);
+}
+.pm-card-dock .pm-card-act.pm-card-btn.pm-card-redo {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 4px 14px rgba(212, 160, 106, .22);
+}
+.pm-card-dock .pm-card-style { height: 32px; border-radius: 10px; color: var(--pm-text); font-size: 12.5px; }
+.pm-card-style svg { width: 12px; height: 12px; flex: none; color: var(--pm-accent); }
+/* Made already: the dot (free to switch back) in place of the sparkle (a new rewrite). */
+.pm-card-style-made svg { display: none; }
+.pm-card-dock .pm-card-act.pm-card-icon { width: 32px; height: 32px; border-radius: 10px; color: var(--pm-text-secondary); }
+
+/* A narrow card: Replace and the icons share the first line and the styles
+   take the second, inside the same tray. Left to wrap on its own the dock
+   broke into three ragged lines with dividers dangling at their ends. */
+.pm-card { container-type: inline-size; }
+@container (max-width: 500px) {
+    .pm-card-dock { display: flex; width: 100%; }
+    .pm-card-sep { display: none; }
+    .pm-card-dock .pm-card-tools { order: 1; margin-left: auto; }
+    .pm-card-dock .pm-card-styles { order: 2; width: 100%; margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--pm-border); }
 }
 
 .pm-card-act {
@@ -1651,6 +1676,25 @@
     font-weight: 600;
 }
 .pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
+
+/* Original, Save and Discard: icons at the row's end, named on hover. */
+.pm-card-tools { display: inline-flex; align-items: center; gap: 2px; }
+.pm-card-act.pm-card-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    color: var(--pm-text-muted);
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-card-act.pm-card-icon svg { width: 15px; height: 15px; display: block; }
+.pm-card-act.pm-card-icon:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-act.pm-card-icon[aria-pressed="true"] { color: var(--pm-accent); }
+.pm-card-act.pm-card-icon.pm-card-saved svg path { fill: currentColor; }
+.pm-card-act.pm-card-icon[aria-busy="true"] { opacity: .5; pointer-events: none; }
+.pm-card-act.pm-card-icon.pm-card-discard:hover { color: var(--pm-danger); background: rgba(239, 106, 96, .12); }
 
 .pm-card-spacer { margin-left: auto; }
 
@@ -2944,14 +2988,35 @@
 @media (prefers-reduced-motion: reduce) { .pm-card.pm-card-nudge { animation: none; } }
 
 /* ── Saved prompts that shaped the rewrite (cardUsedHtml) ── */
-.pm-card-used { margin: 0 17px 12px; }
-.pm-card-used > .pm-card-chip { margin: 0; }
-.pm-card-used-toggle { cursor: pointer; font: inherit; font-size: 10.5px; }
-.pm-card-used-toggle:hover { filter: brightness(1.15); }
+/* The chip in the title bar: the first saved prompt used, and how many more.
+   Named only when a saved prompt genuinely shaped the rewrite. The old footer
+   printed "0 selected · 0 auto-matched · 0 from history · 0 conversation msgs"
+   on every result — four zeros reporting that nothing happened. */
+.pm-card-ctx {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 100px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-bg-soft);
+    color: var(--pm-text-secondary);
+    font: 500 11px/1 var(--pm-font);
+    white-space: nowrap;
+    cursor: default;
+}
+.pm-card-ctx-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pm-card-used-toggle { cursor: pointer; }
+.pm-card-used-toggle:hover, .pm-card-used-toggle[aria-expanded="true"] { color: var(--pm-text); background: var(--pm-bg-hover); }
+.pm-card-used-arrow { color: var(--pm-accent); }
 .pm-card-used-toggle:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
 .pm-card-used-caret { transition: transform .15s ease; opacity: .8; }
 .pm-card-used-toggle[aria-expanded="true"] .pm-card-used-caret { transform: rotate(180deg); }
-.pm-card-used-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pm-card-used-list { list-style: none; margin: 0 17px 12px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .pm-card-used-list[hidden] { display: none; }
 .pm-card-used-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; background: var(--pm-bg-hover); }
 .pm-card-used-icon { flex: none; width: 16px; text-align: center; color: var(--pm-accent); font-size: 13px; line-height: 1; }
@@ -3032,19 +3097,15 @@
 }
 .pm-trigger.pm-pill-hint { animation: pm-pill-hint 1.8s ease-out 3; }
 
-/* A one-line tip inside the card, the first time a rewrite is shown. */
+/* A one-line tip inside the card, the first time a rewrite is shown: a line
+   of text over the buttons it explains, not a box inside the card. */
 .pm-card-tip {
-    display: flex; gap: 10px; align-items: flex-start; margin: 0 17px 12px; padding: 9px 10px 9px 12px;
-    border-radius: 10px; background: rgba(80, 200, 168, .08); border: 1px solid rgba(80, 200, 168, .25);
-    color: var(--pm-text-secondary, #b8bcc6); font-size: 12px; line-height: 1.5;
+    margin: 0 17px 8px;
+    color: var(--pm-text-muted, #7c8683);
+    font-size: 11.5px;
+    line-height: 1.5;
 }
-.pm-card-tip b { color: var(--pm-text); font-weight: 600; }
-.pm-card-tip button {
-    all: unset; flex: none; cursor: pointer; width: 20px; height: 20px; border-radius: 5px; display: grid; place-items: center;
-    color: var(--pm-text-muted);
-}
-.pm-card-tip button:hover { background: rgba(255, 255, 255, .07); }
-.pm-card-tip svg { width: 10px; height: 10px; }
+.pm-card-tip b { color: var(--pm-text-secondary); font-weight: 600; }
 @media (prefers-reduced-motion: reduce) {
     .pm-tip { transition: none; }
     .pm-trigger.pm-pill-hint { animation: none; }

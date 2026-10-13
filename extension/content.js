@@ -748,6 +748,15 @@ const PILL_X_SVG =
 const CARD_MIN_SVG =
   '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M2.5 6h7"/></svg>';
+// The card's quiet actions. Show original is two texts trading places;
+// Discard is a bin, not an ×, so it is never mistaken for closing the card.
+// The mark for "rewrite again", on the style buttons: the same sparkle as Improve.
+const CARD_SPARK_SVG =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M6.5 3Q7 8.5 12.5 9 7 9.5 6.5 15 6 9.5.5 9 6 8.5 6.5 3Z"/>' +
+  '<path d="M12.5 1q.2 2.3 2.5 2.5-2.3.2-2.5 2.5-.2-2.3-2.5-2.5 2.3-.2 2.5-2.5Z" opacity=".75"/></svg>';
+const CARD_COMPARE_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13"/></svg>';
+const CARD_DISCARD_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M6.5 4.5V2.8h3v1.7M4 4.5l.7 8.7h6.6l.7-8.7"/></svg>';
 const PILL_THUMB_SVG = (down) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${down ? ' style="transform:scale(-1)"' : ""}>` +
   '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
@@ -937,6 +946,7 @@ async function insertDraft() {
  * one, Retry a failed one. Whatever the state, the chip is the way out of it.
  */
 function pillVerb() {
+  if (pillApplied?.undo) { undoReplace(); return; }
   if (cardState === "ready" && !cardStale) insertDraft();
   else if (cardState === "ready" && cardStale) redoCard();
   else if (cardState === "error") { closeCard(); handleEnhance(); }
@@ -960,10 +970,49 @@ function composerHasFocus() {
  * `result` is null when there is no log_id to rate against, in which case the
  * pill only confirms.
  */
-function showApplied(result) {
+function showApplied(result, undo = null) {
   clearTimeout(pillApplied?.timer);
-  pillApplied = { result, thanked: false, timer: setTimeout(clearApplied, 6000) };
+  pillApplied = { result, undo, thanked: false, timer: setTimeout(clearApplied, undo ? 8000 : 6000) };
   renderPill();
+}
+
+/**
+ * Undo a Replace: write back exactly what the chat box held, and bring the
+ * rewrite back on the card, versions and all, so another version can be
+ * picked. Refused if the box has been edited since, because writing over the
+ * user's new words is the one thing an Undo must not do.
+ */
+async function undoReplace() {
+  const u = pillApplied?.undo;
+  if (!u) return;
+  clearApplied();
+  if (norm(getCurrentInputText()) !== norm(u.written)) {
+    showToast("The chat box has changed since, so Undo would overwrite it.", "error");
+    return;
+  }
+  if (!(await restoreComposer(u.before))) {
+    showToast(`Couldn\u2019t put your text back. Press ${CMD_KEY}Z in the chat box.`, "error");
+    return;
+  }
+  if (cardState !== "idle") return;   // a new draft started meanwhile; leave it be
+  const d = u.draft;
+  cardOriginal = d.original;
+  cardBasedOn = d.basedOn;
+  cardHasBaseline = true;
+  cardVersions = d.versions;
+  cardShowingOriginal = false;
+  showDiffModal(d.result);
+}
+
+/** Put the chat box back to `text`, which may be empty. */
+async function restoreComposer(text) {
+  if (norm(text)) return applyToInput(text);
+  const el = findComposer();
+  if (!el) return false;
+  if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return applyToInput("");
+  await clearComposer(el);
+  await nextFrame();
+  return !norm(getCurrentInputText());
 }
 
 function clearApplied() {
@@ -1026,7 +1075,10 @@ function renderPill() {
     }
   } else if (pillApplied) {
     state = "applied";
-    label = pillApplied.thanked ? "Thanks" : "Inserted";
+    const replaced = pillApplied.undo && norm(pillApplied.undo.before);
+    label = pillApplied.thanked ? "Thanks" : replaced ? "Replaced" : "Inserted";
+    // Undo is the verb while it can still be used.
+    if (pillApplied.undo && !pillApplied.thanked) verb = "Undo";
   }
 
   const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
@@ -1048,6 +1100,7 @@ function renderPill() {
       Replace: "Replace the chat box text with the rewrite",
       Redo: "Rewrite what is in the chat box now",
       Retry: "Try the rewrite again",
+      Undo: "Put back what was in the chat box",
     }[verb];
   }
   pill.querySelector(".pm-pill-rate").hidden = !(state === "applied" && pillApplied.result && !pillApplied.thanked);
@@ -2499,11 +2552,12 @@ window.addEventListener("scroll", (e) => {
 }, true);
 
 async function undoSave(id) {
-  if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return; }
+  if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return false; }
   if (selectedIds.has(id)) toggleAttachment({ id });
   await fetchSavedPrompts();
   if (panelOpen) renderLibrary();
   showToast("Removed from your library", "info");
+  return true;
 }
 
 /** Open the library on a prompt that is already there. */
@@ -4341,6 +4395,21 @@ function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
  */
 const CARD_MAX_SHARE = 0.45;   // of the window's height, for a card on the chat box
 
+/**
+ * Name the Original toggle for the layout. Side by side (a card dragged out
+ * wide) both texts are on screen, so it picks which one Replace uses; in the
+ * sheet it switches which one is shown. It is an icon, so the name is its
+ * label and its tooltip.
+ */
+function labelCardToggle(card, wide) {
+  const toggle = card.querySelector("#pm-card-toggle");
+  if (!toggle) return;
+  const label = `${wide ? "Use" : "Show"} ${cardShowingOriginal ? "the rewrite" : cardSubject ? "the saved prompt" : "your original"}`;
+  if (toggle.getAttribute("aria-label") === label) return;
+  toggle.setAttribute("aria-label", label);
+  toggle.dataset.pmTip = label;
+}
+
 function positionCard() {
   const card = document.getElementById("pm-card");
   const pill = document.getElementById("pm-trigger");
@@ -4363,9 +4432,7 @@ function positionCard() {
     card.classList.add("pm-card-free");
     const wide = width >= 900 && cardState === "ready";
     card.classList.toggle("pm-card-wide", wide);
-    const selection = card.querySelector("#pm-card-toggle");
-    const selectionLabel = `${wide ? "Select" : "Show"} ${cardShowingOriginal ? "rewrite" : "original"}`;
-    if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
+    labelCardToggle(card, wide);
     card.classList.remove("pm-card-below");
     card.dataset.anchor = "free";
     card.style.width = width + "px";
@@ -4378,9 +4445,7 @@ function positionCard() {
 
   card.classList.remove("pm-card-free");
   card.classList.remove("pm-card-wide");
-  const selection = card.querySelector("#pm-card-toggle");
-  const selectionLabel = `Show ${cardShowingOriginal ? "rewrite" : "original"}`;
-  if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
+  labelCardToggle(card, false);
   card.style.height = "";
 
   // A sheet on the composer: as wide as the box (capped), right-aligned to
@@ -4661,9 +4726,16 @@ function closeCard() {
   renderPill();
 }
 
+/**
+ * The card's actions, in one dock: a tray sized to what it holds, at the
+ * card's bottom left. On a wide card a row spread edge to edge left Replace
+ * on one side and the icons 600px away on the other; a tray reads as one
+ * control at any width. CARD_SEP divides the kinds of action in it.
+ */
 function cardFoot(parts) {
-  return `<div class="pm-card-foot">${parts.join("")}</div>`;
+  return `<div class="pm-card-foot"><div class="pm-card-dock" role="toolbar" aria-label="Rewrite actions">${parts.filter(Boolean).join("")}</div></div>`;
 }
+const CARD_SEP = `<span class="pm-card-sep" aria-hidden="true"></span>`;
 
 
 /**
@@ -4673,12 +4745,14 @@ function cardFoot(parts) {
  * the pill and comes back with a click (or ⌘⇧P). Discard is a footer action,
  * deliberately further from the corner the hand goes to when it wants a
  * window out of the way. The bar also carries the stale and error notices, so
- * the card has the same anatomy in every state: head, text, foot.
+ * the card has the same anatomy in every state: head, text, foot. `extra`
+ * goes between the name and the controls: the version stepper, when there is
+ * more than one version to step through.
  */
-function cardHead(title, kind = "") {
+function cardHead(title, kind = "", extra = "") {
   return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}" title="Drag to move">` +
     `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
-    `<span class="pm-card-title">${title}</span>` +
+    `<span class="pm-card-title">${title}</span>` + extra +
     `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
     `<button class="pm-card-min" type="button" id="pm-card-min" data-pm-tip="Minimize to the pill" data-pm-key="Esc" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
   `</div>`;
@@ -4852,30 +4926,35 @@ function showDiffModal(result) {
   // The wording follows the toggle. Under \, the body IS the earlier text, so
   // calling it "a rewrite for the earlier text" would be pointing at the wrong
   // thing — the user would look for a staleness that is not on screen.
+  // Which saved prompts shaped this rewrite: named in a chip in the title
+  // bar, and listed under the text when the chip is opened, each with a way to
+  // drop an auto-matched one and rewrite again without it. Only shown when a
+  // saved prompt actually took part.
+  const used = cardUsedParts(result);
   const head = cardStale
     ? cardHead(cardShowingOriginal
         ? "Prompt changed \u2014 this is the text the rewrite was built from"
         : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
     : cardHead(cardShowingOriginal
         ? (cardSubject ? "Saved prompt, as it is" : "Original")
-        : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
+        : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`,
+      "", used.chip + cardVersionsHtml());
 
-  // Which saved prompts shaped this rewrite, each one named, with a way to
-  // drop an auto-matched one and rewrite again without it. Only shown when a
-  // saved prompt actually took part.
-  const chip = cardUsedHtml(result);
 
   // Only when it matters: how long the rewrite took was a number nobody acted on.
   const truncatedNote = result.truncated
-    ? `<span class="pm-card-meta" style="color:var(--pm-danger)">cut short</span>`
+    ? `<span class="pm-card-meta" style="color:var(--pm-danger);margin-right:6px">cut short</span>`
     : "";
 
-  // Buttons, not a legend of keys. The foot read "Replace draft · esc
+  // Buttons, not a legend of keys. The foot once read "Replace draft · esc
   // minimize · Show original · ⌘S save · discard · 1.05s": a keycap on every
-  // action, a minimize the head already has, and the one thing most people
-  // came to do drawn as coloured text. It is now the one solid button, the
-  // rest plain, discard quiet at the far end. The keys still work, and each
-  // button that has one shows it when the pointer rests on it.
+  // action, and the one thing most people came to do drawn as coloured text.
+  //
+  // Then it was a band of its own under a row of style buttons, and the card
+  // read as boxes stacked under the text. Now there is one row: Replace, the
+  // other styles beside it, and at the far end three quiet icons, Original,
+  // Save and Discard, whose names and keys show where the pointer rests.
+  // Discard stays last, furthest from Replace.
   //
   // Stale, Redo takes accept's place: using a rewrite of text the user has
   // since changed is the one thing the card must not offer first.
@@ -4886,13 +4965,20 @@ function showDiffModal(result) {
     ? `<button class="pm-card-act pm-card-btn pm-card-primary pm-card-redo" id="pm-card-redo" data-pm-tip="Rewrite what is in the chat box now" data-pm-key="${CMD_ENTER}">Redo</button>`
     : `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
+  const saved = Boolean(cardSavedId(result));
+  const saveTip = saved ? "Saved \u00b7 show it in your library" : cardSubject ? "Save as a new prompt" : "Save to your library";
+  // Use it │ change it │ keep or drop it. The middle group is absent on a
+  // stale draft and on the original, and its divider goes with it.
+  const styles = cardStyleButtons(result);
   const actions = [
     lead,
-    `<button class="pm-card-act pm-card-btn" id="pm-card-save" data-pm-tip="Save it to your library" data-pm-key="${CMD_KEY}S">${cardSubject ? "Save as new" : "Save"}</button>`,
-    `<button class="pm-card-act pm-card-btn" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
-    `<span class="pm-card-spacer"></span>`,
-    truncatedNote,
-    `<button class="pm-card-act pm-card-discard" id="pm-card-discard">Discard</button>`,
+    styles && CARD_SEP + styles,
+    CARD_SEP,
+    `<span class="pm-card-tools">${truncatedNote}` +
+      `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${cardShowingOriginal}">${CARD_COMPARE_SVG}</button>` +
+      `<button class="pm-card-act pm-card-icon${saved ? " pm-card-saved" : ""}" id="pm-card-save" aria-pressed="${saved}" aria-label="${saveTip}" data-pm-tip="${saveTip}"${saved ? "" : ` data-pm-key="${CMD_KEY}S"`}>${BOOKMARK_SVG}</button>` +
+      `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-card-discard" aria-label="Discard this rewrite" data-pm-tip="Discard this rewrite">${CARD_DISCARD_SVG}</button>` +
+    `</span>`,
   ];
 
   // Where the user had scrolled to in the rewrite. A staleness flip rebuilds
@@ -4906,7 +4992,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + cardTipHtml() + chip + cardStyleRow(result) + cardFoot(actions));
+  const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -4929,11 +5015,6 @@ function showDiffModal(result) {
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
-  document.getElementById("pm-card-tip-x")?.addEventListener("click", () => {
-    tipDone("card");
-    document.getElementById("pm-card-tip")?.remove();
-    positionCard();
-  });
   document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
     cardUsedOpen = !cardUsedOpen;
     e.currentTarget.setAttribute("aria-expanded", String(cardUsedOpen));
@@ -4950,9 +5031,16 @@ function showDiffModal(result) {
  * The saved prompts that shaped a rewrite: the ones the user attached, and
  * the ones the server matched on its own. A matched one can be dropped, which
  * rewrites the same text again without it (a new version; the old one stays).
+ *
+ * Two parts. `chip` goes in the title bar: the first name and how many more,
+ * with all of them in its tooltip. `list` goes under the text, folded until the
+ * chip is pressed. It was a line between the text and the actions, where it
+ * sat on the text's fade and crowded the buttons. Neither is shown on the
+ * original, or on a stale draft, whose title bar has a notice to give.
  */
-function cardUsedHtml(result) {
-  if (cardShowingOriginal) return "";
+function cardUsedParts(result) {
+  const none = { chip: "", list: "" };
+  if (cardShowingOriginal || cardStale) return none;
   const d = result.context_details || {};
   const items = [
     ...(d.selected_prompts || []).map((p) => ({ ...p, kind: "attached" })),
@@ -4962,15 +5050,15 @@ function cardUsedHtml(result) {
   if (!items.length && !left.length) {
     // A server that sends counts only.
     const n = (result.context_used?.auto_matched || 0) + (result.context_used?.selected || 0);
-    return n ? `<div class="pm-card-chip">\u21B3 ${n} saved prompt${n > 1 ? "s" : ""} used</div>` : "";
+    return n ? { chip: `<span class="pm-card-ctx" title="Saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${n} used</span>`, list: "" } : none;
   }
   const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
   const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
   const name = (p) => flat(p.title) || clip(flat(p.content), 40) || "Saved prompt";
   const summary = items.length
-    ? "Used " + items.slice(0, 2).map((p) => escHtml(clip(name(p), 26))).join(" \u00b7 ") +
-      (items.length > 2 ? ` +${items.length - 2}` : "")
-    : "No saved prompts used";
+    ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
+    : "None used";
+  const all = items.length ? "Used: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used";
   const rows = items.map((p) => {
     const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
@@ -4986,23 +5074,29 @@ function cardUsedHtml(result) {
   const leftOut = left.length
     ? `<li class="pm-card-used-left">Left out: ${left.map((x) => escHtml(clip(flat(x.title) || "a saved prompt", 40))).join(", ")}</li>`
     : "";
-  return `<div class="pm-card-used">` +
-    `<button type="button" class="pm-card-chip pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
-    `aria-controls="pm-card-used-list" title="The saved prompts this rewrite drew on">\u21B3 ${summary}` +
-    `<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>` +
-    `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul></div>`;
+  return {
+    chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
+      `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
+      `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
+    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul>`,
+  };
 }
 
 /**
- * The other two styles, and a way back through the versions already made.
+ * The other two styles, as buttons in the card's one row of actions. (The
+ * versions already made are stepped through in the title bar.)
+ *
+ * They had a row of their own between the text and the foot, which made the
+ * card three bands of controls under the text. Beside Replace they read as
+ * what they are: other things to do with this rewrite.
  *
  * Hidden while the original is showing (there is no rewrite to vary) and while
  * the draft is stale (Redo is the only honest action then). A style already
  * made is shown rather than re-requested: switching back to it is free, and
  * spending one of fifteen daily rewrites on text you have already seen is the
- * thing this row must never do.
+ * thing these buttons must never do.
  */
-function cardStyleRow(result) {
+function cardStyleButtons(result) {
   if (cardShowingOriginal || cardStale) return "";
   const on = STYLES.includes(result.mode) ? result.mode : currentMode;
   const left = result.direct ? Infinity : usageData.limit - usageData.count;
@@ -5017,17 +5111,24 @@ function cardStyleRow(result) {
         ? "No rewrites left today"
         : `Rewrite your original again in the ${STYLE_NAMES[s]} style: ${STYLE_HINTS[s]}. ${cost}`;
     return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
-      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
+      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${CARD_SPARK_SVG}${STYLE_VERBS[on][s]}${note}</button>`;
   }).join("");
+  return `<span class="pm-card-styles" role="group" aria-label="Other styles">${styles}</span>`;
+}
+
+/**
+ * The way back through the versions already made, for the title bar: it says
+ * which rewrite the card is showing, so it sits beside the card's name.
+ * Hidden on the original, and on a stale draft, whose bar has a notice to give.
+ */
+function cardVersionsHtml() {
   const n = cardVersions.length;
-  const versions = n > 1
-    ? `<span class="pm-card-versions" role="group" aria-label="Versions">` +
-      `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
-      `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
-      `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
-      `</span>`
-    : "";
-  return `<div class="pm-card-styles">${versions}<span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+  if (n < 2 || cardShowingOriginal || cardStale) return "";
+  return `<span class="pm-card-versions" role="group" aria-label="Versions">` +
+    `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
+    `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
+    `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
+    `</span>`;
 }
 
 /** Show another version of this draft. Free: nothing is requested. */
@@ -5150,6 +5251,13 @@ async function acceptCard() {
   const applyingEnhanced = !cardShowingOriginal;
   const text = applyingEnhanced ? cardResult.enhanced : (cardResult.original || cardOriginal);
   const result = cardResult;
+  // What Undo needs: the chat box exactly as it was, and the draft, so the
+  // rewrite comes back on the card rather than being lost with the old text.
+  const undo = {
+    before: getCurrentInputText(),
+    written: text,
+    draft: { result, versions: cardVersions.slice(), basedOn: cardBasedOn, original: cardOriginal },
+  };
   closeCard();
 
   // One event, one toast. The feedback toast carries the confirmation itself,
@@ -5161,7 +5269,7 @@ async function acceptCard() {
   // The pill says "Inserted" and, when there is a log_id to rate against,
   // asks how it was — in the object the user was already looking at, rather
   // than a toast beside a pill that had just collapsed.
-  if (applied) showApplied(canRate ? result : null);
+  if (applied) showApplied(canRate ? result : null, undo);
   if (applied) {
     tipDone("card");
     statsBump("inserts");
@@ -5203,18 +5311,75 @@ async function acceptImprovement() {
   });
 }
 
-/** ⌘S or Save on the card: the save form, on the card. */
-function saveCard() {
-  if (!cardResult) return;
-  const card = document.getElementById("pm-card");
-  openSaveForm({
-    text: cardResult.enhanced,
-    // An improved saved prompt is saved as a new one beside the original, and
-    // its name says which it came from.
-    title: cardSubject ? `${cardSubject.title} (improved)` : "",
-    anchor: card?.getBoundingClientRect(),
-    successMessage: cardSubject ? "Saved as a new prompt; the original is unchanged" : "",
-  });
+// Rewrites saved from the card whose save the library list has not caught up
+// with yet: the text, and the saved prompt's id. The list is the truth once it
+// arrives, so a prompt deleted from the library un-fills the bookmark.
+const cardSavePending = new Map();
+let cardSaving = false;
+
+/** The saved prompt holding this rewrite's text, if there is one. */
+function cardSavedId(result) {
+  const text = norm(result?.enhanced);
+  if (!text) return null;
+  return savedPrompts.find((p) => norm(p.content) === text)?.id || cardSavePending.get(text) || null;
+}
+
+/** Draw the card again if it is still showing this rewrite, finished. */
+function redrawCardFor(result) {
+  if (cardResult === result && cardExpanded && cardState === "ready") showDiffModal(result);
+}
+
+/**
+ * ⌘S or the bookmark on the card: saved in one press, no form.
+ *
+ * The form asks for a name and tags, which suits the library and is too much
+ * on the card, where the rewrite is still being judged. From here the text is
+ * saved alone. An unnamed prompt shows its own words in the library, so
+ * nothing is named for the user, and a name can be given there later. The
+ * bookmark fills in; pressing it again shows the prompt in the library. An
+ * improved saved prompt is saved beside the original, under its name.
+ */
+async function saveCard() {
+  const result = cardResult;
+  const text = String(result?.enhanced || "").trim();
+  if (!text || cardSaving) return;
+  if (cardSavedId(result)) { showInLibrary(text); return; }
+  const auth = await getAuth();
+  if (!auth || isTokenExpired(auth.token)) {
+    showToast("Sign in to save prompts to your library.", "info", { label: "Sign in", run: () => openSettings() });
+    return;
+  }
+  if (!(await ensureDataConsent())) return;
+  const subject = cardSubject;
+  cardSaving = true;
+  document.getElementById("pm-card-save")?.setAttribute("aria-busy", "true");
+  const outcome = await createSavedPrompt(text, subject ? `${subject.title} (improved)` : "", []);
+  cardSaving = false;
+  document.getElementById("pm-card-save")?.removeAttribute("aria-busy");
+  if (outcome === "failed") {
+    showToast("Could not save. Check your connection and try again.", "error");
+    return;
+  }
+  const id = lastSavedPromptId;
+  if (id) cardSavePending.set(norm(text), id);
+  redrawCardFor(result);
+  if (outcome === "duplicate") {
+    // Nothing was written, so nothing is refetched; the user is shown where it is.
+    showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(text) });
+    return;
+  }
+  statsBump("saves");
+  tipDone("save");
+  showToast(subject ? "Saved as a new prompt; the original is unchanged" : "Saved to your library", "success",
+    id ? { label: "Undo", run: () => undoCardSave(result, id) } : null);
+  await fetchSavedPrompts();
+  cardSavePending.delete(norm(text));
+  if (panelOpen) renderLibrary();
+}
+
+async function undoCardSave(result, id) {
+  cardSavePending.delete(norm(result.enhanced));
+  if (await undoSave(id)) redrawCardFor(result);
 }
 
 // ── Keymap ──
@@ -6708,12 +6873,18 @@ function tipsOnComposerChanged() {
   if (!activeTip) maybeTipSlash();
 }
 
-/** Tip 2 (inside the card): the markup, or "" once it has done its job. */
+/**
+ * Tip 2 (inside the card): the markup, or "" once it has done its job.
+ *
+ * One quiet line over the buttons it explains. It was a bordered box with its
+ * own ×, a box inside the card, read as one more thing to deal with before
+ * the rewrite. It goes for good after the first Replace or the first style
+ * tried, so it needs no × of its own.
+ */
 function cardTipHtml() {
   if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
-  return `<div class="pm-card-tip" id="pm-card-tip"><span><b>Replace draft</b> puts this in your chat box. Not quite right? ` +
-    `The buttons below make another version, and every version is kept.</span>` +
-    `<button type="button" id="pm-card-tip-x" aria-label="Dismiss this tip" title="Dismiss">${TIP_X_SVG}</button></div>`;
+  return `<div class="pm-card-tip" id="pm-card-tip"><b>Replace draft</b> puts this in your chat box. ` +
+    `Not quite right? Try another style; every version is kept.</div>`;
 }
 
 /** Tip 3: after the first Replace, how to keep a prompt that worked. */

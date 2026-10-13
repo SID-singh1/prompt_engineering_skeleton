@@ -454,7 +454,7 @@ def test_accepting_reports_once_in_the_pill():
     body = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
     assert "applyOrFallback(text, null)" in body, \
         "applyOrFallback is not told to stay quiet when the pill will confirm"
-    assert "showApplied(canRate ? result : null)" in body
+    assert "showApplied(canRate ? result : null, undo)" in body
     apply_body = _function_bodies(CONTENT_JS, r"applyOrFallback")["applyOrFallback"]
     assert "if (successMessage) showToast" in apply_body, \
         "applyOrFallback toasts unconditionally, so accept still fires two"
@@ -888,13 +888,35 @@ def test_a_duplicate_save_from_the_library_is_not_reported_as_a_save():
 
 
 def test_every_route_to_saving_goes_through_the_form():
-    """The card, the Save row and History all used to write at once, unnamed."""
-    for fn in ("saveCard", "libSaveText"):
+    """
+    The card, the Save row and History all used to write at once, each named
+    after its first sentence, so the library filled with names nobody gave.
+    The library's routes open the form. The card is the one exception (see
+    the next test).
+    """
+    for fn in ("libSaveText",):
         body = _function_bodies(CONTENT_JS, fn)[fn]
         assert "openSaveForm(" in body and "createSavedPrompt(" not in body, f"{fn} saves without the form"
     submit = _function_bodies(CONTENT_JS, r"submitSaveForm")["submitSaveForm"]
     assert "createSavedPrompt(" in submit
     assert 'label: "Undo"' in submit, "a save can be taken back from its toast"
+
+
+def test_the_card_saves_in_one_press_unnamed_and_undoably():
+    """
+    On the card the form was one step too many while the rewrite is still
+    being judged, so the bookmark saves at once. It must not name the prompt
+    for the user (the reason the form exists), it can be undone, a duplicate
+    says so without refetching, and the bookmark's state comes from the library.
+    """
+    body = _function_bodies(CONTENT_JS, r"saveCard")["saveCard"]
+    assert "openSaveForm(" not in body and "createSavedPrompt(text," in body
+    assert 'subject ? `${subject.title} (improved)` : ""' in body, "an ordinary rewrite is saved unnamed"
+    assert 'label: "Undo"' in body
+    dup = body[body.index('if (outcome === "duplicate")'):body.index("statsBump(")]
+    assert "Already in your library" in dup and "fetchSavedPrompts" not in dup and "return;" in dup
+    saved = _function_bodies(CONTENT_JS, r"cardSavedId")["cardSavedId"]
+    assert "savedPrompts.find(" in saved, "the library list decides whether the bookmark is filled"
 
 
 # ── the pill: the draft outlives the composer ─────────────────────────────
@@ -1113,6 +1135,22 @@ def test_every_pill_state_carries_one_verb():
     for state in ("stale", "error"):
         assert f'.pm-trigger[data-state="{state}"] .pm-pill-insert' in STYLES_CSS, \
             f"the {state} verb is not coloured for its state"
+
+
+def test_replace_can_be_undone_without_overwriting_new_words():
+    """
+    Replace had no way back, so the card's main button felt risky to press.
+    The pill offers Undo, which writes back exactly what the chat box held and
+    brings the rewrite back on the card, unless the box was edited since.
+    """
+    accept = _function_bodies(CONTENT_JS, r"acceptCard")["acceptCard"]
+    assert accept.index("before: getCurrentInputText()") < accept.index("closeCard();"), \
+        "the chat box must be read before the rewrite is written over it"
+    undo = _function_bodies(CONTENT_JS, r"undoReplace")["undoReplace"]
+    assert "norm(getCurrentInputText()) !== norm(u.written)" in undo, "Undo would overwrite words typed since"
+    assert "restoreComposer(u.before)" in undo and "showDiffModal(d.result)" in undo
+    assert "pillApplied?.undo" in _function_bodies(CONTENT_JS, r"pillVerb")["pillVerb"]
+    assert 'verb = "Undo"' in _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
 
 
 def test_insert_does_not_advertise_a_navigation_key():
@@ -1360,7 +1398,7 @@ def test_the_card_keeps_the_names_of_the_saved_prompts_it_used():
     which saved prompts shaped a rewrite."""
     body = _function_bodies(CONTENT_JS, r"runBackendEnhance")["runBackendEnhance"]
     assert "context_details: metadata.context_details" in body
-    used = _function_bodies(CONTENT_JS, r"cardUsedHtml")["cardUsedHtml"]
+    used = _function_bodies(CONTENT_JS, r"cardUsedParts")["cardUsedParts"]
     assert "selected_prompts" in used and "auto_matched_prompts" in used and "data-pm-drop" in used
 
 
