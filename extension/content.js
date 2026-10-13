@@ -4908,7 +4908,8 @@ function showDiffModal(result) {
     ? `<button class="pm-card-act pm-card-btn pm-card-primary pm-card-redo" id="pm-card-redo" data-pm-tip="Rewrite what is in the chat box now" data-pm-key="${CMD_ENTER}">Redo</button>`
     : `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
-  const saveTip = cardSubject ? "Save as a new prompt" : "Save to your library";
+  const saved = Boolean(cardSavedId(result));
+  const saveTip = saved ? "Saved \u00b7 show it in your library" : cardSubject ? "Save as a new prompt" : "Save to your library";
   const actions = [
     lead,
     cardStyleButtons(result),
@@ -4916,7 +4917,7 @@ function showDiffModal(result) {
     // keeps the three together on the right rather than strewn under Replace.
     `<span class="pm-card-tools">${truncatedNote}` +
       `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${cardShowingOriginal}">${CARD_COMPARE_SVG}</button>` +
-      `<button class="pm-card-act pm-card-icon" id="pm-card-save" aria-label="${saveTip}" data-pm-tip="${saveTip}" data-pm-key="${CMD_KEY}S">${BOOKMARK_SVG}</button>` +
+      `<button class="pm-card-act pm-card-icon${saved ? " pm-card-saved" : ""}" id="pm-card-save" aria-pressed="${saved}" aria-label="${saveTip}" data-pm-tip="${saveTip}"${saved ? "" : ` data-pm-key="${CMD_KEY}S"`}>${BOOKMARK_SVG}</button>` +
       `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-card-discard" aria-label="Discard this rewrite" data-pm-tip="Discard this rewrite">${CARD_DISCARD_SVG}</button>` +
     `</span>`,
   ];
@@ -5236,18 +5237,74 @@ async function acceptImprovement() {
   });
 }
 
-/** ⌘S or Save on the card: the save form, on the card. */
-function saveCard() {
-  if (!cardResult) return;
-  const card = document.getElementById("pm-card");
-  openSaveForm({
-    text: cardResult.enhanced,
-    // An improved saved prompt is saved as a new one beside the original, and
-    // its name says which it came from.
-    title: cardSubject ? `${cardSubject.title} (improved)` : "",
-    anchor: card?.getBoundingClientRect(),
-    successMessage: cardSubject ? "Saved as a new prompt; the original is unchanged" : "",
-  });
+// Rewrites saved from the card whose save the library list has not caught up
+// with yet: the text, and the saved prompt's id. The list is the truth once it
+// arrives, so a prompt deleted from the library un-fills the bookmark.
+const cardSavePending = new Map();
+let cardSaving = false;
+
+/** The saved prompt holding this rewrite's text, if there is one. */
+function cardSavedId(result) {
+  const text = norm(result?.enhanced);
+  if (!text) return null;
+  return savedPrompts.find((p) => norm(p.content) === text)?.id || cardSavePending.get(text) || null;
+}
+
+/** Draw the card again if it is still showing this rewrite, finished. */
+function redrawCardFor(result) {
+  if (cardResult === result && cardExpanded && cardState === "ready") showDiffModal(result);
+}
+
+/**
+ * ⌘S or the bookmark on the card: saved in one press, no form.
+ *
+ * The form asks for a name and tags, which suits the library and is too much
+ * on the card, where the rewrite is still being judged. From here the text is
+ * saved alone. An unnamed prompt shows its own words in the library, so
+ * nothing is named for the user, and a name can be given there later. The
+ * bookmark fills in; pressing it again shows the prompt in the library. An
+ * improved saved prompt is saved beside the original, under its name.
+ */
+async function saveCard() {
+  const result = cardResult;
+  const text = String(result?.enhanced || "").trim();
+  if (!text || cardSaving) return;
+  if (cardSavedId(result)) { showInLibrary(text); return; }
+  const auth = await getAuth();
+  if (!auth || isTokenExpired(auth.token)) {
+    showToast("Sign in to save prompts to your library.", "info", { label: "Sign in", run: () => openSettings() });
+    return;
+  }
+  if (!(await ensureDataConsent())) return;
+  const subject = cardSubject;
+  cardSaving = true;
+  document.getElementById("pm-card-save")?.setAttribute("aria-busy", "true");
+  const outcome = await createSavedPrompt(text, subject ? `${subject.title} (improved)` : "", []);
+  cardSaving = false;
+  document.getElementById("pm-card-save")?.removeAttribute("aria-busy");
+  if (outcome === "failed") {
+    showToast("Could not save. Check your connection and try again.", "error");
+    return;
+  }
+  const id = lastSavedPromptId;
+  if (id) cardSavePending.set(norm(text), id);
+  redrawCardFor(result);
+  if (outcome === "duplicate") {
+    showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(text) });
+  } else {
+    statsBump("saves");
+    tipDone("save");
+    showToast(subject ? "Saved as a new prompt; the original is unchanged" : "Saved to your library", "success",
+      id ? { label: "Undo", run: () => undoCardSave(result, id) } : null);
+  }
+  await fetchSavedPrompts();
+  cardSavePending.delete(norm(text));
+  if (panelOpen) renderLibrary();
+}
+
+async function undoCardSave(result, id) {
+  cardSavePending.delete(norm(result.enhanced));
+  if (await undoSave(id)) redrawCardFor(result);
 }
 
 // ── Keymap ──

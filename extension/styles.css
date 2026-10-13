@@ -1663,6 +1663,8 @@
 .pm-card-act.pm-card-icon svg { width: 15px; height: 15px; display: block; }
 .pm-card-act.pm-card-icon:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
 .pm-card-act.pm-card-icon[aria-pressed="true"] { color: var(--pm-accent); }
+.pm-card-act.pm-card-icon.pm-card-saved svg path { fill: currentColor; }
+.pm-card-act.pm-card-icon[aria-busy="true"] { opacity: .5; pointer-events: none; }
 .pm-card-act.pm-card-icon.pm-card-discard:hover { color: var(--pm-danger); background: rgba(239, 106, 96, .12); }
 
 .pm-card-spacer { margin-left: auto; }
