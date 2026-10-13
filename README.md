@@ -43,6 +43,7 @@ prompt_engineering_skeleton/
 │
 ├── extension/               # Chrome Extension (Manifest V3)
 │   ├── manifest.json        # Extension config, permissions & shortcuts
+│   ├── sites.js             # Each chat site's selectors, loaded before content.js
 │   ├── content.js           # Core logic — injected into AI chat pages
 │   ├── styles.css           # Injected UI styles (calm, minimal design)
 │   ├── popup.html           # Extension popup — login & profile
