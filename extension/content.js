@@ -564,56 +564,27 @@ function scrapeConversation() {
   const messages = [];
   if (!contextEnabled) return messages;  // Respect privacy setting
   const hostname = window.location.hostname;
+  // Each site's markings are in sites.js (PM_SITES.conversation).
+  const site = PM_SITES.conversation[PM_SITES.conversationAliases[hostname] || hostname];
 
   try {
-    if (hostname === "chatgpt.com") {
-      // ChatGPT dropped data-message-author-role (seen live, 2026-10-01): the
-      // two sides are now marked on their text, as a user "tone" and an
-      // assistant "style". Both markings are read, in page order, and an
-      // element inside one already taken is not counted twice.
-      const sel = "[data-message-author-role], [data-markdown-text-tone='user-message'], [data-markdown-text-style='assistant-message']";
+    if (site) {
       const taken = [];
-      document.querySelectorAll(sel).forEach((el) => {
-        if (taken.some((t) => t.contains(el))) return;
-        taken.push(el);
-        const role = el.getAttribute("data-message-author-role") ||
-          (el.getAttribute("data-markdown-text-tone") === "user-message" ? "user" : "assistant");
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          messages.push(`[${role}]: ${text.substring(0, 500)}`);
+      document.querySelectorAll(site.messages).forEach((el) => {
+        if (site.nested) {
+          if (taken.some((t) => t.contains(el))) return;
+          taken.push(el);
         }
-      });
-    } else if (hostname === "claude.ai") {
-      document.querySelectorAll("[class*='Message'], [data-testid*='message']").forEach((el) => {
         const text = el.innerText?.trim();
         if (text && text.length > 2) {
-          const isUser = el.className?.includes("human") || el.getAttribute("data-testid")?.includes("human");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
-        }
-      });
-    } else if (hostname === "gemini.google.com") {
-      // Gemini distinguishes the two sides in the DOM, so tag them. Emitting
-      // "[message]" for both threw that information away — see below.
-      document.querySelectorAll("message-content, .model-response-text, .query-text").forEach((el) => {
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          const isUser = el.classList.contains("query-text") || el.closest(".query-text");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
-        }
-      });
-    } else if (hostname === "grok.com" || hostname === "x.com") {
-      document.querySelectorAll("[class*='message'], [class*='Message'], [data-testid*='message'], [class*='response'], [class*='query']").forEach((el) => {
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          const cls = `${el.className || ""} ${el.getAttribute("data-testid") || ""}`.toLowerCase();
-          const isUser = cls.includes("query") || cls.includes("user") || cls.includes("human");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
+          messages.push(`[${site.role(el)}]: ${text.substring(0, 500)}`);
         }
       });
     } else {
-      document.querySelectorAll("[class*='message'], [class*='Message'], [role='presentation']").forEach((el) => {
+      const fallback = PM_SITES.conversationFallback;
+      document.querySelectorAll(fallback.messages).forEach((el) => {
         const text = el.innerText?.trim();
-        if (text && text.length > 5 && text.length < 2000) {
+        if (text && text.length >= fallback.minLength && text.length <= fallback.maxLength) {
           // Genuinely unknown role on an unrecognised site. Tag it explicitly
           // rather than pushing bare text, so the backend can tell the
           // difference between "not a user message" and "role unknown".

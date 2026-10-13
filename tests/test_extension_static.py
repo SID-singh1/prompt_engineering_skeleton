@@ -1777,10 +1777,10 @@ def test_every_key_a_tooltip_shows_is_one_the_map_lists():
 def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
     """ChatGPT dropped data-message-author-role (seen live on 2026-10-01).
     Conversation context and the sent-prompt bookmark read both markings."""
-    scrape = _function_bodies(CONTENT_JS, r"scrapeConversation")["scrapeConversation"]
+    chatgpt = SITES_JS[SITES_JS.index('"chatgpt.com": Object.freeze({'):][:600]
     for mark in ("[data-message-author-role]", "[data-markdown-text-tone='user-message']",
                  "[data-markdown-text-style='assistant-message']"):
-        assert mark in scrape, f"the conversation reader misses {mark}"
+        assert mark in chatgpt, f"the conversation reader misses {mark}"
     assert "data-user-message-bubble" in SITES_JS and 'data-markdown-text-tone="user-message"' in SITES_JS
 
 
