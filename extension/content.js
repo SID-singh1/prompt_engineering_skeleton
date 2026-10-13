@@ -5290,13 +5290,14 @@ async function saveCard() {
   if (id) cardSavePending.set(norm(text), id);
   redrawCardFor(result);
   if (outcome === "duplicate") {
+    // Nothing was written, so nothing is refetched; the user is shown where it is.
     showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(text) });
-  } else {
-    statsBump("saves");
-    tipDone("save");
-    showToast(subject ? "Saved as a new prompt; the original is unchanged" : "Saved to your library", "success",
-      id ? { label: "Undo", run: () => undoCardSave(result, id) } : null);
+    return;
   }
+  statsBump("saves");
+  tipDone("save");
+  showToast(subject ? "Saved as a new prompt; the original is unchanged" : "Saved to your library", "success",
+    id ? { label: "Undo", run: () => undoCardSave(result, id) } : null);
   await fetchSavedPrompts();
   cardSavePending.delete(norm(text));
   if (panelOpen) renderLibrary();
