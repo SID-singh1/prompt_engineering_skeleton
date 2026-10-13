@@ -403,6 +403,37 @@ def main():
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
 
+        # ── Good rewrite? asked on the card, where it is read ──
+        # Ends in a value, not the function: Playwright calls an expression that yields one.
+        ev("window.__fb = []; sendFeedback = (...a) => { window.__fb.push(a); return Promise.resolve(); }; 0")
+        ev("tipDone('card'); closeCard(); H.type(H.ORIG); H.stream(); H.done()")
+        page.wait_for_selector("#pm-card #pm-card-rate")
+        check(page.inner_text("#pm-card-rate").strip().startswith("Good rewrite?") and page.locator("#pm-card-rate [data-rate]").count() == 2,
+              "a logged rewrite asks Good rewrite? with 👍 and 👎 on the card")
+        page.click("#pm-card-rate [data-rate='up']")
+        check(ev("window.__fb.length") == 1 and ev("window.__fb[0][0]") == "log_1" and ev("window.__fb[0][1]") == "up",
+              "👍 sends the rating for that rewrite")
+        check(page.inner_text("#pm-card-rate").strip() == "Thanks, that helps.", "and says thanks in its place")
+        ev("showDiffModal(cardResult)")
+        check(page.locator("#pm-card-rate").count() == 0, "once rated, it is not asked again")
+        page.click("#pm-card-accept")
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(page.is_hidden("#pm-trigger .pm-pill-rate"), "nor in the pill after Replace")
+        ev("clearApplied(); H.type(H.ORIG); H.stream(); H.done(false)")
+        check(page.locator("#pm-card-rate").count() == 0, "a rewrite the server did not log has nothing to rate against")
+        ev("closeCard(); H.type(H.ORIG); H.stream(); H.done(); H.type('something else entirely')")
+        page.wait_for_function("cardStale === true")
+        check(page.locator("#pm-card-rate").count() == 0, "and a stale rewrite is not asked about")
+        ev("closeCard()")
+
+        # ── a card opened while the last one fades: its buttons work ──
+        ev("H.type(H.ORIG); H.stream(); H.done(); closeCard(); H.type(H.ORIG); H.stream(); H.done(); 0")
+        check(ev("document.querySelectorAll('[id=\"pm-card-accept\"]').length") == 1, "the leaving card keeps no ids")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", polling=100, timeout=3000)
+        check(True, "Replace on a card opened during the last one's fade still replaces")
+        ev("clearApplied(); closeCard(); H.type(H.ORIG)")
+
         # ── Undo after Replace ──
         def pill_text():
             return ev("document.querySelector('#pm-trigger .pm-pill-label').textContent.trim()")
