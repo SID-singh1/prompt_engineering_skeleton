@@ -590,7 +590,7 @@ def main():
         lib, box = rect("#pm-library"), rect("form")
         for what, sel in (("Send", ".send"), ("the model picker", ".tools .model"), ("the mic", ".tools .mic")):
             check(not overlaps(lib, rect(sel)), f"the sheet stays off the box's {what}, got {lib} vs {rect(sel)}")
-        check(lib["b"] <= box["t"] or lib["l"] >= box["r"], f"and off the box itself, got {lib} vs {box}")
+        check(lib["b"] <= box["t"] or lib["t"] >= box["b"] or lib["l"] >= box["r"], f"and off the box itself, above or below it, got {lib} vs {box}")
         page.keyboard.press("Escape")
         ev("H.type(H.ORIG); H.stream(); H.done()")
         page.wait_for_selector("#pm-card #pm-card-accept")
@@ -891,6 +891,32 @@ def main():
         check(not overlaps(rail, pill), f"and the chips stop short of it ({rail} vs {pill})")
         ev("closeCard(); clearAttachments()")
         page.set_viewport_size({"width": 1440, "height": 900})
+
+        # ── the sheet opens on the chat box, wherever the pill is ──
+        lib_on_box = """(() => { const l = document.getElementById('pm-library').getBoundingClientRect();
+            const f = composerFrame(findComposer()); return { gapAbove: Math.round(f.top - l.bottom), gapBelow: Math.round(l.top - f.bottom),
+            rightDiff: Math.round(Math.abs(l.right - f.right)), side: document.getElementById('pm-library').dataset.side }; })()"""
+        open_lib()
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1,
+              f"the sheet stands just above the chat box, its right edge on the box's, got {on}")
+        page.keyboard.press("Escape")
+        for dock, bottom in (("left", 120), ("right", 600), ("left", 700)):
+            ev(f"pillDock = '{dock}'; pillBottom = {bottom}; placePill()")
+            open_lib()
+            on = ev(lib_on_box)
+            check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1,
+                  f"with the pill moved ({dock}, {bottom}px up) the sheet still opens on the box, got {on}")
+            page.keyboard.press("Escape")
+        ev("pillDock = 'right'; pillBottom = 24; placePill()")
+        ev("document.body.classList.add('center')")
+        page.wait_for_timeout(150)
+        open_lib()
+        on = ev(lib_on_box)
+        near = (on["side"] == "above" and 0 <= on["gapAbove"] <= 60) or (on["side"] == "below" and 0 <= on["gapBelow"] <= 20)
+        check(near and on["rightDiff"] <= 1, f"a new chat's centred box still has the sheet beside it, not in a corner, got {on}")
+        page.keyboard.press("Escape")
+        ev("document.body.classList.remove('center')")
 
         check(not errors, f"page errors: {errors}")
         page.close()
