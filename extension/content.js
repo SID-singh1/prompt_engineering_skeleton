@@ -4765,7 +4765,7 @@ function hideCard() {
 
 /** What counts as "the page" and not the extension's own surfaces. */
 const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-keys, #pm-caret, #pm-rail, " +
-  "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
+  "#pm-tip, #pm-toast-stack, .pm-modal-overlay, #pm-voice";
 
 function renderStrip() {
   const strip = document.getElementById("pm-card-strip");
@@ -5548,7 +5548,7 @@ async function undoCardSave(result, id) {
  */
 function overlayHasInput() {
   return Boolean(
-    document.querySelector(".pm-modal-overlay.pm-visible, .pm-voice-overlay.pm-visible")
+    document.querySelector(".pm-modal-overlay.pm-visible, #pm-voice.pm-visible")
   );
 }
 
@@ -5556,8 +5556,12 @@ function overlayHasInput() {
 // to the composer, pill, or card; ordinary typing never invokes card actions.
 function handleCardKeydown(e) {
   if (e.key === "Tab" || e.isComposing || e.defaultPrevented) return;
-  if (e.key === "Escape" && document.querySelector(".pm-voice-overlay.pm-visible")) {
-    e.preventDefault(); e.stopPropagation(); cancelVoice(); return;
+  // Esc stops a recording, but folds a transcript under review: throwing
+  // away words the user is reading is the bin button's job, not a key's.
+  if (e.key === "Escape" && document.querySelector("#pm-voice.pm-visible")) {
+    e.preventDefault(); e.stopPropagation();
+    if (voiceState === "reviewing") foldVoice(true); else cancelVoice();
+    return;
   }
   if (cardState === "idle" || overlayHasInput()) return;
   const card = document.getElementById("pm-card");
@@ -6552,10 +6556,8 @@ async function startVoice() {
 
   recordingTimer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-    const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
-    const secs = String(elapsed % 60).padStart(2, "0");
     const timerEl = document.getElementById("pm-voice-timer");
-    if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+    if (timerEl) timerEl.textContent = voiceClock(elapsed);
   }, 1000);
   voiceStopTimer = setTimeout(() => {
     if (voiceState !== "recording") return;
@@ -6563,7 +6565,6 @@ async function startVoice() {
     stopVoice();
   }, VOICE_MAX_RECORDING_SECONDS * 1000);
 
-  showToast("🎤 Recording… you will review the transcript before enhancement.", "info");
 }
 
 function stopVoice() {
@@ -6646,7 +6647,7 @@ async function transcribeVoiceAudio(audioBlob, token, durationSeconds) {
     if (voiceState !== "transcribing") return; // cancelled while the request was in flight
 
     voiceDetectedLanguage = data.detected_language || "unknown";
-    showVoiceTranscriptReview(data.transcription || "", data.transcription_time);
+    showVoiceTranscriptReview(data.transcription || "");
   } catch (error) {
     if (error?.name === "AbortError") return;
     cleanupVoice();
@@ -6657,42 +6658,109 @@ async function transcribeVoiceAudio(audioBlob, token, durationSeconds) {
   }
 }
 
-function showVoiceTranscriptReview(transcript, transcriptionTime) {
+/**
+ * The transcript to look over, in a card on the chat box: what was heard,
+ * editable, then Improve it, use it as it is, or throw it away. It was a
+ * window over the whole page, blurred behind, with the time the transcription
+ * took and a gradient button. On a small window it starts folded to one line,
+ * so it never takes the screen; the line opens it again.
+ */
+function showVoiceTranscriptReview(transcript) {
   if (!transcript.trim()) {
     cleanupVoice();
     showToast("Could not understand the recording. Please try again.", "error");
     return;
   }
-
   voiceState = "reviewing";
-  const overlay = document.getElementById("pm-voice-overlay");
-  if (!overlay) return;
-  const language = voiceDetectedLanguage === "unknown" ? "Language auto-detected" : `Language: ${voiceDetectedLanguage}`;
-  overlay.innerHTML = `
-    <div class="pm-voice-card pm-voice-review-card" role="dialog" aria-modal="true" aria-label="Review voice transcript">
-      <div class="pm-voice-indicator"><span class="pm-voice-label">Review transcript</span></div>
-      <p class="pm-voice-hint">${escHtml(language)} · transcribed in ${Number(transcriptionTime || 0).toFixed(2)}s. Edit anything before it is enhanced.</p>
-      <label class="pm-voice-transcript-label" for="pm-voice-transcript">Transcript</label>
-      <textarea id="pm-voice-transcript" class="pm-voice-transcript" rows="7" spellcheck="true">${escHtml(transcript)}</textarea>
-      <div class="pm-voice-actions">
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-draft" type="button">Use as draft</button>
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Discard</button>
-        <button class="pm-btn pm-btn-primary" id="pm-voice-enhance" type="button">Enhance transcript</button>
-      </div>
-    </div>
-  `;
-  document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
+  const el = document.getElementById("pm-voice");
+  if (!el) return;
+  const lang = voiceDetectedLanguage && voiceDetectedLanguage !== "unknown" ? ` \u00b7 ${escHtml(voiceDetectedLanguage.toUpperCase())}` : "";
+  el.className = "pm-card pm-voice pm-voice-review pm-card-visible pm-visible";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", "Your words, to review");
+  el.innerHTML =
+    `<div class="pm-card-head"><span class="pm-card-head-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-title">Your words${lang}</span>` +
+    `<button class="pm-card-min" type="button" id="pm-voice-min" data-pm-tip="Fold to one line" data-pm-key="Esc" aria-label="Fold to one line">${CARD_MIN_SVG}</button></div>` +
+    `<textarea id="pm-voice-transcript" class="pm-voice-text" rows="3" spellcheck="true" aria-label="Transcript">${escHtml(transcript)}</textarea>` +
+    `<p class="pm-voice-note">Edit anything first. Nothing goes in the chat box until you choose.</p>` +
+    cardFoot([
+      `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-voice-enhance" type="button" data-pm-tip="Rewrite it as a prompt" data-pm-key="${CMD_ENTER}">${CARD_SPARK_SVG}Improve</button>`,
+      CARD_SEP,
+      `<button class="pm-card-act pm-card-btn pm-voice-plain" id="pm-voice-draft" type="button" data-pm-tip="Put your words in the chat box as they are">Use as is</button>`,
+      CARD_SEP,
+      `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-voice-cancel" type="button" aria-label="Discard the transcript" data-pm-tip="Discard the transcript">${CARD_DISCARD_SVG}</button>`,
+    ]) +
+    `<div class="pm-card-strip pm-voice-strip" id="pm-voice-strip"></div>`;
+  document.getElementById("pm-voice-cancel")?.addEventListener("click", () => {
+    cancelVoice();
+    showToast("Transcript discarded.", "info");
+  });
+  document.getElementById("pm-voice-min")?.addEventListener("click", () => foldVoice(true));
   document.getElementById("pm-voice-draft")?.addEventListener("click", async () => {
-    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
+    const value = voiceTranscriptValue();
     if (!value) return showToast("Transcript is empty.", "error");
-    await applyOrFallback(value, "Transcript added to the chat input.");
+    await applyOrFallback(value, "Your words are in the chat box.");
     cleanupVoice();
   });
-  document.getElementById("pm-voice-enhance")?.addEventListener("click", () => {
-    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
-    void enhanceVoiceTranscript(value);
+  document.getElementById("pm-voice-enhance")?.addEventListener("click", () => void enhanceVoiceTranscript(voiceTranscriptValue()));
+  const ta = document.getElementById("pm-voice-transcript");
+  ta?.addEventListener("input", () => { fitVoiceText(); renderVoiceStrip(); });
+  ta?.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); void enhanceVoiceTranscript(voiceTranscriptValue()); }
   });
-  requestAnimationFrame(() => document.getElementById("pm-voice-transcript")?.focus());
+  // A short or low window: start folded to one line rather than take it.
+  foldVoice(window.innerHeight < 620 || window.innerWidth < 520, false);
+  fitVoiceText();
+  positionVoice();
+  if (!el.classList.contains("pm-card-tucked")) requestAnimationFrame(() => ta?.focus({ preventScroll: true }));
+}
+
+function voiceTranscriptValue() {
+  return document.getElementById("pm-voice-transcript")?.value.trim() || "";
+}
+
+/** The transcript box as tall as its words, up to the room there is. */
+function fitVoiceText() {
+  const ta = document.getElementById("pm-voice-transcript");
+  if (!ta) return;
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight + 2, voiceTextRoom()) + "px";
+}
+
+/** Fold the review to one line, or open it again. */
+function foldVoice(folded, focus = true) {
+  const el = document.getElementById("pm-voice");
+  if (!el || voiceState !== "reviewing") return;
+  el.classList.toggle("pm-card-tucked", folded);
+  renderVoiceStrip();
+  positionVoice();
+  if (!folded) {
+    fitVoiceText();
+    if (focus) document.getElementById("pm-voice-transcript")?.focus({ preventScroll: true });
+  }
+}
+
+/** The one line a folded review is: what was heard, Improve, and a way back up. */
+function renderVoiceStrip() {
+  const strip = document.getElementById("pm-voice-strip");
+  if (!strip) return;
+  strip.innerHTML =
+    `<span class="pm-card-strip-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-strip-label">Your words</span>` +
+    `<span class="pm-card-strip-gist">${escHtml(norm(voiceTranscriptValue()))}</span>` +
+    `<button type="button" class="pm-card-strip-verb" data-act="improve">Improve</button>` +
+    `<button type="button" class="pm-card-strip-open" data-act="open" aria-label="Show the whole transcript" data-pm-tip="Show the whole transcript">` +
+    `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 6 4.5l3 3"/></svg></button>`;
+  if (!strip._pmWired) {
+    strip._pmWired = true;
+    strip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (e.target.closest("[data-act='improve']")) { void enhanceVoiceTranscript(voiceTranscriptValue()); return; }
+      foldVoice(false);
+    });
+  }
 }
 
 async function enhanceVoiceTranscript(transcript) {
@@ -6728,77 +6796,112 @@ async function enhanceVoiceTranscript(transcript) {
   }
 }
 
-// ── Voice UI: Recording Overlay ──
+// ── Voice UI: a bar, then a card, on the chat box ──
+//
+// Recording took the whole page: a window over a blurred screen with a big
+// timer and gradient buttons, so the conversation being answered was hidden
+// while the user spoke about it. It is a slim bar on the chat box now, where
+// the rewrite card sits, in the card's own look; the transcript to review
+// becomes a card in the same place (showVoiceTranscriptReview).
 
 function showVoiceOverlay() {
-  let overlay = document.getElementById("pm-voice-overlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "pm-voice-overlay";
-    overlay.className = "pm-voice-overlay";
-    // The voice screen is also created on demand, so it must inherit the
-    // panel's active theme instead of resolving its variables from :root.
-    overlay.setAttribute(
-      "data-pm-theme",
-      uiTheme
-    );
-    document.body.appendChild(overlay);
+  // One thing on the chat box at a time: the library goes, and a rewrite card
+  // folds into the pill, which keeps its draft.
+  if (panelOpen) togglePanel(false);
+  if (cardExpanded && cardState !== "idle") hideCard();
+  let el = document.getElementById("pm-voice");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pm-voice";
+    document.body.appendChild(el);
   }
-
-  overlay.innerHTML = `
-    <div class="pm-voice-card">
-      <div class="pm-voice-indicator">
-        <div class="pm-voice-bars">
-          <span class="pm-bar"></span><span class="pm-bar"></span><span class="pm-bar"></span>
-          <span class="pm-bar"></span><span class="pm-bar"></span>
-        </div>
-        <span class="pm-voice-label">Recording</span>
-      </div>
-      <div class="pm-voice-timer" id="pm-voice-timer">00:00</div>
-      <div class="pm-voice-hint">Speak naturally. You will review the transcript before anything is enhanced.</div>
-      <div class="pm-voice-actions">
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
-        <button class="pm-btn pm-btn-primary pm-voice-stop" id="pm-voice-stop" type="button">Stop recording</button>
-      </div>
-    </div>
-  `;
-
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) cancelVoice(); });
+  el.className = "pm-card pm-voice pm-voice-recording";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-label", "Recording");
+  el.innerHTML =
+    `<div class="pm-voice-bar">` +
+    `<span class="pm-voice-rec" aria-hidden="true"></span>` +
+    `<span class="pm-voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>` +
+    `<span class="pm-voice-time" id="pm-voice-timer">0:00</span>` +
+    `<span class="pm-voice-msg">Listening. You review the words before anything changes.</span>` +
+    `<div class="pm-card-dock">` +
+    `<button class="pm-card-act pm-card-btn" id="pm-voice-cancel" type="button" data-pm-tip="Throw the recording away" data-pm-key="Esc">Cancel</button>` +
+    `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-voice-stop" type="button" data-pm-tip="Stop and transcribe">` +
+    `<span class="pm-voice-stop-sq" aria-hidden="true"></span>Stop</button></div></div>`;
   document.getElementById("pm-voice-cancel").addEventListener("click", cancelVoice);
   document.getElementById("pm-voice-stop").addEventListener("click", stopVoice);
+  watchVoicePlace(true);
+  positionVoice();
+  requestAnimationFrame(() => el.classList.add("pm-card-visible", "pm-visible"));
+}
 
-  requestAnimationFrame(() => overlay.classList.add("pm-visible"));
+/** The recording timer's text: m:ss. */
+function voiceClock(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function updateVoiceOverlayState(state) {
-  const card = document.querySelector(".pm-voice-card");
-  if (!card) return;
-
-  if (state === "transcribing" || state === "enhancing") {
-    const label = state === "transcribing" ? "Transcribing recording…" : "Enhancing transcript…";
-    const hint = state === "transcribing"
-      ? "Whisper is processing your audio. Audio is not saved by Prompt Memory."
-      : "Building your improved prompt…";
-    card.innerHTML = `
-      <div class="pm-voice-indicator">
-        <div class="pm-voice-spinner"></div>
-        <span class="pm-voice-label">${label}</span>
-      </div>
-      <div class="pm-voice-hint">${hint}</div>
-      <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
-    `;
-    document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
-  }
+  const el = document.getElementById("pm-voice");
+  if (!el || (state !== "transcribing" && state !== "enhancing")) return;
+  el.className = "pm-card pm-voice pm-voice-busy pm-card-visible pm-visible";
+  el.innerHTML =
+    `<div class="pm-voice-bar">` +
+    `<span class="pm-voice-spin" aria-hidden="true"></span>` +
+    `<span class="pm-voice-msg pm-voice-msg-strong">${state === "transcribing" ? "Turning your words into text\u2026" : "Improving your words\u2026"}</span>` +
+    `<span class="pm-voice-msg">${state === "transcribing" ? "The audio is not kept." : ""}</span>` +
+    `<div class="pm-card-dock"><button class="pm-card-act pm-card-btn" id="pm-voice-cancel" type="button" data-pm-key="Esc">Cancel</button></div></div>`;
+  document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
+  positionVoice();
 }
 
 function hideVoiceOverlay() {
-  const overlay = document.getElementById("pm-voice-overlay");
-  if (overlay) {
-    overlay.classList.remove("pm-visible");
-    setTimeout(() => {
-      if (!overlay.classList.contains("pm-visible")) overlay.remove();
-    }, 300);
+  const el = document.getElementById("pm-voice");
+  watchVoicePlace(false);
+  if (!el) return;
+  el.classList.remove("pm-card-visible", "pm-visible");
+  setTimeout(() => { if (!el.classList.contains("pm-visible")) el.remove(); }, 200);
+}
+
+let voicePlaceWatch = null;
+function watchVoicePlace(on) {
+  if (on && !voicePlaceWatch) {
+    voicePlaceWatch = () => positionVoice();
+    window.addEventListener("resize", voicePlaceWatch, true);
+    window.addEventListener("scroll", voicePlaceWatch, true);
+  } else if (!on && voicePlaceWatch) {
+    window.removeEventListener("resize", voicePlaceWatch, true);
+    window.removeEventListener("scroll", voicePlaceWatch, true);
+    voicePlaceWatch = null;
   }
+}
+
+/** Room for the transcript box: the space above the chat box, less the card's head and foot. */
+function voiceTextRoom() {
+  const el = document.getElementById("pm-voice");
+  const bottom = el ? parseFloat(el.style.bottom) || 24 : 24;
+  return Math.max(72, Math.min(window.innerHeight * 0.4, window.innerHeight - bottom - 12 - 150));
+}
+
+/**
+ * On the chat box, as the rewrite card is: as wide as the box (capped, and
+ * never narrower than 320px), its right edge on the box's, standing just
+ * above it. With no chat box found, or one too near the top of the window,
+ * it sits at the foot of the window.
+ */
+function positionVoice() {
+  const el = document.getElementById("pm-voice");
+  if (!el) return;
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12;
+  const box = composerFrame(findComposer());
+  // Any chat box with room above it, however narrow: at the window's foot it
+  // would sit on the box.
+  const onBox = box && box.top > 140;
+  const width = Math.round(Math.min(600, vw - 2 * m, onBox ? Math.max(320, box.width) : 560));
+  const left = onBox ? Math.max(m, Math.min(box.right - width, vw - width - m)) : Math.round((vw - width) / 2);
+  const bottom = onBox ? Math.round(vh - box.top + 8) : 24;
+  el.style.width = width + "px";
+  el.style.left = left + "px";
+  el.style.bottom = bottom + "px";
 }
 
 function updateVoiceUI(recording) {
@@ -6837,7 +6940,7 @@ function applyTheme(theme) {
   const els = [
     document.getElementById("pm-trigger"),
     document.querySelector(".pm-modal-overlay"),
-    document.querySelector(".pm-voice-overlay"),
+    document.getElementById("pm-voice"),
     // The card and the toast stack read the theme when they are built. Left out
     // of this list they kept whatever theme they were born with, so toggling
     // the theme with a rewrite on screen recoloured everything except the two

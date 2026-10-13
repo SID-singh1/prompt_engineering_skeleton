@@ -164,7 +164,6 @@
 /* Smooth transition for theme switch */
 .pm-trigger,
 .pm-modal,
-.pm-voice-card,
 .pm-toast {
     transition: background 200ms ease, color 200ms ease, border-color 200ms ease,
                 box-shadow 200ms ease, opacity var(--pm-transition-slow),
@@ -844,174 +843,104 @@
     50% { box-shadow: 0 0 0 6px rgba(239, 83, 80, 0); }
 }
 
-/* ── Voice Overlay ── */
-.pm-voice-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    z-index: var(--pm-z-overlay);
+/* ── Voice: a bar, then a card, on the chat box ────────────────────────────
+   It was a window over the whole page, blurred behind, with a 40px timer and
+   gradient buttons. It is now the rewrite card's own look (the element is a
+   .pm-card, so it takes the card's palette, head, dock and folded strip),
+   placed on the chat box by positionVoice(). */
+.pm-card.pm-voice { top: auto; right: auto; }
+.pm-voice-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 250ms ease;
-    backdrop-filter: blur(8px);
+    gap: 10px;
+    min-height: 46px;
+    padding: 6px 6px 6px 15px;
+    box-sizing: border-box;
 }
-
-.pm-voice-overlay.pm-visible {
-    opacity: 1;
-    pointer-events: all;
-}
-
-.pm-voice-card {
-    background: var(--pm-bg);
-    border: 1px solid var(--pm-border);
-    border-radius: 20px;
-    box-shadow: var(--pm-shadow-lg);
-    padding: 32px 36px;
-    max-width: 480px;
-    width: 90%;
-    text-align: center;
-    font-family: var(--pm-font);
-    color: var(--pm-text);
-    transform: translateY(12px);
-    transition: transform 250ms ease;
-}
-
-.pm-voice-overlay.pm-visible .pm-voice-card {
-    transform: translateY(0);
-}
-
-.pm-voice-indicator {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.pm-voice-label {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--pm-text);
-}
-
-/* ── Animated Recording Bars ── */
-.pm-voice-bars {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    height: 28px;
-}
-
-.pm-bar {
-    width: 4px;
-    height: 8px;
-    background: linear-gradient(180deg, var(--pm-danger) 0%, #c0392b 100%);
-    border-radius: 2px;
-    animation: pm-bar-bounce 0.8s ease-in-out infinite;
-}
-
-.pm-bar:nth-child(1) { animation-delay: 0s; }
-.pm-bar:nth-child(2) { animation-delay: 0.1s; }
-.pm-bar:nth-child(3) { animation-delay: 0.2s; }
-.pm-bar:nth-child(4) { animation-delay: 0.3s; }
-.pm-bar:nth-child(5) { animation-delay: 0.4s; }
-
-@keyframes pm-bar-bounce {
-    0%, 100% { height: 8px; opacity: 0.5; }
-    50% { height: 24px; opacity: 1; }
-}
-
-/* ── Timer ── */
-.pm-voice-timer {
-    font-size: 36px;
-    font-weight: 600;
-    color: var(--pm-text);
-    font-variant-numeric: tabular-nums;
-    margin-bottom: 8px;
-    letter-spacing: 0.02em;
-}
-
-/* ── Hint ── */
-.pm-voice-hint {
-    font-size: 12px;
-    color: var(--pm-text-muted);
-    margin-bottom: 20px;
-}
-
-/* ── Processing Spinner ── */
-.pm-voice-spinner {
-    width: 26px;
-    height: 26px;
-    border: 3px solid var(--pm-border);
-    border-top: 3px solid var(--pm-accent);
+.pm-voice-bar .pm-card-dock { flex: none; margin-left: auto; }
+.pm-voice-rec {
+    flex: none;
+    width: 9px;
+    height: 9px;
     border-radius: 50%;
-    animation: pm-spin 0.8s linear infinite;
+    background: var(--pm-danger);
+    box-shadow: 0 0 0 4px rgba(239, 106, 96, .16);
+    animation: pm-voice-pulse 1.2s ease-in-out infinite;
 }
-
-@keyframes pm-spin {
-    100% { transform: rotate(360deg); }
+@keyframes pm-voice-pulse { 50% { opacity: .45; } }
+.pm-voice-wave { flex: none; display: inline-flex; align-items: center; gap: 2px; height: 16px; }
+.pm-voice-wave i {
+    width: 3px;
+    height: 100%;
+    border-radius: 2px;
+    background: var(--pm-accent);
+    transform: scaleY(.3);
+    animation: pm-voice-wave 1s ease-in-out infinite;
 }
-
-.pm-voice-stop {
-    padding: 12px 28px;
-    font-size: 14px;
-    font-weight: 600;
+.pm-voice-wave i:nth-child(2) { animation-delay: .15s; }
+.pm-voice-wave i:nth-child(3) { animation-delay: .3s; }
+.pm-voice-wave i:nth-child(4) { animation-delay: .45s; }
+.pm-voice-wave i:nth-child(5) { animation-delay: .6s; }
+@keyframes pm-voice-wave { 0%, 100% { transform: scaleY(.3); } 50% { transform: scaleY(1); } }
+.pm-voice-time {
+    flex: none;
+    min-width: 34px;
+    color: var(--pm-text);
+    font: 500 13px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-variant-numeric: tabular-nums;
 }
-
-.pm-voice-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 9px;
-}
-
-.pm-voice-review-card {
-    max-width: 600px;
-    text-align: left;
-}
-
-.pm-voice-review-card .pm-voice-indicator {
-    justify-content: flex-start;
-    margin-bottom: 8px;
-}
-
-.pm-voice-transcript-label {
-    display: block;
-    margin: 0 0 7px;
-    color: var(--pm-text-muted);
+.pm-voice-msg {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: var(--pm-text-secondary);
     font-size: 12px;
-    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
+.pm-voice-msg.pm-voice-msg-strong { flex: none; color: var(--pm-text); font-size: 12.5px; font-weight: 500; }
+.pm-voice-spin {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--pm-border);
+    border-top-color: var(--pm-accent);
+    animation: pm-voice-spin .8s linear infinite;
+}
+@keyframes pm-voice-spin { to { transform: rotate(360deg); } }
+.pm-voice-stop-sq { width: 9px; height: 9px; border-radius: 2px; background: currentColor; }
 
-.pm-voice-transcript {
-    width: 100%;
-    min-height: 136px;
-    margin-bottom: 16px;
-    padding: 12px;
-    resize: vertical;
+/* The transcript, under review: the card's text, editable. */
+.pm-voice-text {
+    display: block;
+    width: calc(100% - 24px);
+    margin: 6px 12px 0;
+    box-sizing: border-box;
+    padding: 8px 10px;
     border: 1px solid var(--pm-border);
     border-radius: 10px;
-    outline: none;
-    background: var(--pm-bg-secondary);
+    background: var(--pm-bg-soft);
     color: var(--pm-text);
-    font: inherit;
-    line-height: 1.5;
+    font: 15px/1.55 var(--pm-font);
+    resize: none;
+    outline: none;
+    overflow-y: auto;
 }
+.pm-voice-text:focus { border-color: var(--pm-accent-border); }
+.pm-voice-note { margin: 6px 17px 2px; color: var(--pm-text-muted); font-size: 11.5px; }
+.pm-voice .pm-card-btn svg { width: 12px; height: 12px; flex: none; }
 
-.pm-voice-transcript:focus {
-    border-color: var(--pm-accent);
-    box-shadow: 0 0 0 3px var(--pm-accent-light);
+/* A narrow window: the bar keeps its dock beside the words and drops the
+   explanation; the dock is not stretched to a full line as the card's is. */
+@container (max-width: 500px) {
+    .pm-voice-bar .pm-card-dock { display: inline-flex; width: auto; }
+    .pm-voice-bar .pm-voice-msg:not(.pm-voice-msg-strong) { display: none; }
 }
-
-@media (max-width: 480px) {
-    .pm-voice-card { padding: 26px 20px; }
-    .pm-voice-actions { flex-wrap: wrap; }
-    .pm-voice-actions .pm-btn:last-child { flex: 1 0 100%; }
+@media (prefers-reduced-motion: reduce) {
+    .pm-voice-rec, .pm-voice-wave i, .pm-voice-spin { animation: none; }
+    .pm-voice-wave i { transform: scaleY(.6); }
 }
 
 /* ══════════════════════════════════════════════════════════════
