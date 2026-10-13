@@ -750,6 +750,11 @@ const CARD_MIN_SVG =
   '<path d="M2.5 6h7"/></svg>';
 // The card's quiet actions. Show original is two texts trading places;
 // Discard is a bin, not an ×, so it is never mistaken for closing the card.
+// The mark for "rewrite again", on the style buttons: the same sparkle as Improve.
+const CARD_SPARK_SVG =
+  '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">' +
+  '<path d="M6.5 3Q7 8.5 12.5 9 7 9.5 6.5 15 6 9.5.5 9 6 8.5 6.5 3Z"/>' +
+  '<path d="M12.5 1q.2 2.3 2.5 2.5-2.3.2-2.5 2.5-.2-2.3-2.5-2.5 2.3-.2 2.5-2.5Z" opacity=".75"/></svg>';
 const CARD_COMPARE_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13"/></svg>';
 const CARD_DISCARD_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M6.5 4.5V2.8h3v1.7M4 4.5l.7 8.7h6.6l.7-8.7"/></svg>';
 const PILL_THUMB_SVG = (down) =>
@@ -4677,21 +4682,21 @@ function closeCard() {
   renderPill();
 }
 
-function cardFoot(parts) {
-  return `<div class="pm-card-foot"><div class="pm-card-dock" role="toolbar" aria-label="Rewrite actions">${parts.filter(Boolean).join("")}</div></div>`;
-}
-
-
 /**
  * The card's actions, in one dock: a tray sized to what it holds, at the
  * card's bottom left. On a wide card a row spread edge to edge left Replace
  * on one side and the icons 600px away on the other; a tray reads as one
  * control at any width. CARD_SEP divides the kinds of action in it.
  */
+function cardFoot(parts) {
+  return `<div class="pm-card-foot"><div class="pm-card-dock" role="toolbar" aria-label="Rewrite actions">${parts.filter(Boolean).join("")}</div></div>`;
+}
+const CARD_SEP = `<span class="pm-card-sep" aria-hidden="true"></span>`;
+
+
 /**
  * The card's title bar: what this card is, and the one window control it has.
  *
-const CARD_SEP = `<span class="pm-card-sep" aria-hidden="true"></span>`;
  * Minimize, not close. The draft is never lost from here — it folds down into
  * the pill and comes back with a click (or ⌘⇧P). Discard is a footer action,
  * deliberately further from the corner the hand goes to when it wants a
@@ -4917,13 +4922,13 @@ function showDiffModal(result) {
 
   const saved = Boolean(cardSavedId(result));
   const saveTip = saved ? "Saved \u00b7 show it in your library" : cardSubject ? "Save as a new prompt" : "Save to your library";
+  // Use it │ change it │ keep or drop it. The middle group is absent on a
+  // stale draft and on the original, and its divider goes with it.
+  const styles = cardStyleButtons(result);
   const actions = [
     lead,
     styles && CARD_SEP + styles,
     CARD_SEP,
-  // Use it │ change it │ keep or drop it. The middle group is absent on a
-  // stale draft and on the original, and its divider goes with it.
-  const styles = cardStyleButtons(result);
     `<span class="pm-card-tools">${truncatedNote}` +
       `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${cardShowingOriginal}">${CARD_COMPARE_SVG}</button>` +
       `<button class="pm-card-act pm-card-icon${saved ? " pm-card-saved" : ""}" id="pm-card-save" aria-pressed="${saved}" aria-label="${saveTip}" data-pm-tip="${saveTip}"${saved ? "" : ` data-pm-key="${CMD_KEY}S"`}>${BOOKMARK_SVG}</button>` +
@@ -5053,7 +5058,7 @@ function cardStyleButtons(result) {
         ? "No rewrites left today"
         : `Rewrite your original again in the ${STYLE_NAMES[s]} style: ${STYLE_HINTS[s]}. ${cost}`;
     return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
-      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
+      `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${CARD_SPARK_SVG}${STYLE_VERBS[on][s]}${note}</button>`;
   }).join("");
   return `<span class="pm-card-styles" role="group" aria-label="Other styles">${styles}</span>`;
 }
