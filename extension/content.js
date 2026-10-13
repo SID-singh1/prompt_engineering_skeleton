@@ -5219,16 +5219,18 @@ function cardUsedParts(result) {
   const summary = items.length
     ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
     : "None used";
-  const all = items.length ? "Used: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used";
+  const all = items.length ? "Context: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used as context";
   const rows = items.map((p) => {
-    const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
+    // Said the way a person would: "close match" and "loose match" named the
+    // matcher's score, and testers did not know what to make of it.
+    const why = p.kind === "attached" ? "you added it" : "picked for you";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
     const drop = p.kind === "matched" && p.id && !cardStale
       ? `<button type="button" class="pm-card-used-drop" data-pm-drop="${escHtml(p.id)}" data-pm-title="${escHtml(name(p))}" ` +
         `title="Rewrite again without this saved prompt">Don\u2019t use</button>`
       : "";
     return `<li class="pm-card-used-item pm-card-used-${p.kind}">` +
-      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : "\u2248"}</span>` +
+      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : CARD_SPARK_SVG}</span>` +
       `<span class="pm-card-used-text"><span class="pm-card-used-name">${escHtml(clip(name(p), 60))}</span>` +
       `<span class="pm-card-used-why">${why}${preview}</span></span>${drop}</li>`;
   }).join("");
@@ -5239,7 +5241,8 @@ function cardUsedParts(result) {
     chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
       `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
       `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
-    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul>`,
+    list: `<ul class="pm-card-used-list" id="pm-card-used-list" aria-label="Context for this rewrite"${cardUsedOpen ? "" : " hidden"}>` +
+      `<li class="pm-card-used-head">Context for this rewrite</li>${rows}${leftOut}</ul>`,
   };
 }
 
