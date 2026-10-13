@@ -199,6 +199,36 @@ DEFAULT_CHAIN: tuple[ModelSpec, ...] = (
 
 # Models proven dead this process — never retried. Populated on 404/400 so a
 # decommissioned model costs one failed request per boot, not one per user.
+def _extra_server_models() -> tuple[ModelSpec, ...]:
+    """
+    Rungs named in SERVER_EXTRA_MODELS, after the Groq chain. Every Groq rung
+    draws on the same Groq organisation (each model with its own daily
+    allowance, and a second key in that organisation adds none), so a busy
+    day can spend them all; a rung on another provider keeps rewrites going
+    then. Off unless configured, because a provider's terms travel with the
+    prompts sent to it (see PROVIDERS).
+    """
+    out = []
+    for item in (getattr(settings, "SERVER_EXTRA_MODELS", "") or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        provider, _, model_id = item.partition(":")
+        provider, model_id = provider.strip(), model_id.strip()
+        if provider not in PROVIDERS or not model_id:
+            logger.warning(f"SERVER_EXTRA_MODELS: ignoring {item!r} (want provider:model, provider one of {sorted(PROVIDERS)})")
+            continue
+        out.append(ModelSpec(provider=provider, model_id=model_id,
+                             params={"max_completion_tokens": 1200},
+                             note="Extra server rung from SERVER_EXTRA_MODELS."))
+    return tuple(out)
+
+
+def server_chain() -> tuple[ModelSpec, ...]:
+    """The shared chain: the tuned Groq models, then any configured extras."""
+    return DEFAULT_CHAIN + _extra_server_models()
+
+
 _dead_models: set[str] = set()
 
 # provider -> {key_index: cooldown_until_epoch}
@@ -503,7 +533,7 @@ def _resolve_chain(
     chain: list[tuple[ModelSpec, Optional[str]]] = []
 
     if user_key and user_provider in PROVIDERS:
-        known = {m.model_id: m for m in DEFAULT_CHAIN if m.provider == user_provider}
+        known = {m.model_id: m for m in server_chain() if m.provider == user_provider}
         ordered_ids = list(BYOK_MODELS.get(user_provider, ()))
 
         if user_model and user_model in ordered_ids:
@@ -522,7 +552,7 @@ def _resolve_chain(
             chain.append((spec, user_key))
 
     if allow_shared_fallback or not chain:
-        for spec in DEFAULT_CHAIN:
+        for spec in server_chain():
             chain.append((spec, None))
 
     return [(s, k) for s, k in chain if s.label not in _dead_models]
