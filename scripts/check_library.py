@@ -363,15 +363,16 @@ def main():
                      c.font = getComputedStyle(q).font; return c.measureText(q.placeholder).width <= q.clientWidth; })()"""),
               "and the search box's placeholder still fits beside it")
         page.click("#pm-lib-new")
-        page.wait_for_selector("#pm-modal-overlay.pm-visible #pm-edit-content")
-        check(page.inner_text("#pm-modal-overlay .pm-modal-title") == "New prompt", "+ New opens the edit window as a new prompt")
+        page.wait_for_selector("#pm-library #pm-edit-content")
+        check(page.inner_text("#pm-library .pm-lib-head-title") == "New prompt", "+ New opens the New prompt page of the library")
+        check(not ev("!!document.querySelector('#pm-modal-overlay.pm-visible')"), "a page of the sheet: nothing blurs the chat behind it")
         check(page.input_value("#pm-edit-content") == "Turn these meeting notes into action items with owners",
               "starting from what is in the chat box")
         check(ev("document.activeElement.id") == "pm-edit-content"
               and ev("document.activeElement.selectionStart") == len("Turn these meeting notes into action items with owners"),
               "with the caret at the end of it")
         check(page.input_value("#pm-edit-title") == "", "the name starts empty: an unnamed prompt shows its words")
-        check(ev("panelOpen"), "and the library stays open under it")
+        check(ev("panelOpen") and ev("libPage") == "edit", "and it is the library, on its New prompt page")
         cancel_r, save_r = rect("#pm-edit-cancel"), rect("#pm-edit-save")
         check(not overlaps(cancel_r, save_r) and cancel_r["r"] - cancel_r["l"] > 50, f"Cancel is a whole button beside Save, got {cancel_r}")
         page.fill("#pm-edit-tags", "meetings, #notes, writing")
@@ -383,9 +384,8 @@ def main():
         check(not post.get("title") and post["content"] == "Turn these meeting notes into action items with owners"
               and sorted(post.get("tags", [])) == ["meetings", "notes", "writing"],
               f"⌘↵ saves it unnamed, with its tags, got {post}")
-        page.wait_for_function("!document.querySelector('#pm-modal-overlay.pm-visible') && "
-                               "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
-        check(ev("document.activeElement.id") == "pm-lib-q", "the window goes, the keyboard back in the search")
+        page.wait_for_function("libPage === 'list' && document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
+        check(ev("document.activeElement.id") == "pm-lib-q", "back to the list, the keyboard back in the search")
         check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
         toast = rect(".pm-toast")
         for what, sel in (("the context chips", "#pm-rail"), ("the chat box", "form"), ("the open library", "#pm-library")):
@@ -394,11 +394,38 @@ def main():
         check(any("Turn these meeting notes" in r for r in rows()), f"saved and listed, got {rows()[:2]}")
         check("Turn these meeting notes" in page.inner_text("#pm-library .pm-lib-row.pm-sel"), "and highlighted")
         page.click("#pm-lib-new")
-        page.wait_for_selector("#pm-modal-overlay.pm-visible")
+        page.wait_for_selector("#pm-library #pm-edit-content")
         page.keyboard.press("Escape")
-        check(not ev("!!document.querySelector('#pm-modal-overlay.pm-visible')") and ev("panelOpen"),
-              "esc in the window cancels it, and leaves the library open")
+        check(ev("libPage") == "list" and ev("panelOpen"),
+              "esc on the page goes back to the list, and leaves the library open")
         check(len(calls("POST", "/saved-prompts")) == 1, "without saving anything")
+
+        # ── Edit, on the same page ──
+        row = page.locator("#pm-library .pm-lib-row", has_text="Code review template")
+        row.hover()
+        row.locator("[data-act='more']").click()
+        page.click("#pm-library [data-act='edit']")
+        page.wait_for_selector("#pm-library #pm-edit-content")
+        check(page.inner_text("#pm-library .pm-lib-head-title") == "Edit prompt" and page.input_value("#pm-edit-title") == "Code review template",
+              "Edit opens the same page, filled in")
+        on = page.locator("#pm-library .pm-lib-edit .pm-save-tags button[aria-pressed='true']").all_inner_texts()
+        check(sorted(on) == ["#coding", "#review"], f"with its tags already on, got {on}")
+        page.fill("#pm-edit-title", "Code review, senior")
+        page.click("#pm-library .pm-lib-edit .pm-save-tags button[data-tag='review']")
+        check(ev("document.activeElement.id") != "pm-library" and page.input_value("#pm-edit-title") == "Code review, senior",
+              "a tag toggles in place: nothing typed is lost")
+        ev("""(() => { const f = window.fetch; window.__realFetch = f;
+              window.fetch = (u, o = {}) => (o.method === 'PUT' ? Promise.resolve(new Response('{}', { status: 500 })) : f(u, o)); })()""")
+        page.click("#pm-edit-save")
+        page.wait_for_function("(document.getElementById('pm-edit-status')?.textContent || '').includes('Could not save')", timeout=3000)
+        check(ev("libPage") == "edit" and page.input_value("#pm-edit-title") == "Code review, senior",
+              "a failed save stays on the page with what was typed, and says so")
+        ev("window.fetch = window.__realFetch")
+        page.click("#pm-edit-save")
+        page.wait_for_function("libPage === 'list' && [...document.querySelectorAll('#pm-library .pm-lib-title')].some(t => t.textContent.includes('Code review, senior'))", timeout=3000)
+        put = [c for c in ev("FAKE_API.calls") if c["method"] == "PUT"][-1]["body"]
+        check(put == {"title": "Code review, senior", "tags": ["coding"]}, f"saving sends only what changed, got {put}")
+        check(any("Code review, senior" in r for r in rows()), f"and the list shows it, got {rows()[:2]}")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
         # The harness routes rewrites to its fake direct path; that the ticked
         # ids ride with a server rewrite is checked in check_extension_e2e.py.

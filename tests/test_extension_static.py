@@ -1769,3 +1769,21 @@ def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
 def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
     body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
     assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS
+
+
+def test_new_and_edit_prompt_are_a_page_of_the_library():
+    """
+    New and Edit prompt were a window of their own: the whole page blurred
+    behind it and a gradient Save, the look of nothing else here. They are a
+    page of the sheet now, and a failed edit says so instead of closing as
+    if it had worked.
+    """
+    assert "function showEditModal" not in CONTENT_JS
+    page = _function_bodies(CONTENT_JS, r"openPromptPage")["openPromptPage"]
+    assert 'libPage = "edit"' in page and "getOrCreateModalOverlay" not in page
+    html = _function_bodies(CONTENT_JS, r"libEditHtml")["libEditHtml"]
+    assert "pm-btn-primary" not in html and "pm-lib-verb" in html, "the page uses the sheet's own buttons"
+    save = _function_bodies(CONTENT_JS, r"savePromptPage")["savePromptPage"]
+    assert "Could not save the changes" in save and "if (libEdit !== e) return;" in save
+    assert ".pm-edit-textarea" not in STYLES_CSS, "the window's styles are gone with it"
+
