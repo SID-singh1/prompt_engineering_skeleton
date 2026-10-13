@@ -445,6 +445,14 @@
     border-color: rgba(239, 106, 96, 0.34);
 }
 .pm-trigger[data-state="error"] .pm-pill-insert:hover { background: rgba(239, 106, 96, 0.22); }
+/* After a Replace the verb is Undo: a way back, so it is neutral, not the
+   accent that means "use this". */
+.pm-trigger[data-state="applied"] .pm-pill-insert {
+    color: var(--pm-con-text);
+    background: var(--pm-con-elev);
+    border-color: var(--pm-con-border);
+}
+.pm-trigger[data-state="applied"] .pm-pill-insert:hover { background: var(--pm-con-hover); border-color: var(--pm-con-border-hover); }
 
 /* Applied: the rating question lives in the pill for six seconds. It was a
    separate toast beside a pill that had already collapsed — two objects

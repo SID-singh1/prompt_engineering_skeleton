@@ -946,6 +946,7 @@ async function insertDraft() {
  * one, Retry a failed one. Whatever the state, the chip is the way out of it.
  */
 function pillVerb() {
+  if (pillApplied?.undo) { undoReplace(); return; }
   if (cardState === "ready" && !cardStale) insertDraft();
   else if (cardState === "ready" && cardStale) redoCard();
   else if (cardState === "error") { closeCard(); handleEnhance(); }
@@ -969,10 +970,49 @@ function composerHasFocus() {
  * `result` is null when there is no log_id to rate against, in which case the
  * pill only confirms.
  */
-function showApplied(result) {
+function showApplied(result, undo = null) {
   clearTimeout(pillApplied?.timer);
-  pillApplied = { result, thanked: false, timer: setTimeout(clearApplied, 6000) };
+  pillApplied = { result, undo, thanked: false, timer: setTimeout(clearApplied, undo ? 8000 : 6000) };
   renderPill();
+}
+
+/**
+ * Undo a Replace: write back exactly what the chat box held, and bring the
+ * rewrite back on the card, versions and all, so another version can be
+ * picked. Refused if the box has been edited since, because writing over the
+ * user's new words is the one thing an Undo must not do.
+ */
+async function undoReplace() {
+  const u = pillApplied?.undo;
+  if (!u) return;
+  clearApplied();
+  if (norm(getCurrentInputText()) !== norm(u.written)) {
+    showToast("The chat box has changed since, so Undo would overwrite it.", "error");
+    return;
+  }
+  if (!(await restoreComposer(u.before))) {
+    showToast(`Couldn\u2019t put your text back. Press ${CMD_KEY}Z in the chat box.`, "error");
+    return;
+  }
+  if (cardState !== "idle") return;   // a new draft started meanwhile; leave it be
+  const d = u.draft;
+  cardOriginal = d.original;
+  cardBasedOn = d.basedOn;
+  cardHasBaseline = true;
+  cardVersions = d.versions;
+  cardShowingOriginal = false;
+  showDiffModal(d.result);
+}
+
+/** Put the chat box back to `text`, which may be empty. */
+async function restoreComposer(text) {
+  if (norm(text)) return applyToInput(text);
+  const el = findComposer();
+  if (!el) return false;
+  if (el.tagName === "TEXTAREA" || el.tagName === "INPUT") return applyToInput("");
+  await clearComposer(el);
+  await nextFrame();
+  return !norm(getCurrentInputText());
 }
 
 function clearApplied() {
@@ -1035,7 +1075,10 @@ function renderPill() {
     }
   } else if (pillApplied) {
     state = "applied";
-    label = pillApplied.thanked ? "Thanks" : "Inserted";
+    const replaced = pillApplied.undo && norm(pillApplied.undo.before);
+    label = pillApplied.thanked ? "Thanks" : replaced ? "Replaced" : "Inserted";
+    // Undo is the verb while it can still be used.
+    if (pillApplied.undo && !pillApplied.thanked) verb = "Undo";
   }
 
   const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
@@ -1057,6 +1100,7 @@ function renderPill() {
       Replace: "Replace the chat box text with the rewrite",
       Redo: "Rewrite what is in the chat box now",
       Retry: "Try the rewrite again",
+      Undo: "Put back what was in the chat box",
     }[verb];
   }
   pill.querySelector(".pm-pill-rate").hidden = !(state === "applied" && pillApplied.result && !pillApplied.thanked);
@@ -5207,6 +5251,13 @@ async function acceptCard() {
   const applyingEnhanced = !cardShowingOriginal;
   const text = applyingEnhanced ? cardResult.enhanced : (cardResult.original || cardOriginal);
   const result = cardResult;
+  // What Undo needs: the chat box exactly as it was, and the draft, so the
+  // rewrite comes back on the card rather than being lost with the old text.
+  const undo = {
+    before: getCurrentInputText(),
+    written: text,
+    draft: { result, versions: cardVersions.slice(), basedOn: cardBasedOn, original: cardOriginal },
+  };
   closeCard();
 
   // One event, one toast. The feedback toast carries the confirmation itself,
@@ -5218,7 +5269,7 @@ async function acceptCard() {
   // The pill says "Inserted" and, when there is a log_id to rate against,
   // asks how it was — in the object the user was already looking at, rather
   // than a toast beside a pill that had just collapsed.
-  if (applied) showApplied(canRate ? result : null);
+  if (applied) showApplied(canRate ? result : null, undo);
   if (applied) {
     tipDone("card");
     statsBump("inserts");
