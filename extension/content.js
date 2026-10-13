@@ -1864,6 +1864,9 @@ const SHEET_W_MIN = 300, SHEET_H_MIN = 240;   // the smallest a drag on its edge
 const SHEET_SIZE_KEY = "pm_sheet_size";
 let sheetSize = { w: 0, h: 0 };
 let sheetGripTap = 0;          // when an edge was last pressed without a drag
+// The usual width: room for the grip, the search box and its placeholder,
+// Saved | History, +, ⋯ and ×. 368 fitted them before the grip.
+const SHEET_W = 384;
 // The edges that size it: the one facing away from the pill (its width), the
 // one away from the chat box (its height), and the corner between them. The
 // sides they sit on follow where the sheet hangs (data-dock, data-side).
@@ -1942,7 +1945,7 @@ function positionLibrary() {
   const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
   // A size the user dragged the sheet to wins, within the window and the
   // room it has (see startSheetResize).
-  const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : 368, vw - 2 * m));
+  const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : SHEET_W, vw - 2 * m));
   lib.style.width = width + "px";
   const composer = findComposer();
   const frame = composerFrame(composer);
