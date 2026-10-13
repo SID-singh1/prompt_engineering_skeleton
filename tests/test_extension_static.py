@@ -1824,3 +1824,24 @@ def test_voice_no_longer_takes_paste_as_plain_text():
     caps = _function_bodies(CONTENT_JS, r"keyCaps")["keyCaps"]
     assert "key.slice(glyphs[0].length)" in caps, "⌘⇧Space would be drawn as S p a c e"
 
+
+def test_the_idle_pill_says_improve_once_there_is_a_draft():
+    """Two testers never found a bare ⊕ in the window's corner. With a draft in
+    the chat box it reads "⊕ Improve", heard however the box changed."""
+    body = _function_bodies(CONTENT_JS, r"renderPill")["renderPill"]
+    assert 'const invite = state === "idle" && norm(getCurrentInputText()).length >= 3;' in body
+    assert '${invite}' in body, "the word is part of the render signature, or it never updates"
+    assert "renderPill();" in _function_bodies(CONTENT_JS, r"onComposerChanged")["onComposerChanged"], \
+        "ProseMirror fires no input event: the observer has to redraw the pill"
+    assert re.search(r"\.pm-trigger\.pm-pill-invite:not\(\.pm-pill-open\):not\(\.pm-pill-word-off\) \.pm-pill-word\s*{[^}]*display:\s*inline", STYLES_CSS)
+
+
+def test_a_draft_pill_is_fitted_beside_the_chat_box_before_it_moves():
+    """It stepped up onto the chat box's corner whenever a draft made it wide,
+    and testers saw it wander. It is capped to the room beside the box first,
+    measured at full width each pass so the choice cannot flap."""
+    body = _function_bodies(CONTENT_JS, r"placePill")["placePill"]
+    assert body.index('pill.style.maxWidth = "";') < body.index("let w = pill.offsetWidth;")
+    assert "room >= PILL_MIN_OPEN_W" in body
+    assert 'const box = pill.classList.contains("pm-pill-open") ? c : null;' in body, "an idle pill never steps"
+

@@ -71,6 +71,9 @@ def main():
                 "t => (document.querySelector('#pm-card .pm-card-title')?.textContent || '').toLowerCase().trim() === t",
                 arg=text.lower(), timeout=5000)
 
+        def rect(sel):
+            return ev(f"(() => {{ const r = document.querySelector('{sel}')?.getBoundingClientRect(); return r && {{ l: r.left, t: r.top, r: r.right, b: r.bottom }}; }})()")
+
         def styles():
             return [b.strip() for b in page.locator("#pm-card .pm-card-style").all_inner_texts()]
 
@@ -402,6 +405,38 @@ def main():
         foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
+
+        # ── "⊕ Improve": the idle pill says what it does once there is a draft ──
+        ev("closeCard(); clearApplied(); H.type('')")
+        page.wait_for_timeout(150)
+        check(not ev("document.getElementById('pm-trigger').classList.contains('pm-pill-invite')")
+              and page.is_hidden("#pm-trigger .pm-pill-word"), "an empty chat box: the plain ⊕")
+        ev("H.type('hw do i sort')")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="visible", timeout=2000)
+        check(page.inner_text("#pm-trigger .pm-pill-word").strip() == "Improve"
+              and page.get_attribute("#pm-trigger", "aria-label").startswith("Improve this prompt"),
+              "typing a draft turns it into ⊕ Improve")
+        ev("H.type('')")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="hidden", timeout=2000)
+        # ProseMirror and Lexical change the box without an input event: the observer hears it.
+        ev("document.getElementById('composer').textContent = 'words with no input event'; 0")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="visible", timeout=2000)
+        check(True, "it appears for text written without an input event too")
+
+        # ── a waiting rewrite stays in its corner beside the chat box ──
+        ev("H.type(H.ORIG); H.stream(); H.done(); hideCard()")
+        page.wait_for_timeout(450)
+        pill, box = rect("#pm-trigger"), rect("form")
+        check(abs((900 - pill["b"]) - ev("PILL_HOME_BOTTOM")) <= 1 and abs(1440 - pill["r"] - ev("PILL_MARGIN")) <= 1,
+              f"with room beside the chat box, the draft's pill stays home, got {pill}")
+        check(pill["l"] >= box["r"], f"made to fit beside the box rather than over it: {pill} vs {box}")
+        page.set_viewport_size({"width": 1000, "height": 900})
+        page.wait_for_timeout(450)
+        pill, box = rect("#pm-trigger"), rect("form")
+        check(pill["b"] <= box["t"] + 1, f"with no room beside it, it still steps up off the box, got {pill} vs {box}")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(200)
+        ev("closeCard(); H.type('')")
 
         # ── Good rewrite? asked on the card, where it is read ──
         # Ends in a value, not the function: Playwright calls an expression that yields one.
