@@ -364,26 +364,39 @@ def main():
         check(not tucked(), "a card moved off the chat box by hand does not tuck")
         ev("resetCardLayout(); closeCard()")
 
-        # ── the foot: buttons, not a legend of keys ──
+        # ── the foot: one row of buttons, not a legend of keys ──
+        def foot_names():
+            # A button's words, or for an icon its name.
+            return ev("""[...document.querySelectorAll('#pm-card .pm-card-foot button')]
+                .map(b => b.textContent.trim() || b.getAttribute('aria-label'))""")
+
         ev("FAKE.calls = []; H.type(H.ORIG)")
         page.click("#pm-trigger")
         wait_title("Rewrite · Deep")
-        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
-        check(foot == ["Replace draft", "Save", "Show original", "Discard"], f"the foot is four buttons, got {foot}")
+        foot = foot_names()
+        check(foot == ["Replace draft", "Shorter", "Open-ended", "Show your original", "Save to your library", "Discard this rewrite"],
+              f"the foot is Replace, the other styles, then three named icons, got {foot}")
+        tops = ev("[...document.querySelectorAll('#pm-card .pm-card-foot button')].map(b => Math.round(b.getBoundingClientRect().top + b.offsetHeight / 2))")
+        check(max(tops) - min(tops) <= 2, f"all on one row on a wide card, centres at {tops}")
+        check(ev("getComputedStyle(document.querySelector('#pm-card .pm-card-foot')).borderTopWidth") == "0px"
+              and ev("getComputedStyle(document.querySelector('#pm-card .pm-card-head')).borderBottomWidth") == "0px",
+              "no rule above the foot or under the title: one surface, not three bands")
+        check(page.locator("#pm-card .pm-card-tip button").count() == 0, "the first-run tip is a line, with no × of its own")
         check(page.locator("#pm-card .pm-card-foot .pm-card-key, #pm-card .pm-card-foot kbd").count() == 0, "with no keycaps printed on them")
         check(page.locator("#pm-card-close").count() == 0, "and no second minimize: the head has one")
         bg = ev("getComputedStyle(document.getElementById('pm-card-accept')).backgroundColor")
         check(bg not in ("rgba(0, 0, 0, 0)", "transparent"), f"Replace draft is the one solid button, got {bg}")
         check(ev("getComputedStyle(document.getElementById('pm-card-save')).backgroundColor") in ("rgba(0, 0, 0, 0)", "transparent"),
-              "the rest are outlined")
+              "the rest are quiet")
         page.hover("#pm-card-save")
         page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
         check(page.locator("#pm-keytip kbd").all_inner_texts() == ["⌘", "S"], "Save's key shows where the pointer rests on it")
         page.mouse.move(5, 5)
         ev("H.type('something else entirely')")
         page.wait_for_selector("#pm-card-redo")
-        foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
-        check(foot == ["Redo", "Save", "Show original", "Discard"], f"stale, Redo leads in accept's place, got {foot}")
+        foot = foot_names()
+        check(foot == ["Redo", "Show your original", "Save to your library", "Discard this rewrite"],
+              f"stale, Redo leads in accept's place and the styles go, got {foot}")
         check(page.locator("#pm-card-accept").count() == 0, "and the stale rewrite is not offered to use")
         ev("closeCard(); H.type(H.ORIG); H.stream(); H.fail()")
         foot = [b.strip() for b in page.locator("#pm-card .pm-card-foot button").all_inner_texts()]
