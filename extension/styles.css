@@ -1606,6 +1606,7 @@
     flex-wrap: wrap;
     padding: 2px 22px 12px 15px;
 }
+.pm-card-foot .pm-card-primary { margin-right: 4px; }
 
 .pm-card-act {
     display: inline-flex;
@@ -1644,7 +1645,6 @@
 }
 .pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
 
-.pm-card-spacer { margin-left: auto; }
 /* Original, Save and Discard: icons at the row's end, named on hover. */
 .pm-card-tools { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
 .pm-card-act.pm-card-icon {
@@ -1662,6 +1662,7 @@
 .pm-card-act.pm-card-icon[aria-pressed="true"] { color: var(--pm-accent); }
 .pm-card-act.pm-card-icon.pm-card-discard:hover { color: var(--pm-danger); background: rgba(239, 106, 96, .12); }
 
+.pm-card-spacer { margin-left: auto; }
 
 .pm-card-meta {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
