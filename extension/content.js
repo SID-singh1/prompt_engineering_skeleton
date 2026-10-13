@@ -4909,7 +4909,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + cardTipHtml() + chip + cardStyleRow(result) + cardFoot(actions));
+  const card = openCard(head + body + chip + cardTipHtml() + cardStyleRow(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -4932,11 +4932,6 @@ function showDiffModal(result) {
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
-  document.getElementById("pm-card-tip-x")?.addEventListener("click", () => {
-    tipDone("card");
-    document.getElementById("pm-card-tip")?.remove();
-    positionCard();
-  });
   document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
     cardUsedOpen = !cardUsedOpen;
     e.currentTarget.setAttribute("aria-expanded", String(cardUsedOpen));
@@ -6719,12 +6714,18 @@ function tipsOnComposerChanged() {
   if (!activeTip) maybeTipSlash();
 }
 
-/** Tip 2 (inside the card): the markup, or "" once it has done its job. */
+/**
+ * Tip 2 (inside the card): the markup, or "" once it has done its job.
+ *
+ * One quiet line over the buttons it explains. It was a bordered box with its
+ * own ×, a box inside the card, read as one more thing to deal with before
+ * the rewrite. It goes for good after the first Replace or the first style
+ * tried, so it needs no × of its own.
+ */
 function cardTipHtml() {
   if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
-  return `<div class="pm-card-tip" id="pm-card-tip"><span><b>Replace draft</b> puts this in your chat box. Not quite right? ` +
-    `The buttons below make another version, and every version is kept.</span>` +
-    `<button type="button" id="pm-card-tip-x" aria-label="Dismiss this tip" title="Dismiss">${TIP_X_SVG}</button></div>`;
+  return `<div class="pm-card-tip" id="pm-card-tip"><b>Replace draft</b> puts this in your chat box. ` +
+    `Not quite right? Try another style; every version is kept.</div>`;
 }
 
 /** Tip 3: after the first Replace, how to keep a prompt that worked. */
