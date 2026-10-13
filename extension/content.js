@@ -1858,6 +1858,7 @@ function focusLibrarySearch() {
 
 const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
 const LIB_HEIGHT = 520;        // the sheet's height when there is room for it
+const LIB_ROOM_USEFUL = 320;   // px above the chat box that is enough to open there
 const SHEET_W_MIN = 300, SHEET_H_MIN = 240;   // the smallest a drag on its edges makes it
 // The size the user dragged the sheet to, kept on this device; 0 is "the usual".
 const SHEET_SIZE_KEY = "pm_sheet_size";
@@ -1926,47 +1927,60 @@ function startSheetResize(e) {
 const RAIL_GAP = 6, RAIL_ROW = 26;      // the chips' row: its gap above the box, and its height
 const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 
-/** Where the sheet goes: on the pill's side, above it if there is room, else below. */
+/**
+ * Where the sheet goes: on the chat box it works on, directly above it and
+ * lined up with its right edge, the side the pill and the Library chip are
+ * on. It used to hang off the pill, which sits in the window's corner, so on
+ * a chat box centred in the page (a new chat) the sheet came out in the
+ * top-right corner, nowhere near the box. Below the box only when there is
+ * more room there. With no chat box on the page it hangs off the pill.
+ */
 function positionLibrary() {
   const lib = document.getElementById("pm-library");
   const pill = document.getElementById("pm-trigger");
   if (!lib || lib.hidden || !pill) return;
-  const p = pill.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
   // A size the user dragged the sheet to wins, within the window and the
   // room it has (see startSheetResize).
   const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : 368, vw - 2 * m));
   lib.style.width = width + "px";
-  const onRight = p.left + p.width / 2 > vw / 2;
-  lib.dataset.dock = onRight ? "right" : "left";
-  lib.style.left = onRight ? "auto" : Math.max(m, Math.min(p.left, vw - width - m)) + "px";
-  lib.style.right = onRight ? Math.max(m, Math.min(vw - p.right, vw - width - m)) + "px" : "auto";
-  // Opening upward, the sheet also clears the chat box when it would overlap
-  // it sideways: the host's send button lives on that box's edge, and a sheet
-  // resting on it is a sheet that swallows the click meant for Send.
-  const left = onRight ? vw - parseFloat(lib.style.right) - width : parseFloat(lib.style.left);
   const composer = findComposer();
   const frame = composerFrame(composer);
-  const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
-  // Over the box, it stands on the row the context chips land on, whether or
-  // not any have yet. It used to stand on the chips themselves, so the chip
-  // that first reached under it, and each that wrapped them onto another row,
-  // pushed the sheet up or made it shorter: picking a second or third prompt
-  // moved the list being picked from. While the sheet is open the chips keep
-  // to that one row (see fitRailToOneRow).
-  let ceiling = overlapsBox ? Math.min(p.top, frame.top - RAIL_SLOT) : p.top;
-  // A tall or centred chat box (ChatGPT's new chat with a draft in it) left
-  // too little room above it, and the sheet came out two rows high at the
-  // top of the window, nowhere near the pill (seen live, 2026-10-01). It may
-  // then come down over the box's text, but still not over its row of
-  // buttons, where Send is.
-  if (overlapsBox && ceiling - gap - m < LIB_ROOM_WANTED) {
-    const controls = composerControlsTop(composer);
-    if (controls !== null) ceiling = Math.min(p.top, Math.max(ceiling, controls));
+  const box = frame && frame.width >= 240 ? frame : null;
+
+  let left, ceiling, floor;
+  if (box) {
+    left = Math.max(m, Math.min(box.right - width, vw - width - m));
+    // Above the box it stands on the row the context chips land on, whether
+    // or not any have yet. Standing on the chips themselves, the chip that
+    // first reached under it, and each that wrapped them onto another row,
+    // pushed the sheet up: picking a prompt moved the list being picked
+    // from. While the sheet is open the chips keep to that one row (see
+    // fitRailToOneRow).
+    ceiling = box.top - RAIL_SLOT;
+    floor = box.bottom;
+    // A tall chat box (a long draft) can leave too little room above it. The
+    // sheet may then come down over the box's text, but never over its row
+    // of buttons, where Send is.
+    if (ceiling - gap - m < LIB_ROOM_WANTED) {
+      const controls = composerControlsTop(composer);
+      if (controls !== null) ceiling = Math.max(ceiling, Math.min(controls, ceiling + LIB_ROOM_WANTED));
+    }
+  } else {
+    const p = pill.getBoundingClientRect();
+    const onRight = p.left + p.width / 2 > vw / 2;
+    left = onRight ? Math.max(m, Math.min(p.right - width, vw - width - m)) : Math.max(m, Math.min(p.left, vw - width - m));
+    ceiling = p.top;
+    floor = p.bottom;
   }
-  const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
-  const up = above >= 260 || above >= below;
-  lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
+  // Above unless that leaves it too short to read a list in (a chat box
+  // centred in the page leaves about 280px) and there is more room below.
+  const above = ceiling - gap - m, below = vh - floor - gap - m;
+  const up = above >= LIB_ROOM_USEFUL || above >= below;
+  lib.dataset.dock = left + width / 2 > vw / 2 ? "right" : "left";
+  lib.style.left = lib.dataset.dock === "left" ? left + "px" : "auto";
+  lib.style.right = lib.dataset.dock === "right" ? (vw - left - width) + "px" : "auto";
+  lib.style.top = up ? "auto" : (floor + gap) + "px";
   lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
   // It fits what it holds, up to the usual height (a sign-in note or one
   // prompt in a 520px box was mostly empty), or is the height the user
