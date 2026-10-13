@@ -4673,12 +4673,14 @@ function cardFoot(parts) {
  * the pill and comes back with a click (or ⌘⇧P). Discard is a footer action,
  * deliberately further from the corner the hand goes to when it wants a
  * window out of the way. The bar also carries the stale and error notices, so
- * the card has the same anatomy in every state: head, text, foot.
+ * the card has the same anatomy in every state: head, text, foot. `extra`
+ * goes between the name and the controls: the version stepper, when there is
+ * more than one version to step through.
  */
-function cardHead(title, kind = "") {
+function cardHead(title, kind = "", extra = "") {
   return `<div class="pm-card-head${kind ? " pm-card-head-" + kind : ""}" title="Drag to move">` +
     `<span class="pm-card-head-dot" aria-hidden="true"></span>` +
-    `<span class="pm-card-title">${title}</span>` +
+    `<span class="pm-card-title">${title}</span>` + extra +
     `<button class="pm-card-reset" type="button" id="pm-card-reset" title="Return beside the prompt" aria-label="Return card beside the prompt">↙</button>` +
     `<button class="pm-card-min" type="button" id="pm-card-min" data-pm-tip="Minimize to the pill" data-pm-key="Esc" aria-label="Minimize to the pill">${CARD_MIN_SVG}</button>` +
   `</div>`;
@@ -4858,7 +4860,8 @@ function showDiffModal(result) {
         : "Prompt changed \u2014 this rewrite is for the earlier text", "stale")
     : cardHead(cardShowingOriginal
         ? (cardSubject ? "Saved prompt, as it is" : "Original")
-        : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`);
+        : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`,
+      "", cardVersionsHtml());
 
   // Which saved prompts shaped this rewrite, each one named, with a way to
   // drop an auto-matched one and rewrite again without it. Only shown when a
@@ -4994,7 +4997,8 @@ function cardUsedHtml(result) {
 }
 
 /**
- * The other two styles, and a way back through the versions already made.
+ * The other two styles. (The versions already made are stepped through in
+ * the title bar: cardVersionsHtml.)
  *
  * Hidden while the original is showing (there is no rewrite to vary) and while
  * the draft is stale (Redo is the only honest action then). A style already
@@ -5019,15 +5023,22 @@ function cardStyleRow(result) {
     return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
       `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
   }).join("");
+  return `<div class="pm-card-styles"><span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+}
+
+/**
+ * The way back through the versions already made, for the title bar: it says
+ * which rewrite the card is showing, so it sits beside the card's name.
+ * Hidden on the original, and on a stale draft, whose bar has a notice to give.
+ */
+function cardVersionsHtml() {
   const n = cardVersions.length;
-  const versions = n > 1
-    ? `<span class="pm-card-versions" role="group" aria-label="Versions">` +
-      `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
-      `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
-      `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
-      `</span>`
-    : "";
-  return `<div class="pm-card-styles">${versions}<span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+  if (n < 2 || cardShowingOriginal || cardStale) return "";
+  return `<span class="pm-card-versions" role="group" aria-label="Versions">` +
+    `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
+    `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
+    `<button type="button" class="pm-card-ver" id="pm-card-ver-next" aria-label="Next version" title="Next version (])"${cardVersionIndex === n - 1 ? " disabled" : ""}>\u203a</button>` +
+    `</span>`;
 }
 
 /** Show another version of this draft. Free: nothing is requested. */

@@ -1583,7 +1583,7 @@
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    margin-right: auto;
+    cursor: default;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     font-size: 10.5px;
     color: var(--pm-text-secondary);
