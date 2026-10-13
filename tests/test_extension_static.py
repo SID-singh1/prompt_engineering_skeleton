@@ -506,10 +506,15 @@ def test_lazy_created_modal_inherits_the_current_theme():
     assert "uiTheme = theme" in _function_bodies(CONTENT_JS, r"applyTheme")["applyTheme"]
 
 
-def test_lazy_created_voice_overlay_inherits_the_current_theme():
-    """The on-demand voice overlay must use the active theme."""
+def test_lazy_created_voice_ui_wears_the_cards_palette():
+    """
+    The voice UI is created on demand. It used to read the panel's theme; it
+    is now a .pm-card, so it wears the console palette the card redefines its
+    tokens to, the same black on every theme, as the card and the pill do.
+    """
     body = _function_bodies(CONTENT_JS, r"showVoiceOverlay")["showVoiceOverlay"]
-    assert "data-pm-theme" in body and "uiTheme" in body
+    assert 'el.className = "pm-card pm-voice' in body
+    assert re.search(r"\.pm-card \{[^}]*--pm-bg: var\(--pm-con-bg-solid\)", STYLES_CSS, re.S)
 
 
 def test_voice_flow_requires_review_before_it_can_enhance():
@@ -523,8 +528,8 @@ def test_voice_flow_requires_review_before_it_can_enhance():
     assert "supportedVoiceMimeType" in start
     assert "/voice-transcribe" in transcribe
     assert "AbortController" in transcribe
-    assert "Enhance transcript" in review
-    assert "Use as draft" in review
+    assert ">Improve</button>" in review.replace("${CARD_SPARK_SVG}", "")
+    assert "Use as is" in review
     assert "cancelVoice" in review
     assert "voice-enhance" not in transcribe
 
@@ -674,9 +679,9 @@ def test_nothing_covers_the_card_that_does_not_also_take_its_keys():
     assert "focusLibrarySearch()" in _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"], \
         "the library covers the card without taking its keys"
     assert z["--pm-z-overlay"] > z["--pm-z-card"], \
-        "the card punches through the full-screen modal and voice backdrops"
+        "the card punches through the full-screen modal backdrop"
     body = _function_bodies(CONTENT_JS, r"overlayHasInput")["overlayHasInput"]
-    assert "pm-modal-overlay.pm-visible" in body and "pm-voice-overlay.pm-visible" in body
+    assert "pm-modal-overlay.pm-visible" in body and "#pm-voice.pm-visible" in body
 
 
 def test_the_card_keymap_defers_to_an_overlay():
@@ -1786,4 +1791,22 @@ def test_new_and_edit_prompt_are_a_page_of_the_library():
     save = _function_bodies(CONTENT_JS, r"savePromptPage")["savePromptPage"]
     assert "Could not save the changes" in save and "if (libEdit !== e) return;" in save
     assert ".pm-edit-textarea" not in STYLES_CSS, "the window's styles are gone with it"
+
+
+def test_voice_sits_on_the_chat_box_and_esc_never_discards_a_transcript():
+    """
+    Voice was a window over the whole page, blurred behind, with gradient
+    buttons; the conversation being answered was hidden while the user spoke.
+    It is a bar, then a card, on the chat box. Esc stops a recording but only
+    folds a transcript under review: throwing away words is the bin's job.
+    """
+    assert ".pm-voice-overlay" not in STYLES_CSS and "pm-voice-overlay" not in CONTENT_JS
+    show = _function_bodies(CONTENT_JS, r"showVoiceOverlay")["showVoiceOverlay"]
+    assert "pm-card pm-voice" in show and "pm-btn-primary" not in show
+    review = _function_bodies(CONTENT_JS, r"showVoiceTranscriptReview")["showVoiceTranscriptReview"]
+    assert "pm-btn-primary" not in review and "transcribed in" not in review
+    assert "foldVoice(window.innerHeight < 620 || window.innerWidth < 520" in review, "a small window starts folded"
+    keys = _function_bodies(CONTENT_JS, r"handleCardKeydown")["handleCardKeydown"]
+    assert 'if (voiceState === "reviewing") foldVoice(true); else cancelVoice();' in keys
+    assert "composerFrame(findComposer())" in _function_bodies(CONTENT_JS, r"positionVoice")["positionVoice"]
 
