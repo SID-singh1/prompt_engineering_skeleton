@@ -329,6 +329,41 @@ def _pick_key(provider_name: str) -> tuple[Optional[str], int]:
     return keys[soonest], soonest
 
 
+# What each shared key has left, per model, as the provider last reported it
+# in its x-ratelimit-* headers: label -> key index -> fields. In memory only;
+# it is a live view, refreshed by every request through a shared key.
+_headroom: dict[str, dict[int, dict]] = {}
+_RATE_HEADERS = {
+    "requests_left": "x-ratelimit-remaining-requests",
+    "requests_limit": "x-ratelimit-limit-requests",
+    "tokens_left": "x-ratelimit-remaining-tokens",
+    "tokens_limit": "x-ratelimit-limit-tokens",
+    "requests_reset": "x-ratelimit-reset-requests",
+    "tokens_reset": "x-ratelimit-reset-tokens",
+}
+
+
+def _note_headroom(spec: "ModelSpec", key_index: int, headers) -> None:
+    """Keep a shared key's reported limits. A user's own key (-1) is theirs, not ours."""
+    if key_index < 0 or headers is None:
+        return
+    seen = {}
+    for name, header in _RATE_HEADERS.items():
+        value = headers.get(header)
+        if value is None:
+            continue
+        if name.endswith("_reset"):
+            seen[name] = str(value)
+            continue
+        try:
+            seen[name] = int(float(value))
+        except (TypeError, ValueError):
+            pass
+    if seen:
+        seen["at"] = round(time.time())
+        _headroom.setdefault(spec.label, {})[key_index] = seen
+
+
 def _cool_down(provider_name: str, index: int, seconds: float = 60.0) -> None:
     if index < 0:
         return
@@ -354,10 +389,17 @@ def pool_status() -> dict:
                 for i in range(len(keys))
             ],
         }
+    chain = server_chain()
     return {
         "providers": out,
-        "chain": [m.label for m in DEFAULT_CHAIN],
+        "chain": [m.label for m in chain],
+        "extra_models": [m.label for m in chain[len(DEFAULT_CHAIN):]],
         "dead_models": sorted(_dead_models),
+        # Requests and tokens left per shared key, per model, as last reported.
+        "headroom": {
+            label: {str(i): dict(v) for i, v in sorted(per_key.items())}
+            for label, per_key in _headroom.items()
+        },
     }
 
 
@@ -604,6 +646,7 @@ def chat(
             attempts.append((spec.label, f"network error: {exc}"))
             continue
 
+        _note_headroom(spec, key_index, getattr(res, "headers", None))
         if res.status_code == 200:
             data = res.json()
             choice = data["choices"][0]
@@ -680,6 +723,7 @@ def chat_stream(
                 json=payload,
                 timeout=timeout,
             ) as res:
+                    _note_headroom(spec, key_index, getattr(res, "headers", None))
                     if res.status_code != 200:
                         body = res.read().decode(errors="replace")[:400]
                         kind = _classify(res.status_code, body)
