@@ -110,3 +110,6 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 .cap-off { color: var(--muted); font-style: italic; }
 @media (max-width: 720px) { .cap-row { grid-template-columns: 1fr; gap: 6px; } .cap-when { text-align: left; } }
 
+
+/* Styles carry their use rate after the name. */
+#modes .bar-row { grid-template-columns: 128px 1fr 30px; }

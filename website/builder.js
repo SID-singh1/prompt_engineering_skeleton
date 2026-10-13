@@ -77,6 +77,9 @@ function render(data) {
   $("updated").textContent = `Updated ${new Date(data.generated_at).toLocaleString()} · last ${data.range?.days || state.days} days`;
   $("metrics").innerHTML = [
     ["Enhancements", number(s.enhancements), `${number(s.byok_enhancements)} via BYOK`],
+    // Put into the chat box, of the rewrites this server made (one made in the
+    // browser with the user's own key never reaches it).
+    ["Rewrites used", s.enhancements ? `${Math.round((s.acceptance_rate || 0) * 100)}%` : "—", `${number(s.accepted)} of ${number(s.enhancements)} went into the chat box`],
     ["Active users", number(s.active_users), `${number(s.total_users)} total accounts`],
     ["Failures", number(s.failures), s.failures ? "Needs attention" : "No recorded failures"],
     ["Passive events", number(s.passive_events), "Learning signals"],
@@ -87,7 +90,7 @@ function render(data) {
 
   renderDaily(data.daily || []);
   renderBars("platforms", data.breakdowns?.platforms || {});
-  renderBars("modes", data.breakdowns?.modes || {});
+  renderBars("modes", data.breakdowns?.modes || {}, data.breakdowns?.acceptance_by_mode || {});
   renderBars("providers", data.breakdowns?.providers || {});
   renderBars("input-methods", data.breakdowns?.input_methods || {});
   renderFeedback(s.feedback_up, s.feedback_down);
@@ -104,15 +107,22 @@ function renderDaily(items) {
   $("daily-chart").innerHTML = rows.map((item) => {
     const e = Math.round(((item.enhancements || 0) / max) * 100);
     const f = Math.round(((item.failures || 0) / max) * 100);
-    return `<div class="day-column" title="${escapeHtml(item.date)}: ${item.enhancements || 0} enhancements, ${item.failures || 0} failures"><div class="day-bars"><div class="day-bar" style="height:${e}%"></div><div class="day-bar failure" style="height:${f}%"></div></div><span class="day-label">${escapeHtml(item.date.slice(5))}</span></div>`;
+    return `<div class="day-column" title="${escapeHtml(item.date)}: ${item.enhancements || 0} enhancements, ${item.accepted || 0} used, ${item.failures || 0} failures"><div class="day-bars"><div class="day-bar" style="height:${e}%"></div><div class="day-bar failure" style="height:${f}%"></div></div><span class="day-label">${escapeHtml(item.date.slice(5))}</span></div>`;
   }).join("");
 }
 
-function renderBars(id, values) {
+/** Counts as bars. With `used` (per label: enhancements, accepted, rate), each
+ *  label also says what share of its rewrites went into the chat box. */
+function renderBars(id, values, used = null) {
   const entries = Object.entries(values).filter(([, count]) => count > 0);
   if (!entries.length) { $(id).innerHTML = `<div class="empty">No data yet.</div>`; return; }
   const max = Math.max(...entries.map(([, count]) => count), 1);
-  $(id).innerHTML = entries.slice(0, 8).map(([label, count]) => `<div class="bar-row"><span class="bar-name" title="${escapeHtml(label)}">${escapeHtml(label)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round((count / max) * 100)}%"></div></div><span class="bar-count">${number(count)}</span></div>`).join("");
+  $(id).innerHTML = entries.slice(0, 8).map(([label, count]) => {
+    const u = used?.[label];
+    const rate = u ? ` · ${Math.round((u.rate || 0) * 100)}% used` : "";
+    const tip = u ? `${label}: ${u.accepted} of ${u.enhancements} used` : label;
+    return `<div class="bar-row"><span class="bar-name" title="${escapeHtml(tip)}">${escapeHtml(label)}${escapeHtml(rate)}</span><div class="bar-track"><div class="bar-fill" style="width:${Math.round((count / max) * 100)}%"></div></div><span class="bar-count">${number(count)}</span></div>`;
+  }).join("");
 }
 
 function renderFeedback(up = 0, down = 0) {
