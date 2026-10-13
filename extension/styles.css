@@ -1291,16 +1291,16 @@
    The one window control the card has, and the card's name. Minimize, not
    close: from here the draft only ever folds into the pill. It also carries
    the stale and error notices, so the card has one anatomy in every state —
-   head, text, foot — and a notice is read before the text it qualifies. */
+   head, text, foot — and a notice is read before the text it qualifies.
+   No band and no rule under it: the name is the first line of the card, not
+   a box on top of it. The whole line is still the handle the card moves by. */
 .pm-card-head {
     display: flex;
     align-items: center;
     gap: 8px;
     box-sizing: border-box;
     min-height: 34px;
-    padding: 6px 6px 6px 15px;
-    border-bottom: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft);
+    padding: 8px 8px 0 17px;
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -1371,8 +1371,6 @@
 .pm-card-reset:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
 .pm-card-reset:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 
-.pm-card.pm-card-stale .pm-card-head { background: var(--pm-warn-soft); border-bottom-color: var(--pm-warn-border); }
-
 .pm-card-error-note {
     display: block;
     margin-top: 6px;
@@ -1389,7 +1387,7 @@
 }
 
 .pm-card-text {
-    padding: 15px 17px 13px;
+    padding: 8px 17px 12px;
     /* System serif, not a webfont: a content script cannot load
        fonts.googleapis.com through the host page's CSP, and a silent fallback
        is worse than choosing the fallback deliberately. Georgia and Iowan Old
@@ -1580,6 +1578,7 @@
 }
 .pm-card-style[aria-disabled="true"] { opacity: .4; cursor: not-allowed; }
 .pm-card-versions {
+    flex: none;
     display: inline-flex;
     align-items: center;
     gap: 2px;
