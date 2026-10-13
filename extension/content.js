@@ -5008,7 +5008,7 @@ function cardUsedHtml(result) {
     : "";
   return `<div class="pm-card-used">` +
     `<button type="button" class="pm-card-chip pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
-    `aria-controls="pm-card-used-list" title="The saved prompts this rewrite drew on">\u21B3 ${summary}` +
+    `aria-controls="pm-card-used-list" title="The saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${summary}` +
     `<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>` +
     `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul></div>`;
 }
