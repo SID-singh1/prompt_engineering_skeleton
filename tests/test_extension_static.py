@@ -21,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTENT_JS = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
+SITES_JS = (ROOT / "extension" / "sites.js").read_text(encoding="utf-8")
 STYLES_CSS = (ROOT / "extension" / "styles.css").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")
 BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
@@ -1768,12 +1769,12 @@ def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
     for mark in ("[data-message-author-role]", "[data-markdown-text-tone='user-message']",
                  "[data-markdown-text-style='assistant-message']"):
         assert mark in scrape, f"the conversation reader misses {mark}"
-    assert "data-user-message-bubble" in CONTENT_JS and 'data-markdown-text-tone="user-message"' in CONTENT_JS
+    assert "data-user-message-bubble" in SITES_JS and 'data-markdown-text-tone="user-message"' in SITES_JS
 
 
 def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
     body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
-    assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS
+    assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in SITES_JS
 
 
 def test_new_and_edit_prompt_are_a_page_of_the_library():

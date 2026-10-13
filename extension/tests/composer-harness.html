@@ -32,19 +32,21 @@ const stage = document.getElementById("stage");
 
 // Pull the real implementation out of content.js. The block is delimited by the
 // COMPOSER_SELECTORS declaration and the passive-tracking section that follows
-// applyOrFallback; keep those markers in place if you move code around.
+// applyOrFallback; keep those markers in place if you move code around. The
+// selectors themselves are in sites.js, which goes in first.
 async function loadRealCode() {
-  const src = await fetch("../content.js").then(r => {
-    if (!r.ok) throw new Error(`content.js: HTTP ${r.status}`);
+  const get = (path) => fetch(path).then(r => {
+    if (!r.ok) throw new Error(`${path}: HTTP ${r.status}`);
     return r.text();
   });
-  const from = src.indexOf("const COMPOSER_SELECTORS = [");
+  const [sites, src] = await Promise.all([get("../sites.js"), get("../content.js")]);
+  const from = src.indexOf("const COMPOSER_SELECTORS = PM_SITES.composer;");
   const to = src.indexOf("function setupPassiveTracking()");
   if (from < 0 || to < 0) throw new Error("markers not found in content.js");
   const body = src.slice(from, to)
     // applyOrFallback is the only part that touches extension-only globals.
     .replace(/async function applyOrFallback[\s\S]*$/, "");
-  return new Function(`${body}; return { applyToInput, findComposer, composerText };`)();
+  return new Function(`${sites}\n${body}; return { applyToInput, findComposer, composerText };`)();
 }
 
 const mkCE = () => {

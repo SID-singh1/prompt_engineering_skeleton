@@ -2615,14 +2615,10 @@ async function submitSaveForm() {
 // by it. The selectors are the ones each site marks the user's side with:
 // ChatGPT, Gemini, and Claude.
 
-// ChatGPT marks the user's side two ways depending on the build: the old
-// author role, and (live since 2026-10) a bubble with a user-toned text inside.
-const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], [data-user-message-bubble], ' +
-  '[data-markdown-text-tone="user-message"], user-query, [data-testid="user-message"]';
-const SENT_PROMPT_WORDS = '[data-markdown-text-tone="user-message"], .query-text';
-// Text a screen reader hears and the eye does not: Gemini starts every one of
-// your messages with a hidden "You said", which is not part of the prompt.
-const VISUALLY_HIDDEN = '.cdk-visually-hidden, .sr-only, [class*="visually-hidden"]';
+// How each site marks the user's side, and its hidden "You said", are in sites.js.
+const SENT_PROMPT_SELECTOR = PM_SITES.sentPrompt;
+const SENT_PROMPT_WORDS = PM_SITES.sentPromptWords;
+const VISUALLY_HIDDEN = PM_SITES.visuallyHidden;
 const BOOKMARK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.8l-3.5 2.7z"/></svg>';
 let msgSaveTarget = null;
 let msgSaveHideTimer = null;
@@ -6155,18 +6151,10 @@ function closeModal() {
 // INPUT DETECTION & PASSIVE TRACKING
 // ══════════════════════════════════════════════════════════════
 
-// Ordered most- to least-specific. querySelector returns the FIRST match in
-// document order, which on several of these sites is a hidden search box or an
-// off-screen editor, so visibility is checked before a candidate is accepted.
-const COMPOSER_SELECTORS = [
-  "#prompt-textarea",                          // ChatGPT
-  "div[contenteditable='true'][role='textbox']",
-  "[data-testid='chat-input'] [contenteditable='true']",
-  "form [contenteditable='true']",
-  "form textarea",
-  "[contenteditable='true']",
-  "textarea",
-];
+// The chat box's selectors live in sites.js with every other site-specific
+// one, most- to least-specific; each candidate is checked for visibility
+// before it is taken (isUsable).
+const COMPOSER_SELECTORS = PM_SITES.composer;
 
 function isUsable(el) {
   if (!el || el.offsetParent === null) return false;
