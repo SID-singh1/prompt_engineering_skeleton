@@ -4740,6 +4740,10 @@ function hideCard() {
     card._pmEndGesture?.();
     if (card.contains(document.activeElement)) document.getElementById("pm-trigger")?.focus({ preventScroll: true });
     card.id = "";
+    // Its controls' ids go too. A card opened during the fade wires its
+    // buttons by id, and getElementById returns the first match in the page:
+    // the leaving card's. Its Replace then had no listener and did nothing.
+    card.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
     card._pmResize?.disconnect();
     const pill = document.getElementById("pm-trigger");
     const up = pill && pill.getBoundingClientRect().top < card.getBoundingClientRect().top;
