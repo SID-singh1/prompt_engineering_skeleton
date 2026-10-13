@@ -1382,7 +1382,7 @@ def test_the_card_keeps_the_names_of_the_saved_prompts_it_used():
     which saved prompts shaped a rewrite."""
     body = _function_bodies(CONTENT_JS, r"runBackendEnhance")["runBackendEnhance"]
     assert "context_details: metadata.context_details" in body
-    used = _function_bodies(CONTENT_JS, r"cardUsedHtml")["cardUsedHtml"]
+    used = _function_bodies(CONTENT_JS, r"cardUsedParts")["cardUsedParts"]
     assert "selected_prompts" in used and "auto_matched_prompts" in used and "data-pm-drop" in used
 
 
