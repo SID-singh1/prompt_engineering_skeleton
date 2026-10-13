@@ -136,7 +136,7 @@ def startup_db_client():
     env_label = "🔧 DEVELOPMENT" if not settings.is_production else "🚀 PRODUCTION"
     cors_label = "* (all origins)" if not settings.is_production else ", ".join(settings.cors_origins) or "(none configured!)"
     logger.info(f"\n{'='*60}")
-    logger.info(f"🚀 Prompt Memory v5.0.0 — Server Ready!")
+    logger.info(f"🚀 Prompt Memory v4.0 — Server Ready!")
     logger.info(f"   Environment: {env_label}")
     logger.info(f"   CORS Origins: {cors_label}")
     logger.info(f"   http://localhost:8000")
@@ -162,7 +162,7 @@ def health_check():
     return {
         "status": "running",
         "service": "Context-Aware Prompt Engine",
-        "version": "5.0.0",
+        "version": "4.1",
         "environment": "production" if settings.is_production else "development",
         "cors_origins": len(settings.cors_origins),
     }

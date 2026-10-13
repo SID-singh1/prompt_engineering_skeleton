@@ -4,19 +4,7 @@
 <!--
   Drives the REAL content.js and styles.css outside the extension, against a
   mock chat page, with a chrome.* shim just big enough for the draft flow.
-
-  SIMPLE MODE (the default for a new install, so the default here): type a
-  draft in the chat box, press "Improve" on the box (or Ctrl/Cmd+Shift+E),
-  and the rewrite streams into the box. The bar then reads "Improved · Undo ·
-  More detail · Compare"; Undo puts back exactly what was typed, Compare opens
-  the card, and ⋯ holds the library, styles, context, voice and shortcuts.
-  The "classic" / "simple" buttons switch modes (and reload); "one-row" is
-  ChatGPT's box, controls beside the text, so the bar sits on the box's top
-  edge; "two-row" is Claude's, a row of controls under the text, so it sits
-  inside the box, on that row. FAKE.delay = 120 slows the stream down.
-
-  CLASSIC MODE: every state the pill and card can be in is reachable from the
-  console:
+  Every state the pill and card can be in is reachable from the console:
 
     H.type(H.ORIG); H.stream(); H.tokens(60); H.done()   -> streaming, then ready
     H.type(H.ORIG); handleEnhance()                      -> the real flow, via the fake direct stream
@@ -30,9 +18,8 @@
     click ⊕ / the — in the card's title bar / esc / ⌘⇧P  -> minimize and restore
     "navigate", "new-chat", "light" buttons              -> layout changes the pill must survive
 
-  Run it: `python -m http.server` from extension/, then open
-  /tests/pill-harness.html (or from the repo root, and open
-  /extension/tests/pill-harness.html). It must be served — a file:// page
+  Run it: `python3 -m http.server` from the repo root, then open
+  /extension/tests/pill-harness.html. It must be served — a file:// page
   cannot load the sibling scripts. Storage is backed by localStorage /
   sessionStorage, so a reload exercises restoreDraft() for real.
 
@@ -62,12 +49,6 @@
   body.row .tools{display:flex}
   body.row form{align-items:center;min-height:52px;border-radius:26px}
   body.row [contenteditable]{min-height:26px}
-  /* Claude's box: the text on top, a row of controls under it (+ on the left; model and Send on the right). */
-  .plus{display:none}
-  body.tworow form{flex-wrap:wrap;align-items:center;padding:12px 10px 8px 16px;border-radius:20px}
-  body.tworow [contenteditable]{flex:1 0 100%;min-height:24px;padding:2px 0 6px}
-  body.tworow .plus{display:inline-block;width:30px;height:30px;border-radius:8px;border:1px solid rgba(255,255,255,.12);background:none;color:inherit;margin-right:auto}
-  body.tworow .tools{display:flex;width:auto;margin-left:auto}
   #ctl{position:fixed;left:12px;top:12px;z-index:5;display:flex;gap:6px;flex-wrap:wrap;width:196px}
   #ctl button{font:12px system-ui;padding:4px 8px;border-radius:6px;border:1px solid rgba(255,255,255,.15);background:rgba(255,255,255,.06);color:inherit;cursor:pointer}
 </style>
@@ -77,10 +58,6 @@
   <button onclick="document.body.classList.toggle('light')">light</button>
   <button onclick="document.body.classList.toggle('center')">new-chat</button>
   <button onclick="history.pushState({}, '', '/chat/' + Math.random().toString(36).slice(2,8))">navigate</button>
-  <button onclick="document.body.classList.remove('tworow');document.body.classList.toggle('row');placePill()">one-row</button>
-  <button onclick="document.body.classList.remove('row');document.body.classList.toggle('tworow');placePill()">two-row</button>
-  <button onclick="H.mode(true)">simple</button>
-  <button onclick="H.mode(false)">classic</button>
 </div>
 <div class="msgs">
   <p><b data-message-author-role="user">can you check this whitening gel, is it safe for enamel</b></p>
@@ -92,7 +69,7 @@
   <user-query><div class="query-text"><span class="cdk-visually-hidden">You said </span>which one is cheaper per week</div></user-query>
   <p>Prevest DenPro is a real Indian dental manufacturer, so no import roulette, no expiry gamble. 16% is the right concentration band. It's sold as a whitening system, meaning it may include trays. Four ratings at 4.1 isn't much, but it's an actual product doing an actual job.</p>
 </div>
-<form onsubmit="return false"><div id="composer" contenteditable="true" role="textbox"></div><button type="button" class="plus">+</button><span class="tools"><button type="button" class="model">Medium ▾</button><button type="button" class="mic">mic</button></span><button class="send" type="button">↑</button></form>
+<form onsubmit="return false"><div id="composer" contenteditable="true" role="textbox"></div><span class="tools"><button type="button" class="model">Medium ▾</button><button type="button" class="mic">mic</button></span><button class="send" type="button">↑</button></form>
 <script src="../content.js"></script>
 <script>
 // Test drivers, exposed for the session.
@@ -107,11 +84,6 @@ window.H = {
   rect(id) { const e = document.getElementById(id) || document.querySelector(id); if (!e) return null; const r = e.getBoundingClientRect(); return { l: Math.round(r.left), t: Math.round(r.top), r: Math.round(r.right), b: Math.round(r.bottom), w: Math.round(r.width), h: Math.round(r.height) }; },
   // Sign in with a token that does not expire until 2100; reload to take effect.
   signIn() { chrome.storage.local.set({ token: "eyJhbGciOiJub25lIn0.eyJleHAiOjQxMDI0NDQ4MDAsInN1YiI6InUxIn0.x", user_id: "u1", email: "u@example.com" }); },
-  // Simple mode on or off, as the ⋯ menus switch it, then a reload. Unset, a
-  // fresh page is simple (a new install), unless pm_stats says it has rewritten.
-  mode(on) { chrome.storage.local.set({ pm_simple_mode: on }); location.reload(); },
-  // Send the message: what the host does on Enter, an emptied chat box.
-  send() { const c = document.getElementById("composer"); c.textContent = ""; c.dispatchEvent(new InputEvent("input", { bubbles: true })); },
   key(k, opts = {}) { document.activeElement.dispatchEvent(new KeyboardEvent("keydown", { key: k, code: opts.code || "", bubbles: true, cancelable: true, ...opts })); },
 };
 </script>

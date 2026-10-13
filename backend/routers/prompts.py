@@ -10,10 +10,10 @@ from fastapi import APIRouter, Depends, UploadFile, File, Form, Request, Backgro
 from fastapi.responses import StreamingResponse, JSONResponse
 from ..models.schemas import TrackRequest, EnhanceRequest, FeedbackRequest
 from ..core.config import settings
-from ..core.security import verify_jwt, verify_jwt_or_anon, is_anonymous
+from ..core.security import verify_jwt
 from ..core.ratelimit import enhance_limit, voice_limit
 from ..core import usage
-from ..core.database import MongoDB, in_memory_users, in_memory_saved_prompts, in_memory_prompt_logs
+from ..core.database import MongoDB, in_memory_users, in_memory_saved_prompts
 from ..services.analytics_service import AnalyticsService
 from ..services.memory_service import MemoryService
 from ..services.llm_service import get_groq_client, mark_groq_rate_limited
@@ -64,80 +64,9 @@ def _transcription_parts(result) -> tuple[str, str]:
     return str(text or "").strip(), code or "unknown"
 
 
-def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None,
-                           use_memory: bool = True) -> dict:
+def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None) -> dict:
     """The shared builder, reading attached saved prompts from this router's store."""
-    return _build_context(request, user_id, fetch_saved_prompt_fn or _fetch_saved_prompt,
-                          use_memory=use_memory)
-
-
-# ══════════════════════════════════════════════════════════════
-# ANONYMOUS TIER — an install that has not signed in
-# ══════════════════════════════════════════════════════════════
-# Quick rewrites of the draft alone: no chat context, no saved prompts, no
-# memory, no BYOK. Nothing is logged, so the count lives in core.usage's
-# per-process tally (it resets on restart, which errs toward the user).
-
-ANON_TOTAL_KEY = "__anon_total__"
-
-
-def _anon_request(request: EnhanceRequest) -> EnhanceRequest:
-    """The parts of a request the anonymous tier is allowed to use."""
-    return request.model_copy(update={
-        "mode": "quick",
-        "conversation_context": None,
-        "selected_prompt_ids": None,
-        "excluded_prompt_ids": None,
-        "tracking_enabled": False,
-        "byok_provider": None,
-        "byok_key": None,
-        "byok_model": None,
-    })
-
-
-def _anon_capacity_left() -> bool:
-    return usage.get(ANON_TOTAL_KEY) < settings.ANON_GLOBAL_DAILY_LIMIT
-
-
-def _record_anon_rewrite(user_id: str):
-    usage.record(user_id)
-    usage.record(ANON_TOTAL_KEY)
-
-
-def _limit_refusal(tier: str, used: int, limit: int, degraded: bool) -> dict:
-    """The body of a 429 for a user who cannot rewrite right now."""
-    if tier == "anon":
-        busy = not _anon_capacity_left()
-        return {
-            "error": "free_capacity_reached" if busy else "daily_limit_reached",
-            "detail": (
-                "Free rewrites without an account are busy right now. "
-                "Sign in with Google (it's free) to keep going."
-                if busy else
-                f"You've used today's {limit} free rewrites. Sign in with Google "
-                "(it's free) for more each day, plus the Deep and Creative styles "
-                "and a library for your saved prompts."
-            ),
-            "used": used, "limit": limit, "tier": tier, "degraded": False,
-            "sign_in_available": True, "byok_available": False,
-        }
-    degraded_note = (
-        " The prompt store is temporarily unreachable, so free usage is capped"
-        " lower than usual until it recovers."
-        if degraded else ""
-    )
-    return {
-        "error": "daily_limit_reached",
-        "detail": (
-            f"You've used all {limit} free enhancements for today. "
-            "Add your own free API key in the extension settings for "
-            "1,000 per day." + degraded_note
-            if tier != "byok" else
-            f"Daily limit of {limit} reached."
-        ),
-        "used": used, "limit": limit, "tier": tier, "degraded": degraded,
-        "byok_available": tier != "byok",
-    }
+    return _build_context(request, user_id, fetch_saved_prompt_fn or _fetch_saved_prompt)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -161,8 +90,6 @@ def get_user_tier(user_id: str) -> str:
 
 def effective_tier(user_id: str, request) -> str:
     """A user supplying BYOK is not rationed against shared allowance."""
-    if is_anonymous(user_id):
-        return "anon"
     if getattr(request, "byok_key", None):
         return "byok"
     return get_user_tier(user_id)
@@ -201,9 +128,6 @@ def count_today(user_id: str) -> tuple:
 def check_daily_limit(user_id: str, tier: str) -> tuple:
     """Returns (allowed: bool, count: int, limit: int, degraded: bool)."""
     limit = settings.TIER_LIMITS.get(tier, settings.SHARED_KEY_DAILY_LIMIT)
-    if tier == "anon":
-        used = usage.get(user_id)
-        return (used < limit and _anon_capacity_left(), used, limit, False)
     count, degraded = count_today(user_id)
 
     if degraded and tier != "byok":
@@ -266,18 +190,36 @@ def enhance_prompt(
 ):
     """The core prompt engineering endpoint — intent-aware, mode-aware."""
     tier = effective_tier(user_id, request)
-    anon = tier == "anon"
-    if anon:
-        request = _anon_request(request)
     allowed, used, limit, degraded = check_daily_limit(user_id, tier)
+    degraded_note = (
+        " The prompt store is temporarily unreachable, so free usage is capped"
+        " lower than usual until it recovers."
+        if degraded else ""
+    )
     if not allowed:
-        return JSONResponse(status_code=429, content=_limit_refusal(tier, used, limit, degraded))
+        return JSONResponse(
+            status_code=429,
+            content={
+                "error": "daily_limit_reached",
+                "detail": (
+                    f"You've used all {limit} free enhancements for today. "
+                    "Add your own free API key in the extension settings for "
+                    "1,000 per day." + degraded_note
+                    if tier != "byok" else
+                    f"Daily limit of {limit} reached."
+                ),
+                "used": used,
+                "limit": limit,
+                "tier": tier,
+                "degraded": degraded,
+                "byok_available": tier != "byok",
+            },
+        )
 
     logger.info(f"\n🎯 /enhance — user={user_id[:8]}... mode={request.mode} tier={tier} ({used}/{limit})")
-    if not anon:   # an anonymous draft is not written anywhere, logs included
-        logger.info(f"   Prompt: \"{request.prompt[:80]}...\"")
+    logger.info(f"   Prompt: \"{request.prompt[:80]}...\"")
 
-    ctx = _build_enhance_context(request, user_id, _fetch_saved_prompt, use_memory=not anon)
+    ctx = _build_enhance_context(request, user_id, _fetch_saved_prompt)
 
     try:
         result = providers.chat(
@@ -305,18 +247,6 @@ def enhance_prompt(
 
     enhanced_prompt = result["content"]
     process_time = round(time.time() - ctx["start_time"], 2)
-
-    if anon:
-        _record_anon_rewrite(user_id)
-        return {
-            "original": request.prompt, "enhanced": enhanced_prompt, "log_id": None,
-            "latency": process_time, "mode": ctx["mode"], "model": result["model"],
-            "provider": result["provider"], "byok": False,
-            "truncated": result.get("truncated", False),
-            "usage_today": {"used": used + 1, "limit": limit, "tier": tier},
-            "context_used": _context_used(ctx, request),
-            "context_details": _context_details(ctx),
-        }
     
     # Log the enhancement; DO NOT memorize here. Memorization happens on /enhance/accept.
     # Always logged, whatever tracking_enabled says: this log is the user's
@@ -384,19 +314,25 @@ def enhance_prompt(
 def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhance_limit)):
     """Streaming enhancement — returns tokens as Server-Sent Events."""
     tier = effective_tier(user_id, request)
-    anon = tier == "anon"
-    if anon:
-        request = _anon_request(request)
     allowed, used, limit, degraded = check_daily_limit(user_id, tier)
 
     if not allowed:
         def refuse():
-            payload = _limit_refusal(tier, used, limit, degraded)
+            payload = {
+                "error": "daily_limit_reached",
+                "detail": (
+                    f"You've used all {limit} free enhancements for today. "
+                    "Add your own free API key in the extension settings for 1,000 per day."
+                    if tier != "byok" else f"Daily limit of {limit} reached."
+                ),
+                "used": used, "limit": limit, "degraded": degraded,
+                "byok_available": tier != "byok",
+            }
             yield f"data: {json.dumps(payload)}\n\n"
-            yield f"data: {json.dumps({'done': True, 'failed': True, **payload})}\n\n"
+            yield f"data: {json.dumps({'done': True, 'failed': True})}\n\n"
         return StreamingResponse(refuse(), media_type="text/event-stream")
 
-    ctx = _build_enhance_context(request, user_id, _fetch_saved_prompt, use_memory=not anon)
+    ctx = _build_enhance_context(request, user_id, _fetch_saved_prompt)
 
     def generate():
         enhanced_parts = []
@@ -434,12 +370,7 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
         process_time = round(time.time() - ctx["start_time"], 2)
 
         log_id = None
-        counted = False
-        if enhanced_prompt.strip() and anon:
-            # Counted, never logged: see the anonymous tier above.
-            _record_anon_rewrite(user_id)
-            counted = True
-        elif enhanced_prompt.strip():
+        if enhanced_prompt.strip():
             max_similarity = ctx["similar_saved"][0]["score"] if ctx["similar_saved"] else 0.0
             # Always logged; see enhance_prompt for why tracking does not gate this.
             log_id = MemoryService.log_prompt(
@@ -479,7 +410,7 @@ def enhance_prompt_stream(request: EnhanceRequest, user_id: str = Depends(enhanc
             "model": meta.get("model"),
             "provider": meta.get("provider"),
             "byok": meta.get("byok", False),
-            "usage_today": {"used": used + (1 if (log_id or counted) else 0), "limit": limit, "tier": tier},
+            "usage_today": {"used": used + (1 if log_id else 0), "limit": limit, "tier": tier},
             "context_used": _context_used(ctx, request),
             "context_details": _context_details(ctx),
             "truncated": meta.get("truncated", False),
@@ -537,11 +468,8 @@ def enhance_history(user_id: str = Depends(verify_jwt)):
 
 
 @router.get("/enhance/usage")
-def enhance_usage(byok: bool = False, user_id: str = Depends(verify_jwt_or_anon)):
+def enhance_usage(byok: bool = False, user_id: str = Depends(verify_jwt)):
     """Returns today's enhancement count for the user."""
-    if is_anonymous(user_id):
-        return {"count": usage.get(user_id), "limit": settings.ANON_DAILY_LIMIT,
-                "tier": "anon", "degraded": False}
     count, degraded = count_today(user_id)
     tier = "byok" if byok else get_user_tier(user_id)
     limit = settings.TIER_LIMITS.get(tier, settings.SHARED_KEY_DAILY_LIMIT)

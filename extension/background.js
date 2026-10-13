@@ -108,43 +108,8 @@ function isTokenExpired(token) {
 function resolveRoute(settings) {
   if (settings.token && !isTokenExpired(settings.token)) return "backend";
   if (settings.key) return "direct";
-  // Neither: the free anonymous tier (Quick rewrites, no memory, low daily
-  // limit), so the first click on a fresh install rewrites instead of asking
-  // the user to choose between an account and an API key. A lapsed sign-in
-  // lands here too; PM_GET_ROUTE's tokenExpired lets the page say so.
-  return "anon";
-}
-
-// ─────────────────────────────────────────────────────────────
-// ANONYMOUS TOKEN
-// ─────────────────────────────────────────────────────────────
-//
-// A signed token from the server that names no person: it only lets the
-// server count this install's free rewrites. Kept apart from `token` so
-// nothing that checks "signed in" mistakes it for an account.
-
-let anonTokenRequest = null;
-
-async function getAnonToken() {
-  const { anon_token: stored } = await chrome.storage.local.get("anon_token");
-  if (stored && !isTokenExpired(stored)) return stored;
-  // One request at a time: two tabs clicking Improve together share it.
-  if (!anonTokenRequest) {
-    anonTokenRequest = (async () => {
-      try {
-        const res = await fetch(`${DEFAULT_API_URL}/auth/anonymous`, { method: "POST" });
-        if (!res.ok) return "";
-        const { token, daily_limit: limit } = await res.json();
-        if (token) await chrome.storage.local.set({ anon_token: token, anon_limit: limit || 0 });
-        return token || "";
-      } catch {
-        return "";
-      } finally {
-        anonTokenRequest = null;
-      }
-    })();
-  }
-  return anonTokenRequest;
+  if (settings.token) return "expired";   // signed in once; needs to sign in again
+  return "none";
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -163,12 +128,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const settings = await getSettings();
           const provider = PROVIDERS[settings.provider];
           const expired = Boolean(settings.token) && isTokenExpired(settings.token);
-          const route = resolveRoute(settings);
           sendResponse({
-            route,
-            // Empty when the server could not be reached; the page says so.
-            anonToken: route === "anon" ? await getAnonToken() : "",
-            anonLimit: route === "anon" ? (await chrome.storage.local.get("anon_limit")).anon_limit || 0 : 0,
+            route: resolveRoute(settings),
             hasKey: Boolean(settings.key),
             signedIn: Boolean(settings.token) && !expired,
             tokenExpired: expired,
@@ -372,8 +333,6 @@ async function startGoogleAuth(sender) {
       email: data.email,
       user_id: data.user_id,
     });
-    // An account replaces the anonymous tier; the free token has no further use.
-    await chrome.storage.local.remove("anon_token");
     if (tab.id !== undefined) {
       await chrome.tabs.remove(tab.id).catch(() => {});
     }
@@ -498,12 +457,6 @@ async function activateExistingTabs() {
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
     try {
-      // A tab that was still loading when the extension installed may have
-      // had the script from the manifest already.
-      const [probe] = await chrome.scripting.executeScript({
-        target: { tabId: tab.id }, func: () => Boolean(globalThis.__pmContentLoaded),
-      });
-      if (probe?.result) continue;
       await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["styles.css"] });
       await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
     } catch {
@@ -515,26 +468,12 @@ async function activateExistingTabs() {
 
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "update") {
-    // Simple mode (content.js) is the default for new installs only. Someone
-    // updating has learned the pill, and keeps it until they switch from the
-    // library's ⋯ menu.
-    chrome.storage.local.get("pm_simple_mode", (r) => {
-      if (r.pm_simple_mode === undefined) chrome.storage.local.set({ pm_simple_mode: false });
-    });
     // Do not inject another copy into a tab that already has the old one.
     // The old isolated world cannot be revived, and two copies race to own
     // the same UI. The tab's next page load gets the current manifest script.
     return;
   }
   if (reason !== "install") return;
-
-  // Before the tabs below get their content script, so it starts simple.
-  await chrome.storage.local.set({ pm_simple_mode: true });
-
-  // Not awaited. Fetching the free token now also wakes the server, which
-  // sleeps when idle and takes a while to answer its first request, so the
-  // user's first Improve does not pay for that.
-  getAnonToken();
 
   await activateExistingTabs();
 

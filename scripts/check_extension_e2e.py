@@ -95,15 +95,14 @@ def main():
 
     with sync_playwright() as p, tempfile.TemporaryDirectory() as profile:
         ctx = p.chromium.launch_persistent_context(
-            profile, channel=os.environ.get("PM_BROWSER_CHANNEL", "chromium"), headless=True, viewport={"width": 1440, "height": 900},
+            profile, channel="chromium", headless=True, viewport={"width": 1440, "height": 900},
             args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"],
         )
         ctx.route("https://chatgpt.com/**", lambda r: r.fulfill(status=200, content_type="text/html", body=CHAT))
         ctx.route("https://api.groq.com/**", provider)
         sw = ctx.service_workers[0] if ctx.service_workers else ctx.wait_for_event("serviceworker")
         sw.evaluate("""chrome.storage.local.set({ byok_provider: 'groq', byok_key: 'gsk_test',
-            byok_model: 'qwen/qwen3.8-27b', pm_data_consent_v1: true, pm_onboarded: true,
-            pm_simple_mode: false })""")   # the card's style flow lives in the classic controls
+            byok_model: 'qwen/qwen3.8-27b', pm_data_consent_v1: true, pm_onboarded: true })""")
 
         page = ctx.new_page()
         errors = []
@@ -133,7 +132,7 @@ def main():
 
         def type_prompt(text):
             page.click("#prompt-textarea")
-            page.keyboard.press("ControlOrMeta+A")
+            page.keyboard.press("Meta+A")
             page.keyboard.press("Backspace")
             page.keyboard.type(text)
 
@@ -203,7 +202,7 @@ def main():
 
         # Signed out, the library says where it lives; its ⋯ still sets the
         # default style, which is stored and used after a reload.
-        page.keyboard.press("ControlOrMeta+Shift+L")
+        page.keyboard.press("Meta+Shift+L")
         page.wait_for_selector("#pm-library:not([hidden])", timeout=5000)
         page.wait_for_selector("#pm-lib-signin", timeout=5000)
         check(True, "signed out: the library offers sign-in")
@@ -397,7 +396,7 @@ def main():
         page.wait_for_timeout(400)
         check(page.locator("#pm-rail .pm-rail-chip").count() == 2, "a token refresh keeps the attachments")
         # Clear from the sheet.
-        page.keyboard.press("ControlOrMeta+Shift+L")
+        page.keyboard.press("Meta+Shift+L")
         page.wait_for_selector("#pm-library .pm-lib-link", timeout=5000)
         page.click("#pm-library .pm-lib-link")
         page.wait_for_timeout(200)
@@ -454,7 +453,7 @@ def main():
         server["matched"] = [{"id": "s2", "title": "Bug report triage", "content": SAVED[1]["content"], "score": 0.99}]
         before_content = SAVED[1]["content"]
         type_prompt("an unrelated message I am halfway through")
-        page.keyboard.press("ControlOrMeta+Shift+L")
+        page.keyboard.press("Meta+Shift+L")
         page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
         row = page.locator("#pm-library .pm-lib-row", has_text="Bug report triage")
         row.hover()   # the row's ⋯ shows on hover, as it does for a person
@@ -498,7 +497,7 @@ def main():
         page.click(".pm-toast .pm-toast-action")
         page.wait_for_function("document.querySelector('.pm-toast')?.textContent.includes('Restored')", timeout=5000)
         check(server["put"][-1] == ("s2", {"content": before_content}), "Undo puts the earlier text back")
-        page.keyboard.press("ControlOrMeta+Shift+L")
+        page.keyboard.press("Meta+Shift+L")
         page.wait_for_selector("#pm-library .pm-lib-row", timeout=8000)
         row = page.locator("#pm-library .pm-lib-row", has_text="Code review template")
         row.hover()   # the row's ⋯ shows on hover, as it does for a person
