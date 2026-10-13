@@ -94,3 +94,19 @@ input:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px v
 .dashboard-footer { padding: 22px 0; color: var(--muted); font-size: 11px; text-align: center; }
 @media (max-width: 980px) { .metric-grid { grid-template-columns: repeat(3, 1fr); } .grid-three, .grid-four { grid-template-columns: repeat(2, 1fr); } }
 @media (max-width: 680px) { .app-shell { width: min(100% - 24px, 560px); padding-top: 18px; } .topbar { align-items: start; flex-direction: column; } .toolbar { width: 100%; } .toolbar > * { flex: 1; } .range-control select { width: 100%; } .metric-grid, .grid-two, .grid-three, .grid-four { grid-template-columns: 1fr 1fr; } .metric-value { font-size: 23px; } .failure-row { grid-template-columns: 1fr 1fr; } }
+
+/* Capacity: what each shared key has left, per model in the fallback chain. */
+.capacity-panel { margin-bottom: 16px; }
+.capacity-list { display: grid; gap: 12px; }
+.cap-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) 2fr minmax(120px, auto); gap: 14px; align-items: center; font-size: 12px; }
+.cap-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cap-name small { display: block; color: var(--muted); font-size: 10.5px; }
+.cap-meter { display: grid; gap: 5px; }
+.cap-meter .bar-track { height: 8px; }
+.cap-meter .bar-fill.low { background: var(--warning); }
+.cap-figures { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.cap-figures b { color: var(--text); }
+.cap-when { color: var(--muted); font-size: 11px; text-align: right; white-space: nowrap; }
+.cap-off { color: var(--muted); font-style: italic; }
+@media (max-width: 720px) { .cap-row { grid-template-columns: 1fr; gap: 6px; } .cap-when { text-align: left; } }
+
