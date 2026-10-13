@@ -467,6 +467,20 @@ def main():
         page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
         check(True, "deleted from the library elsewhere, the bookmark empties: the library is the truth")
 
+        # ⌘S from the chat box, where people type: it used to need focus in the card
+        ev("""async () => { cardSavePending.clear(); FAKE_API.prompts = FAKE_API.prompts.filter(p => p.content !== H.DRAFT);
+              await fetchSavedPrompts(); showDiffModal(cardResult); }""")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        page.focus("#composer")
+        mod = "Meta" if ev("IS_MAC") else "Control"
+        page.keyboard.press(f"{mod}+s")
+        # Polled on a timer: rAF polling stalled here once a key went to the composer.
+        page.wait_for_function("document.getElementById('pm-card-save')?.getAttribute('aria-pressed') === 'true'", polling=100, timeout=3000)
+        check(ev("document.activeElement.id") == "composer", "⌘S in the chat box saves the open rewrite, and leaves the keyboard there")
+        # Unsave it again: the checks below start from an unsaved draft.
+        ev("""async () => { FAKE_API.prompts = FAKE_API.prompts.filter(p => p.content !== H.DRAFT);
+              await fetchSavedPrompts(); showDiffModal(cardResult); }""")
+
         ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[1])")
         page.click("#pm-card-save")
         page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
@@ -478,6 +492,12 @@ def main():
         check(ev("FAKE_API.prompts.filter(p => p.content === FAKE.text.quick).length") == 1,
               "pressing a filled bookmark shows the prompt in the library, and saves nothing twice")
         ev("togglePanel(false); closeCard()")
+        page.focus("#composer")
+        n = ev("FAKE_API.calls.filter(c => c.method === 'POST').length")
+        prevented = ev("""(() => { const e = new KeyboardEvent('keydown', { key: 's', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+                          document.getElementById('composer').dispatchEvent(e); return e.defaultPrevented; })()""")
+        check(not prevented and ev("FAKE_API.calls.filter(c => c.method === 'POST').length") == n,
+              "with no rewrite open, ⌘S is left to the browser")
 
         # ── screenshots, dark and light host ──
         if args.shots:
