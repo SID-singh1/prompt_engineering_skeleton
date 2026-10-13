@@ -748,6 +748,10 @@ const PILL_X_SVG =
 const CARD_MIN_SVG =
   '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">' +
   '<path d="M2.5 6h7"/></svg>';
+// The card's quiet actions. Show original is two texts trading places;
+// Discard is a bin, not an ×, so it is never mistaken for closing the card.
+const CARD_COMPARE_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13"/></svg>';
+const CARD_DISCARD_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 4.5h11M6.5 4.5V2.8h3v1.7M4 4.5l.7 8.7h6.6l.7-8.7"/></svg>';
 const PILL_THUMB_SVG = (down) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"${down ? ' style="transform:scale(-1)"' : ""}>` +
   '<path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.3a2 2 0 0 0 2-1.7l1.4-9a2 2 0 0 0-2-2.3H14zM7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
@@ -4341,6 +4345,21 @@ function clampCardLayout(layout, viewportWidth, viewportHeight, boundary) {
  */
 const CARD_MAX_SHARE = 0.45;   // of the window's height, for a card on the chat box
 
+/**
+ * Name the Original toggle for the layout. Side by side (a card dragged out
+ * wide) both texts are on screen, so it picks which one Replace uses; in the
+ * sheet it switches which one is shown. It is an icon, so the name is its
+ * label and its tooltip.
+ */
+function labelCardToggle(card, wide) {
+  const toggle = card.querySelector("#pm-card-toggle");
+  if (!toggle) return;
+  const label = `${wide ? "Use" : "Show"} ${cardShowingOriginal ? "the rewrite" : cardSubject ? "the saved prompt" : "your original"}`;
+  if (toggle.getAttribute("aria-label") === label) return;
+  toggle.setAttribute("aria-label", label);
+  toggle.dataset.pmTip = label;
+}
+
 function positionCard() {
   const card = document.getElementById("pm-card");
   const pill = document.getElementById("pm-trigger");
@@ -4363,9 +4382,7 @@ function positionCard() {
     card.classList.add("pm-card-free");
     const wide = width >= 900 && cardState === "ready";
     card.classList.toggle("pm-card-wide", wide);
-    const selection = card.querySelector("#pm-card-toggle");
-    const selectionLabel = `${wide ? "Select" : "Show"} ${cardShowingOriginal ? "rewrite" : "original"}`;
-    if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
+    labelCardToggle(card, wide);
     card.classList.remove("pm-card-below");
     card.dataset.anchor = "free";
     card.style.width = width + "px";
@@ -4378,9 +4395,7 @@ function positionCard() {
 
   card.classList.remove("pm-card-free");
   card.classList.remove("pm-card-wide");
-  const selection = card.querySelector("#pm-card-toggle");
-  const selectionLabel = `Show ${cardShowingOriginal ? "rewrite" : "original"}`;
-  if (selection && selection.textContent !== selectionLabel) selection.textContent = selectionLabel;
+  labelCardToggle(card, false);
   card.style.height = "";
 
   // A sheet on the composer: as wide as the box (capped), right-aligned to
@@ -4870,15 +4885,18 @@ function showDiffModal(result) {
 
   // Only when it matters: how long the rewrite took was a number nobody acted on.
   const truncatedNote = result.truncated
-    ? `<span class="pm-card-meta" style="color:var(--pm-danger)">cut short</span>`
+    ? `<span class="pm-card-meta" style="color:var(--pm-danger);margin-right:6px">cut short</span>`
     : "";
 
-  // Buttons, not a legend of keys. The foot read "Replace draft · esc
+  // Buttons, not a legend of keys. The foot once read "Replace draft · esc
   // minimize · Show original · ⌘S save · discard · 1.05s": a keycap on every
-  // action, a minimize the head already has, and the one thing most people
-  // came to do drawn as coloured text. It is now the one solid button, the
-  // rest plain, discard quiet at the far end. The keys still work, and each
-  // button that has one shows it when the pointer rests on it.
+  // action, and the one thing most people came to do drawn as coloured text.
+  //
+  // Then it was a band of its own under a row of style buttons, and the card
+  // read as boxes stacked under the text. Now there is one row: Replace, the
+  // other styles beside it, and at the far end three quiet icons, Original,
+  // Save and Discard, whose names and keys show where the pointer rests.
+  // Discard stays last, furthest from Replace.
   //
   // Stale, Redo takes accept's place: using a rewrite of text the user has
   // since changed is the one thing the card must not offer first.
@@ -4889,13 +4907,17 @@ function showDiffModal(result) {
     ? `<button class="pm-card-act pm-card-btn pm-card-primary pm-card-redo" id="pm-card-redo" data-pm-tip="Rewrite what is in the chat box now" data-pm-key="${CMD_ENTER}">Redo</button>`
     : `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-accept">${acceptLabel}</button>`;
 
+  const saveTip = cardSubject ? "Save as a new prompt" : "Save to your library";
   const actions = [
     lead,
-    `<button class="pm-card-act pm-card-btn" id="pm-card-save" data-pm-tip="Save it to your library" data-pm-key="${CMD_KEY}S">${cardSubject ? "Save as new" : "Save"}</button>`,
-    `<button class="pm-card-act pm-card-btn" id="pm-card-toggle">${cardShowingOriginal ? "Show rewrite" : "Show original"}</button>`,
-    `<span class="pm-card-spacer"></span>`,
-    truncatedNote,
-    `<button class="pm-card-act pm-card-discard" id="pm-card-discard">Discard</button>`,
+    cardStyleButtons(result),
+    // One group pushed to the far end, so a narrow card that wraps the row
+    // keeps the three together on the right rather than strewn under Replace.
+    `<span class="pm-card-tools">${truncatedNote}` +
+      `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${cardShowingOriginal}">${CARD_COMPARE_SVG}</button>` +
+      `<button class="pm-card-act pm-card-icon" id="pm-card-save" aria-label="${saveTip}" data-pm-tip="${saveTip}" data-pm-key="${CMD_KEY}S">${BOOKMARK_SVG}</button>` +
+      `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-card-discard" aria-label="Discard this rewrite" data-pm-tip="Discard this rewrite">${CARD_DISCARD_SVG}</button>` +
+    `</span>`,
   ];
 
   // Where the user had scrolled to in the rewrite. A staleness flip rebuilds
@@ -4909,7 +4931,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + chip + cardTipHtml() + cardStyleRow(result) + cardFoot(actions));
+  const card = openCard(head + body + chip + cardTipHtml() + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -4992,16 +5014,20 @@ function cardUsedHtml(result) {
 }
 
 /**
- * The other two styles. (The versions already made are stepped through in
- * the title bar: cardVersionsHtml.)
+ * The other two styles, as buttons in the card's one row of actions. (The
+ * versions already made are stepped through in the title bar.)
+ *
+ * They had a row of their own between the text and the foot, which made the
+ * card three bands of controls under the text. Beside Replace they read as
+ * what they are: other things to do with this rewrite.
  *
  * Hidden while the original is showing (there is no rewrite to vary) and while
  * the draft is stale (Redo is the only honest action then). A style already
  * made is shown rather than re-requested: switching back to it is free, and
  * spending one of fifteen daily rewrites on text you have already seen is the
- * thing this row must never do.
+ * thing these buttons must never do.
  */
-function cardStyleRow(result) {
+function cardStyleButtons(result) {
   if (cardShowingOriginal || cardStale) return "";
   const on = STYLES.includes(result.mode) ? result.mode : currentMode;
   const left = result.direct ? Infinity : usageData.limit - usageData.count;
@@ -5018,7 +5044,7 @@ function cardStyleRow(result) {
     return `<button type="button" class="pm-card-style${made ? " pm-card-style-made" : ""}" id="pm-card-style-${s}" data-pm-style="${s}"` +
       `${spent ? ' aria-disabled="true"' : ""} title="${escHtml(title)}">${STYLE_VERBS[on][s]}${note}</button>`;
   }).join("");
-  return `<div class="pm-card-styles"><span class="pm-card-styles-try" role="group" aria-label="Other styles">${styles}</span></div>`;
+  return `<span class="pm-card-styles" role="group" aria-label="Other styles">${styles}</span>`;
 }
 
 /**

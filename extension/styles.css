@@ -1536,39 +1536,32 @@
 }
 
 /* ── Other styles, and the versions already made ─────────────────────────
-   Quiet on purpose: the rewrite is what the card is for, and this row is
-   what you reach for only when the rewrite missed. The two buttons are named
+   Quiet on purpose, beside Replace: the rewrite is what the card is for, and
+   these are what you reach for only when the rewrite missed. The two buttons are named
    by what they would change ("Shorter"), not by the style's name. A style
    already made wears the accent dot: switching back to it costs nothing. */
 .pm-card-styles {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 6px 10px;
-    margin: 0 17px 12px;
-}
-.pm-card-styles-try {
     display: inline-flex;
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 2px;
 }
 .pm-card-style {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    height: 24px;
+    height: 28px;
     padding: 0 10px;
-    border-radius: 100px;
-    border: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft, rgba(127, 127, 127, .06));
+    border-radius: 7px;
+    border: 0;
+    background: transparent;
     color: var(--pm-text-secondary);
-    font: 500 11px/1 var(--pm-font);
+    font: 500 12px/1 var(--pm-font);
     white-space: nowrap;
     cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
 }
-.pm-card-style:hover { color: var(--pm-text); border-color: var(--pm-accent-border, rgba(63, 138, 118, .3)); }
-.pm-card-style:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+.pm-card-style:hover { color: var(--pm-text); background: var(--pm-bg-hover); }
+.pm-card-style:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 .pm-card-style-made::before {
     content: "";
     width: 5px;
@@ -1604,14 +1597,14 @@
 .pm-card-ver:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
 .pm-card-free .pm-card-styles { flex: none; }
 
+/* The actions are the card's last line, not a band under it: no rule and no
+   tint. The right edge leaves room for the resize grip in the corner. */
 .pm-card-foot {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     flex-wrap: wrap;
-    padding: 9px 30px 9px 15px;
-    border-top: 1px solid var(--pm-border);
-    background: var(--pm-bg-soft, rgba(127, 127, 127, .04));
+    padding: 2px 22px 12px 15px;
 }
 
 .pm-card-act {
@@ -1652,6 +1645,23 @@
 .pm-card-act.pm-card-btn.pm-card-primary:hover { background: var(--pm-accent); filter: brightness(1.1); }
 
 .pm-card-spacer { margin-left: auto; }
+/* Original, Save and Discard: icons at the row's end, named on hover. */
+.pm-card-tools { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; }
+.pm-card-act.pm-card-icon {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    color: var(--pm-text-muted);
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-card-act.pm-card-icon svg { width: 15px; height: 15px; display: block; }
+.pm-card-act.pm-card-icon:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-act.pm-card-icon[aria-pressed="true"] { color: var(--pm-accent); }
+.pm-card-act.pm-card-icon.pm-card-discard:hover { color: var(--pm-danger); background: rgba(239, 106, 96, .12); }
+
 
 .pm-card-meta {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
