@@ -1032,6 +1032,7 @@ function ratePill(rating) {
   const a = pillApplied;
   if (!a || !a.result || a.thanked) return;
   sendFeedback(a.result.log_id, rating, a.result.original, a.result.enhanced);
+  cardRatings.set(a.result.log_id, rating);
   clearTimeout(a.timer);
   a.thanked = rating;
   a.timer = setTimeout(clearApplied, 1200);
@@ -5157,7 +5158,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
+  const card = openCard(head + body + used.list + cardTipHtml() + cardRateHtml(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -5178,6 +5179,8 @@ function showDiffModal(result) {
   document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
   card.querySelectorAll("[data-pm-style]").forEach((b) =>
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
+  card.querySelectorAll("#pm-card-rate [data-rate]").forEach((b) =>
+    b.addEventListener("click", () => rateCard(b.dataset.rate)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
   document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
@@ -5432,7 +5435,8 @@ async function acceptCard() {
   // so applyOrFallback is told to stay quiet on success — but only when there
   // is actually something to rate. Without a log_id the rating cannot be sent
   // anywhere, and asking anyway spends the user's attention on nothing.
-  const canRate = Boolean(result.log_id);
+  // Rated on the card already: the pill confirms and does not ask again.
+  const canRate = Boolean(result.log_id) && !cardRatings.has(result.log_id);
   const applied = await applyOrFallback(text, null);
   // The pill says "Inserted" and, when there is a log_id to rate against,
   // asks how it was — in the object the user was already looking at, rather
@@ -7188,6 +7192,39 @@ function cardTipHtml() {
   if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
   return `<div class="pm-card-tip" id="pm-card-tip"><b>Replace draft</b> puts this in your chat box. ` +
     `Not quite right? Try another style; every version is kept.</div>`;
+}
+
+// Rewrites rated, by log id: "up" or "down". Asked on the card, where the
+// rewrite is read, and not asked again in the pill after Replace.
+const cardRatings = new Map();
+
+/**
+ * "Good rewrite? 👍 👎", one quiet line over the actions. The rating was only
+ * asked in the pill, for six seconds after Replace; testers never saw it.
+ * Only for a rewrite the server logged (there is nothing to rate against
+ * otherwise), not yet rated, and never with the first-run tip, which has
+ * that line.
+ */
+function cardRateHtml(result) {
+  if (!result?.log_id || cardRatings.has(result.log_id) || cardShowingOriginal || cardStale || cardSubject) return "";
+  if (cardTipHtml()) return "";
+  return `<div class="pm-card-rate" id="pm-card-rate"><span>Good rewrite?</span>` +
+    `<button type="button" data-rate="up" aria-label="Good rewrite" data-pm-tip="Good rewrite">${PILL_THUMB_SVG(false)}</button>` +
+    `<button type="button" data-rate="down" aria-label="Not a good rewrite" data-pm-tip="Not a good rewrite">${PILL_THUMB_SVG(true)}</button></div>`;
+}
+
+/** Send the card's rating, and say thanks in its place until the card is next drawn. */
+function rateCard(rating) {
+  const r = cardResult;
+  if (!r?.log_id || cardRatings.has(r.log_id)) return;
+  cardRatings.set(r.log_id, rating);
+  sendFeedback(r.log_id, rating, r.original || cardOriginal, r.enhanced).catch(() => {});
+  const line = document.getElementById("pm-card-rate");
+  if (line) {
+    line.classList.add("pm-card-rate-done");
+    line.setAttribute("role", "status");
+    line.textContent = "Thanks, that helps.";
+  }
 }
 
 /** Tip 3: after the first Replace, how to keep a prompt that worked. */

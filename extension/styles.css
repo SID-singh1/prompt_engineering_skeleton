@@ -3022,6 +3022,20 @@
     line-height: 1.5;
 }
 .pm-card-tip b { color: var(--pm-text-secondary); font-weight: 600; }
+
+/* "Good rewrite? 👍 👎": one quiet line over the actions, as the tip is. */
+.pm-card-rate { display: flex; align-items: center; gap: 2px; margin: 0 17px 6px; color: var(--pm-text-muted); font-size: 11.5px; }
+.pm-card-rate span { margin-right: 4px; }
+.pm-card-rate button {
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    border: 0; border-radius: 7px; background: none; color: var(--pm-text-muted); cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-card-rate button svg { width: 13px; height: 13px; display: block; }
+.pm-card-rate button:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-rate button[data-rate="up"]:hover { color: var(--pm-accent); }
+.pm-card-rate button:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+.pm-card-rate.pm-card-rate-done { min-height: 26px; color: var(--pm-accent); }
 @media (prefers-reduced-motion: reduce) {
     .pm-tip { transition: none; }
     .pm-trigger.pm-pill-hint { animation: none; }
