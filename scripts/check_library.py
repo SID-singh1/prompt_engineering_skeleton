@@ -918,6 +918,66 @@ def main():
         page.keyboard.press("Escape")
         ev("document.body.classList.remove('center')")
 
+        # ── drag it anywhere; it stays there, follows the box, and comes back ──
+        def drag_grip(dx, dy):
+            g = page.locator("#pm-library .pm-lib-move").bounding_box()
+            x, y = g["x"] + g["width"] / 2, g["y"] + g["height"] / 2
+            page.mouse.move(x, y)
+            page.mouse.down()
+            page.mouse.move(x + dx / 2, y + dy / 2, steps=4)
+            page.mouse.move(x + dx, y + dy, steps=4)
+            page.mouse.up()
+
+        open_lib()
+        page.wait_for_timeout(250)   # the open animation scales it
+        before = rect("#pm-library")
+        drag_grip(-420, -160)
+        after = rect("#pm-library")
+        check(abs(after["l"] - (before["l"] - 420)) <= 2 and abs(after["t"] - (before["t"] - 160)) <= 2,
+              f"the grip drags the sheet where the pointer goes, {before} -> {after}")
+        check(page.locator("#pm-lib-home").count() == 1, "once moved, the head offers ↙ to put it back")
+        check(ev("""(() => { const q = document.getElementById('pm-lib-q'), c = document.createElement('canvas').getContext('2d');
+                     c.font = getComputedStyle(q).font; return c.measureText(q.placeholder).width <= q.clientWidth; })()"""),
+              "and the search box's placeholder still fits beside it")
+        page.keyboard.press("Escape")
+        open_lib()
+        page.wait_for_timeout(250)
+        again = rect("#pm-library")
+        check(abs(again["l"] - after["l"]) <= 2 and abs(again["t"] - after["t"]) <= 2, f"it opens where it was put, {after} vs {again}")
+        load()
+        open_lib()
+        page.wait_for_timeout(250)
+        again = rect("#pm-library")
+        check(abs(again["l"] - after["l"]) <= 2 and abs(again["t"] - after["t"]) <= 2, f"and after a reload, {after} vs {again}")
+        box0 = rect("form")
+        page.set_viewport_size({"width": 1200, "height": 900})
+        page.wait_for_timeout(200)
+        box1, moved = rect("form"), rect("#pm-library")
+        check(abs((moved["l"] - box1["r"]) - (after["l"] - box0["r"])) <= 2 and abs((moved["t"] - box1["t"]) - (after["t"] - box0["t"])) <= 2,
+              f"it keeps its place beside the chat box when the window changes, {moved} vs box {box1}")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(150)
+        drag_grip(-3000, -3000)
+        off = rect("#pm-library")
+        check(off["l"] >= 11 and off["t"] >= 11, f"dragged past the corner it stops inside the window, got {off}")
+        drag_grip(5000, 5000)
+        off = rect("#pm-library")
+        check(off["r"] <= 1440 - 11 and off["b"] <= 900 - 11, f"on every side, got {off}")
+        page.click("#pm-lib-home")
+        page.wait_for_timeout(150)
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1 and page.locator("#pm-lib-home").count() == 0,
+              f"↙ puts it back on the chat box, and goes, got {on}")
+        drag_grip(-300, -100)
+        g = page.locator("#pm-library .pm-lib-move").bounding_box()
+        page.mouse.click(g["x"] + 8, g["y"] + 14)
+        page.mouse.click(g["x"] + 8, g["y"] + 14)
+        page.wait_for_timeout(150)
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and on["rightDiff"] <= 1, f"so does a double-click on the grip, got {on}")
+        check(ev("sheetPos") is None, "and the place it was put is forgotten")
+        page.keyboard.press("Escape")
+
         check(not errors, f"page errors: {errors}")
         page.close()
         reach_the_chip_from_anywhere(browser, url)
