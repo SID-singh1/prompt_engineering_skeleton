@@ -1457,7 +1457,7 @@
 }
 .pm-card-wide .pm-card-reference-text { color: var(--pm-text-secondary); }
 .pm-card-free .pm-card-head,
-.pm-card-free .pm-card-chip,
+.pm-card-free .pm-card-used-list,
 .pm-card-free .pm-card-foot { flex: none; }
 
 .pm-card-resize {
@@ -1513,30 +1513,6 @@
 }
 
 @keyframes pm-card-blink { 50% { opacity: 0; } }
-
-/* Named only when a saved prompt genuinely shaped the rewrite. The old footer
-   printed "0 selected · 0 auto-matched · 0 from history · 0 conversation msgs"
-   on every result — four zeros reporting that nothing happened. */
-/* A line of text, not a pill: the context is worth knowing and worth
-   opening, but it is not one more box on the card. The arrow carries the
-   accent; the names are read before anything is clicked. */
-.pm-card-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    margin: 0 17px 12px;
-    padding: 2px 0;
-    border-radius: 4px;
-    font-size: 11.5px;
-    letter-spacing: .01em;
-    color: var(--pm-text-secondary);
-    background: none;
-    border: 0;
-    max-width: calc(100% - 34px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
 
 /* ── Other styles, and the versions already made ─────────────────────────
    Quiet on purpose, beside Replace: the rewrite is what the card is for, and
@@ -3004,15 +2980,35 @@
 @media (prefers-reduced-motion: reduce) { .pm-card.pm-card-nudge { animation: none; } }
 
 /* ── Saved prompts that shaped the rewrite (cardUsedHtml) ── */
-.pm-card-used { margin: 0 17px 12px; }
-.pm-card-used > .pm-card-chip { margin: 0; }
-.pm-card-used-toggle { cursor: pointer; font: inherit; font-size: 11.5px; }
-.pm-card-used-toggle:hover { color: var(--pm-text); }
+/* The chip in the title bar: the first saved prompt used, and how many more.
+   Named only when a saved prompt genuinely shaped the rewrite. The old footer
+   printed "0 selected · 0 auto-matched · 0 from history · 0 conversation msgs"
+   on every result — four zeros reporting that nothing happened. */
+.pm-card-ctx {
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 45%;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 100px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-bg-soft);
+    color: var(--pm-text-secondary);
+    font: 500 11px/1 var(--pm-font);
+    white-space: nowrap;
+    cursor: default;
+}
+.pm-card-ctx-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pm-card-used-toggle { cursor: pointer; }
+.pm-card-used-toggle:hover, .pm-card-used-toggle[aria-expanded="true"] { color: var(--pm-text); background: var(--pm-bg-hover); }
 .pm-card-used-arrow { color: var(--pm-accent); }
 .pm-card-used-toggle:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
 .pm-card-used-caret { transition: transform .15s ease; opacity: .8; }
 .pm-card-used-toggle[aria-expanded="true"] .pm-card-used-caret { transform: rotate(180deg); }
-.pm-card-used-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.pm-card-used-list { list-style: none; margin: 0 17px 12px; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .pm-card-used-list[hidden] { display: none; }
 .pm-card-used-item { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 8px; background: var(--pm-bg-hover); }
 .pm-card-used-icon { flex: none; width: 16px; text-align: center; color: var(--pm-accent); font-size: 13px; line-height: 1; }

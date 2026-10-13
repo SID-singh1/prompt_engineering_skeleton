@@ -4882,6 +4882,11 @@ function showDiffModal(result) {
   // The wording follows the toggle. Under \, the body IS the earlier text, so
   // calling it "a rewrite for the earlier text" would be pointing at the wrong
   // thing — the user would look for a staleness that is not on screen.
+  // Which saved prompts shaped this rewrite: named in a chip in the title
+  // bar, and listed under the text when the chip is opened, each with a way to
+  // drop an auto-matched one and rewrite again without it. Only shown when a
+  // saved prompt actually took part.
+  const used = cardUsedParts(result);
   const head = cardStale
     ? cardHead(cardShowingOriginal
         ? "Prompt changed \u2014 this is the text the rewrite was built from"
@@ -4889,12 +4894,8 @@ function showDiffModal(result) {
     : cardHead(cardShowingOriginal
         ? (cardSubject ? "Saved prompt, as it is" : "Original")
         : `${cardSubject ? `Improved \u201c${escHtml(clipText(cardSubject.title, 32))}\u201d` : "Rewrite"}${STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : ""}`,
-      "", cardVersionsHtml());
+      "", used.chip + cardVersionsHtml());
 
-  // Which saved prompts shaped this rewrite, each one named, with a way to
-  // drop an auto-matched one and rewrite again without it. Only shown when a
-  // saved prompt actually took part.
-  const chip = cardUsedHtml(result);
 
   // Only when it matters: how long the rewrite took was a number nobody acted on.
   const truncatedNote = result.truncated
@@ -4947,7 +4948,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + chip + cardTipHtml() + cardFoot(actions));
+  const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -4986,9 +4987,16 @@ function showDiffModal(result) {
  * The saved prompts that shaped a rewrite: the ones the user attached, and
  * the ones the server matched on its own. A matched one can be dropped, which
  * rewrites the same text again without it (a new version; the old one stays).
+ *
+ * Two parts. `chip` goes in the title bar: the first name and how many more,
+ * with all of them in its tooltip. `list` goes under the text, folded until the
+ * chip is pressed. It was a line between the text and the actions, where it
+ * sat on the text's fade and crowded the buttons. Neither is shown on the
+ * original, or on a stale draft, whose title bar has a notice to give.
  */
-function cardUsedHtml(result) {
-  if (cardShowingOriginal) return "";
+function cardUsedParts(result) {
+  const none = { chip: "", list: "" };
+  if (cardShowingOriginal || cardStale) return none;
   const d = result.context_details || {};
   const items = [
     ...(d.selected_prompts || []).map((p) => ({ ...p, kind: "attached" })),
@@ -4998,15 +5006,15 @@ function cardUsedHtml(result) {
   if (!items.length && !left.length) {
     // A server that sends counts only.
     const n = (result.context_used?.auto_matched || 0) + (result.context_used?.selected || 0);
-    return n ? `<div class="pm-card-chip">\u21B3 ${n} saved prompt${n > 1 ? "s" : ""} used</div>` : "";
+    return n ? { chip: `<span class="pm-card-ctx" title="Saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${n} used</span>`, list: "" } : none;
   }
   const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
   const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
   const name = (p) => flat(p.title) || clip(flat(p.content), 40) || "Saved prompt";
   const summary = items.length
-    ? "Used " + items.slice(0, 2).map((p) => escHtml(clip(name(p), 26))).join(" \u00b7 ") +
-      (items.length > 2 ? ` +${items.length - 2}` : "")
-    : "No saved prompts used";
+    ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
+    : "None used";
+  const all = items.length ? "Used: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used";
   const rows = items.map((p) => {
     const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
@@ -5022,11 +5030,12 @@ function cardUsedHtml(result) {
   const leftOut = left.length
     ? `<li class="pm-card-used-left">Left out: ${left.map((x) => escHtml(clip(flat(x.title) || "a saved prompt", 40))).join(", ")}</li>`
     : "";
-  return `<div class="pm-card-used">` +
-    `<button type="button" class="pm-card-chip pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
-    `aria-controls="pm-card-used-list" title="The saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${summary}` +
-    `<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>` +
-    `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul></div>`;
+  return {
+    chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
+      `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
+      `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
+    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul>`,
+  };
 }
 
 /**
