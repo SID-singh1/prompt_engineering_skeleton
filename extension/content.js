@@ -2503,11 +2503,12 @@ window.addEventListener("scroll", (e) => {
 }, true);
 
 async function undoSave(id) {
-  if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return; }
+  if (!(await deleteSavedPrompt(id))) { showToast("Could not undo. Delete it from the library.", "error"); return false; }
   if (selectedIds.has(id)) toggleAttachment({ id });
   await fetchSavedPrompts();
   if (panelOpen) renderLibrary();
   showToast("Removed from your library", "info");
+  return true;
 }
 
 /** Open the library on a prompt that is already there. */
