@@ -6383,14 +6383,14 @@ async function applyOrFallback(text, successMessage = "Prompt applied to input!"
 }
 
 /**
- * x.com matches only /i/grok, but a content script keeps running after a
- * client-side navigation away from it. Without this check the tracker stayed
+ * x.com matches only /i/grok (PM_SITES.onlyPaths), but a content script keeps
+ * running after a client-side navigation away from it. Without this check the tracker stayed
  * live while the user moved on to DMs, the tweet composer and search — none of
  * which the extension has any business recording.
  */
 function onTrackableSurface() {
-  if (window.location.hostname !== "x.com") return true;
-  return window.location.pathname.startsWith("/i/grok");
+  const only = PM_SITES.onlyPaths[window.location.hostname];
+  return !only || window.location.pathname.startsWith(only);
 }
 
 function setupPassiveTracking() {
@@ -6401,7 +6401,7 @@ function setupPassiveTracking() {
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const el = e.target;
     if (
-      el.matches("#prompt-textarea, [contenteditable='true'], textarea") &&
+      el.matches(PM_SITES.typingTarget) &&
       el.offsetParent !== null
     ) {
       lastText = el.innerText || el.value || "";
