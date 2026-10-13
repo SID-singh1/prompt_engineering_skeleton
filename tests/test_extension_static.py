@@ -108,6 +108,18 @@ def test_supported_matches_in_worker_track_the_manifest():
     assert listed == declared, f"drifted: only in manifest={declared - listed}, only in worker={listed - declared}"
 
 
+def test_open_tabs_get_every_content_script_file():
+    """
+    Install injects into chat tabs that were already open. It named only
+    content.js, so once content.js read sites.js's PM_SITES those tabs threw
+    on load and never showed the pill. It now injects the manifest's own list.
+    """
+    body = _function_bodies(BACKGROUND_JS, r"activateExistingTabs")["activateExistingTabs"]
+    assert "files: CONTENT_SCRIPT.js" in body and "files: CONTENT_SCRIPT.css" in body
+    assert "const CONTENT_SCRIPT = chrome.runtime.getManifest().content_scripts[0];" in BACKGROUND_JS
+    assert '"content.js"' not in BACKGROUND_JS and '"styles.css"' not in BACKGROUND_JS, "a file list was typed in again"
+
+
 def test_extension_origins_match_the_manifest():
     """
     config.EXTENSION_ORIGINS drives the production CORS allowlist warning. If it
