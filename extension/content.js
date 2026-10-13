@@ -5592,16 +5592,21 @@ function handleCardKeydown(e) {
     else closeCard();
     return;
   }
-  // Save/redo belong to the review controls, not the host's editor.
+  // ⌘S / Ctrl+S saves the rewrite on screen from the chat box too. It used to
+  // answer only with focus inside the card, so pressed where people type it
+  // fell through to the browser's Save page, on Windows and Mac alike. Taken
+  // from the page only while there is a finished rewrite open to save.
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s" &&
+      cardState === "ready" && cardExpanded) {
+    e.preventDefault(); e.stopPropagation(); saveCard(); return;
+  }
+  // Redo and the version keys belong to the review controls, not the host's editor.
   if (!inCard || cardState !== "ready") return;
   if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey && cardVersions.length > 1) {
     e.preventDefault(); e.stopPropagation(); stepVersion(e.key === "]" ? 1 : -1); return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-    e.preventDefault(); e.stopPropagation(); saveCard();
   }
 }
 document.addEventListener("keydown", handleCardKeydown, true);
