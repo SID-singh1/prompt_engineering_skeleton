@@ -74,7 +74,10 @@ if (kind === "prosemirror") {
   P.registerPlainText(ed);
   ed.registerCommand(L.KEY_ENTER_COMMAND, (e) => { e?.preventDefault(); window.SENT++; return true; }, L.COMMAND_PRIORITY_HIGH);
   window.EDITOR = { el: mount, text: () => ed.getEditorState().read(() => L.$getRoot().getTextContent()),
-    clear: () => ed.update(() => { L.$getRoot().clear(); L.$getRoot().append(L.$createParagraphNode()); }, { discrete: true }) };
+    // The paragraph is selected, as Lexical's own clear leaves it: without a
+    // selection the next keystroke opened a second paragraph, and the text
+    // read back with two trailing newlines that looked like an insertion bug.
+    clear: () => ed.update(() => { L.$getRoot().clear(); const p = L.$createParagraphNode(); L.$getRoot().append(p); p.select(); }, { discrete: true }) };
 } else {
   mount.outerHTML = '<textarea id="prompt-textarea" rows="1" placeholder="Message"></textarea>';
   const ta = document.getElementById("prompt-textarea");

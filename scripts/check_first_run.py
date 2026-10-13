@@ -68,13 +68,16 @@ class Profile:
     def __init__(self, p, storage=None):
         self._tmp = tempfile.TemporaryDirectory()
         self.ctx = p.chromium.launch_persistent_context(
-            self._tmp.name, channel="chromium", headless=True, viewport={"width": 1280, "height": 800},
+            self._tmp.name, channel=os.environ.get("PM_BROWSER_CHANNEL", "chromium"), headless=True, viewport={"width": 1280, "height": 800},
             args=[f"--disable-extensions-except={EXT}", f"--load-extension={EXT}"])
         self.ctx.route("https://chatgpt.com/**", lambda r: r.fulfill(status=200, content_type="text/html", body=CHAT))
         self.ctx.route("https://api.groq.com/**", provider)
         self.ctx.route("https://siddhm11-prompt-engine.hf.space/**", server)
         self.sw = self.ctx.service_workers[0] if self.ctx.service_workers else self.ctx.wait_for_event("serviceworker")
         self.ext = self.sw.url.split("/")[2]
+        # The card's Replace flow, as these checks walk it; check_card_swap.py
+        # covers the rewrite going straight into the box.
+        self.sw.evaluate("chrome.storage.local.set({ pm_fill_box: false })")
         if storage is not None:
             self.sw.evaluate(f"chrome.storage.local.set({json.dumps(storage)})")
         self.errors = []

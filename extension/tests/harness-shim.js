@@ -20,7 +20,10 @@
       // Routes every enhancement to the direct path, which the port below fakes.
       sendMessage(msg, cb) {
         // PM_GET_SHORTCUT: window.FAKE_SHORTCUT, "" for "Chrome left it unassigned".
-        const r = msg?.type === "PM_GET_ROUTE" ? { route: "direct", hasKey: true }
+        // ?backend=1 and signed in: the server route, faked below with
+        // retrieved context. Otherwise direct, which the older checks drive.
+        const signed = /[?&]backend=1/.test(location.search) && Boolean(JSON.parse(localStorage.getItem("pm") || "{}").token);
+        const r = msg?.type === "PM_GET_ROUTE" ? (signed ? { route: "backend", signedIn: true } : { route: "direct", hasKey: true })
           : msg?.type === "PM_GET_SHORTCUT" ? { shortcut: window.FAKE_SHORTCUT ?? "Ctrl+Shift+E" }
           : undefined;
         if (cb) setTimeout(() => cb(r), 0); return Promise.resolve(r);
@@ -57,7 +60,14 @@
   };
 })();
 // Consent is a one-time prompt in the real extension; the harness has given it.
-(() => { const s = JSON.parse(localStorage.getItem("pm") || "{}"); if (s.pm_data_consent_v1 === undefined) { s.pm_data_consent_v1 = true; localStorage.setItem("pm", JSON.stringify(s)); } })();
+// The check scripts drive the card's Replace flow, so a finished rewrite
+// waits on the card here unless the page asks (?fill=1, or pm_fill_box).
+(() => {
+  const s = JSON.parse(localStorage.getItem("pm") || "{}");
+  if (s.pm_data_consent_v1 === undefined) s.pm_data_consent_v1 = true;
+  if (s.pm_fill_box === undefined) s.pm_fill_box = /[?&]fill=1/.test(location.search);
+  localStorage.setItem("pm", JSON.stringify(s));
+})();
 // A fake Prompt Memory server for the library: saved prompts, history, usage,
 // feedback. Signed out until H.signIn(); every call is logged in FAKE_API.calls.
 window.FAKE_API = {
@@ -98,6 +108,49 @@ window.FAKE_API = {
     if (one && method === "PUT") { const p = A.prompts.find((x) => x.id === one[1]); Object.assign(p || {}, body); return json({ ok: true }); }
     if (path === "/enhance/history") return json({ history: A.history });
     if (path === "/enhance/usage") return json(A.usage);
+    if (path === "/enhance/stream") {
+      // As routers/prompts.py streams it. The first rewrite retrieves: two
+      // matched saved prompts and one past pattern. A rerun that carries
+      // reuse_context gets exactly that context back and searches nothing;
+      // A.searches counts the searches, so a check can say so.
+      const F = window.FAKE;
+      F.calls.push(body.mode);
+      let matched, passive;
+      if (body.reuse_context) {
+        matched = body.reuse_context.matched.map((m) => {
+          const p = A.prompts.find((x) => x.id === m.id);
+          return { id: m.id, title: p?.title || "", content: (p?.content || "").slice(0, 200), score: m.score };
+        });
+        passive = body.reuse_context.passive;
+      } else {
+        A.searches = (A.searches || 0) + 1;
+        const all = [
+          { id: "p1", title: "Code review template", content: A.prompts.find((x) => x.id === "p1")?.content || "", score: 0.62 },
+          { id: "p4", title: "Bug report triage", content: A.prompts.find((x) => x.id === "p4")?.content || "", score: 0.41 },
+        ];
+        matched = all.filter((m) => !(body.excluded_prompt_ids || []).includes(m.id));
+        passive = [{ original: "sort dicts python", refined: "Show me how to sort a list of dicts by key in Python.", score: 0.33 }];
+      }
+      const text = (F.text[body.mode] || F.text.deep) + (matched.length < 2 || passive.length < 1 ? " (with less context)" : "");
+      const enc = new TextEncoder();
+      const ev = (o) => enc.encode(`data: ${JSON.stringify(o)}\n\n`);
+      const stream = new ReadableStream({
+        start(c) {
+          const words = text.split(/(?<= )/);
+          let i = 0;
+          const tick = () => {
+            if (i < words.length) { c.enqueue(ev({ token: words[i++] })); setTimeout(tick, F.delay); return; }
+            c.enqueue(ev({ done: true, failed: false, log_id: "L" + (++A.nextId), mode: body.mode,
+              usage_today: { used: ++A.usage.count, limit: A.usage.limit },
+              context_used: { selected: 0, auto_matched: matched.length, passive_matched: passive.length },
+              context_details: { selected_prompts: [], auto_matched_prompts: matched, passive_patterns: passive } }));
+            c.close();
+          };
+          setTimeout(tick, F.delay);
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+    }
     if (path === "/feedback/mine") return json({ feedback: [] });
     return json({});
   };

@@ -285,6 +285,10 @@ def _already_in_prompt(item: dict, prompt: str) -> bool:
     return float(item.get("score") or 0) >= _NEAR_DUPLICATE_SCORE
 
 
+# Longest past-pattern text kept on a retry, and reported to the card for it.
+_REUSE_TEXT_MAX = 600
+
+
 def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_prompt_fn=None) -> dict:
     """Shared context builder for every enhance route (text, stream, voice)."""
     start_time = time.time()
@@ -308,15 +312,30 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
     # The user can drop an auto-matched prompt from the card ("don't use") and
     # rerun; those, and anything they attached themselves, are not searched.
     excluded_ids = [str(pid) for pid in (getattr(request, "excluded_prompt_ids", None) or [])]
-    similar_saved = [
-        item for item in MemoryService.search_saved_prompts(
-            user_id=user_id,
-            query_text=request.prompt,
-            limit=3,
-            exclude_ids=selected_ids + excluded_ids,
-        )
-        if not _already_in_prompt(item, request.prompt)
-    ]
+    reuse = getattr(request, "reuse_context", None)
+    if reuse is not None:
+        # A retry of an earlier rewrite: the context the user kept on the card,
+        # looked up by id (ownership checked by fetch_saved_prompt_fn), and no
+        # new search. Capped as retrieval is, so a crafted request cannot
+        # carry more context than a real one.
+        similar_saved = []
+        for m in reuse.matched[:3]:
+            if m.id in selected_ids or m.id in excluded_ids:
+                continue
+            doc = fetch_saved_prompt_fn(m.id, user_id) if fetch_saved_prompt_fn else None
+            if doc:
+                similar_saved.append({"mongo_id": m.id, "title": doc.get("title") or "",
+                                      "content": doc["content"], "score": float(m.score or 0.0)})
+    else:
+        similar_saved = [
+            item for item in MemoryService.search_saved_prompts(
+                user_id=user_id,
+                query_text=request.prompt,
+                limit=3,
+                exclude_ids=selected_ids + excluded_ids,
+            )
+            if not _already_in_prompt(item, request.prompt)
+        ]
     similarity_context_parts = []
     for item in similar_saved:
         label = item.get("title") or "Saved Prompt"
@@ -325,11 +344,18 @@ def _build_enhance_context(request: EnhanceRequest, user_id: str, fetch_saved_pr
         )
 
     passive_context_parts = []
-    passive_matches = MemoryService.retrieve_passive_context(
-        user_id=user_id,
-        query_text=request.prompt,
-        limit=3,
-    )
+    if reuse is not None:
+        passive_matches = [
+            {"original": p.original[:_REUSE_TEXT_MAX], "refined": p.refined[:_REUSE_TEXT_MAX],
+             "score": float(p.score or 0.0)}
+            for p in reuse.passive[:3]
+        ]
+    else:
+        passive_matches = MemoryService.retrieve_passive_context(
+            user_id=user_id,
+            query_text=request.prompt,
+            limit=3,
+        )
     for pm in passive_matches:
         if pm["original"] != pm["refined"]:
             passive_context_parts.append(
@@ -442,7 +468,9 @@ def _context_details(ctx: dict) -> dict:
             for s in ctx["similar_saved"]
         ],
         "passive_patterns": [
-            {"original": pm["original"][:150], "refined": pm["refined"][:150], "score": pm["score"]}
+            # Whole enough to be sent back on a retry (see ReuseContext).
+            {"original": pm["original"][:_REUSE_TEXT_MAX], "refined": pm["refined"][:_REUSE_TEXT_MAX],
+             "score": pm["score"]}
             for pm in ctx["passive_matches"]
         ],
         "conversation_preview": ctx["conversation_ctx"][:300] if ctx["conversation_ctx"] else None,

@@ -330,10 +330,13 @@ def test_the_stale_footer_keeps_every_action_that_still_works():
     must not be offered first.
     """
     body = _function_bodies(CONTENT_JS, r"showDiffModal")["showDiffModal"]
+    # The classic card's footer: the rewrite-in-the-box card, earlier in the
+    # function, has its own (Keep, Put mine back).
+    body = body[body.index("const lead ="):]
     actions = body[body.index("const actions ="):body.index("openCard(")]
     for el in ("pm-card-toggle", "pm-card-save", "pm-card-discard"):
         assert el in actions, f"{el} is missing from the one shared footer"
-    lead = body[body.index("const lead ="):body.index("const actions =")]
+    lead = body[:body.index("const actions =")]
     assert "cardStale" in lead and "pm-card-redo" in lead and "pm-card-accept" in lead
 
 

@@ -429,6 +429,8 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   if (inputMetadata.excludedIds && inputMetadata.excludedIds.length) {
     body.excluded_prompt_ids = inputMetadata.excludedIds;
   }
+  // A rerun of a draft: its context as the user left it, and no new search.
+  if (inputMetadata.reuseContext) body.reuse_context = inputMetadata.reuseContext;
   if (inputMetadata.inputMethod === "voice") {
     body.input_method = "voice";
     if (Number.isFinite(inputMetadata.inputDurationSeconds) && inputMetadata.inputDurationSeconds > 0) {
@@ -954,6 +956,7 @@ function pillVerb() {
 
 /** What a ready, fresh draft's one button says: see pillVerb() for what it does. */
 function draftVerb() {
+  if (cardInBox) return "Keep";
   return cardSubject ? "Update" : norm(getCurrentInputText()) ? "Replace" : "Insert";
 }
 
@@ -1417,6 +1420,9 @@ async function restoreDraft() {
   cardSubject = draft.subject && draft.subject.id ? draft.subject : null;
   cardBasedOn = draft.basedOn || norm(cardOriginal);
   cardHasBaseline = true;
+  // Back in the box only if the box still holds it.
+  cardInBox = draft.inBox && norm(getCurrentInputText()) === norm(draft.inBox) ? draft.inBox : "";
+  cardBoxBefore = cardInBox ? draft.boxBefore || "" : "";
   cardState = "ready";
   cardShowingOriginal = false;
   cardStale = isStaleAgainstComposer();
@@ -2222,6 +2228,9 @@ function libMenuHtml() {
     `<hr>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${MOD_SHIFT}V</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="shortcuts">Keyboard shortcuts<span>?</span></button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitemcheckbox" aria-checked="${fillBoxEnabled}" data-act="fillbox" ` +
+      `title="On: a finished rewrite goes into the chat box and the card shows what you wrote. Off: it waits on the card for Replace.">` +
+      `Put the rewrite straight in the chat box<span>${fillBoxEnabled ? "On" : "Off"}</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
     (libSignedIn && usageData.known
@@ -2663,6 +2672,11 @@ function onLibraryClick(e) {
     case "close": closeLibrary(); return;
     case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
+    case "fillbox":
+      fillBoxEnabled = !fillBoxEnabled;
+      storageSet({ [FILL_BOX_KEY]: fillBoxEnabled });
+      renderLibrary();
+      return;
     // The search first: the map gives the keyboard back to whatever had it,
     // and the menu item that was clicked is gone once the menu closes.
     case "shortcuts": libMenu = false; renderLibrary(); focusLibrarySearch(); openShortcuts(); return;
@@ -4160,6 +4174,29 @@ let cardRerunFrom = null;
 let cardStreamingStyle = "";
 // Whether the list of saved prompts under the rewrite is open. Per draft.
 let cardUsedOpen = false;
+// The rewrite goes into the chat box when it finishes, and the card shows
+// what the user wrote, so the two can be read side by side without a toggle.
+// cardInBox: what we wrote into the box for this draft ("" when the box holds
+// the user's own text). cardBoxBefore: the box exactly as it was, for "Put
+// mine back". cardWriting: one of our writes is under way, so the box's input
+// events are ours, not the user's.
+let cardInBox = "";
+let cardBoxBefore = "";
+let cardWriting = false;
+// Retrieved context the user has unticked on the card and not yet retried
+// without: saved-prompt ids, and past patterns by "p:" + their index. Nothing
+// runs until they press Retry.
+let cardDropPending = new Set();
+// Whether a finished rewrite goes straight into the chat box (the default)
+// or waits on the card for Replace, as it used to. The library's ⋯ switches it.
+const FILL_BOX_KEY = "pm_fill_box";
+let fillBoxEnabled = true;
+try {
+  storageGet(FILL_BOX_KEY, (r) => { fillBoxEnabled = r?.[FILL_BOX_KEY] !== false; });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes[FILL_BOX_KEY]) fillBoxEnabled = changes[FILL_BOX_KEY].newValue !== false;
+  });
+} catch (error) { onOrphaned(error); }
 // Set when the draft improves a saved prompt rather than the chat box text:
 // { id, title, content }. Its verb is "Update saved prompt", and the chat box
 // has no say in it — it is neither the source nor the destination.
@@ -4208,8 +4245,9 @@ function resetCardLayout() {
  * that followed the user is meant to land.
  */
 function isStaleAgainstComposer() {
-  if (!cardBasedOn || cardSubject) return false;
+  if (!cardBasedOn || cardSubject || cardWriting) return false;
   const now = norm(getCurrentInputText());
+  if (cardInBox && now === norm(cardInBox)) return false;
   return now !== "" && now !== cardBasedOn;
 }
 
@@ -4722,6 +4760,9 @@ function closeCard() {
   cardStreamingStyle = "";
   cardUsedOpen = false;
   cardSubject = null;
+  cardInBox = "";
+  cardBoxBefore = "";
+  cardDropPending = new Set();
   draftStore.clear();
   renderPill();
 }
@@ -4814,6 +4855,66 @@ function finalizeStreamingModal(result) {
     cardRerunFrom = null;
   }
   showDiffModal(result);
+  fillBoxWith(result);
+}
+
+/**
+ * Put `result` in the chat box, replacing the user's draft or the version we
+ * put there before. Never over text the user has changed since: then the card
+ * keeps Replace, as it always did. The first fill remembers the box exactly,
+ * for "Put mine back".
+ */
+async function fillBoxWith(result) {
+  if (!fillBoxEnabled && !cardInBox) return;
+  if (cardSubject || cardState !== "ready" || cardResult !== result) return;
+  const before = getCurrentInputText();
+  const ours = cardInBox ? norm(cardInBox) : cardBasedOn;
+  if (!norm(before) || norm(before) !== ours) return;
+  if (!cardInBox) cardBoxBefore = before;
+  cardWriting = true;
+  let ok = false;
+  try { ok = await applyToInput(result.enhanced); } finally { cardWriting = false; }
+  if (cardResult !== result) return;   // superseded while writing
+  cardInBox = ok ? getCurrentInputText() : "";
+  cardStale = false;
+  if (cardExpanded || !cardMinimized) showDiffModal(result); else renderPill();
+}
+
+/**
+ * Keep the rewrite that is in the box: it is the user's now. Approves it as
+ * Replace did, and the pill offers Undo for a few seconds.
+ */
+async function keepDraft() {
+  if (cardState !== "ready" || !cardResult || !cardInBox) return;
+  const result = cardResult;
+  const undo = {
+    before: cardBoxBefore,
+    written: cardInBox,
+    draft: { result, versions: cardVersions.slice(), basedOn: cardBasedOn, original: cardOriginal },
+  };
+  closeCard();
+  showApplied(result.log_id ? result : null, undo);
+  tipDone("card");
+  statsBump("inserts");
+  maybeTipSave();
+  if (result.log_id) await approveEnhancement(result.log_id);
+}
+
+/** Put the user's own text back in the box; the rewrite stays on the card. */
+async function putMineBack() {
+  if (!cardInBox) return;
+  if (norm(getCurrentInputText()) !== norm(cardInBox)) {
+    showToast("The chat box has changed since, so this would overwrite it.", "error");
+    return;
+  }
+  cardWriting = true;
+  let ok = false;
+  try { ok = await restoreComposer(cardBoxBefore); } finally { cardWriting = false; }
+  if (!ok) { showToast(`Couldn\u2019t put your text back. Press ${CMD_KEY}Z in the chat box.`, "error"); return; }
+  cardInBox = "";
+  cardShowingOriginal = false;
+  cardStale = isStaleAgainstComposer();
+  showDiffModal(cardResult);
 }
 
 /**
@@ -4904,6 +5005,8 @@ function showDiffModal(result) {
     source: window.location.hostname,
     expanded: !cardMinimized,
     subject: cardSubject,
+    inBox: cardInBox,
+    boxBefore: cardBoxBefore,
   });
   if (!result.createdAt) result.createdAt = Date.now();
 
@@ -4914,6 +5017,57 @@ function showDiffModal(result) {
 
   const original = escHtml(result.original || cardOriginal);
   const enhanced = escHtml(result.enhanced);
+
+  // The rewrite is in the chat box: the card shows what the user wrote, so
+  // the two are side by side without a toggle. The compare button swaps the
+  // card to the rewrite and back; the box is not touched.
+  const inBox = Boolean(cardInBox) && !cardSubject;
+  if (inBox) {
+    const used = cardUsedParts(result);
+    const styleName = STYLE_NAMES[result.mode] ? " \u00b7 " + STYLE_NAMES[result.mode] : "";
+    const showRewrite = cardShowingOriginal;   // here the toggle means "show the rewrite"
+    const head = cardHead(`Rewrite in your chat box${styleName}`, "", used.chip + cardVersionsHtml());
+    const body = `<div class="pm-card-inbox-label">${showRewrite ? "The rewrite, as it is in your chat box" : "You wrote"}</div>` +
+      `<div class="pm-card-comparison"><div class="pm-card-reading">` +
+      `<div class="pm-card-text${showRewrite ? "" : " pm-card-original"}">${showRewrite ? enhanced : original}</div></div></div>`;
+    const styles = cardStyleButtons(result);
+    const saved = Boolean(cardSavedId(result));
+    const saveTip = saved ? "Saved \u00b7 show it in your library" : "Save to your library";
+    const actions = [
+      `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-card-keep" data-pm-tip="Keep the rewrite in your chat box">Keep</button>`,
+      `<button class="pm-card-act pm-card-btn" id="pm-card-mine" data-pm-tip="Put back exactly what you wrote">Put mine back</button>`,
+      styles && CARD_SEP + styles,
+      CARD_SEP,
+      `<span class="pm-card-tools">` +
+        `<button class="pm-card-act pm-card-icon" id="pm-card-toggle" aria-pressed="${showRewrite}" aria-label="${showRewrite ? "Show what you wrote" : "Show the rewrite here"}" data-pm-tip="${showRewrite ? "Show what you wrote" : "Show the rewrite here"}">${CARD_COMPARE_SVG}</button>` +
+        `<button class="pm-card-act pm-card-icon${saved ? " pm-card-saved" : ""}" id="pm-card-save" aria-pressed="${saved}" aria-label="${saveTip}" data-pm-tip="${saveTip}"${saved ? "" : ` data-pm-key="${CMD_KEY}S"`}>${BOOKMARK_SVG}</button>` +
+        `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-card-discard" aria-label="Discard the rewrite and put mine back" data-pm-tip="Discard the rewrite and put mine back">${CARD_DISCARD_SVG}</button>` +
+      `</span>`,
+    ];
+    const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
+    card.classList.remove("pm-card-stale");
+    card.classList.add("pm-card-inbox");
+    const textEl = card.querySelector(".pm-card-text");
+    watchScrollable(textEl);
+    markScrollable(textEl);
+    document.getElementById("pm-card-keep")?.addEventListener("click", keepDraft);
+    document.getElementById("pm-card-mine")?.addEventListener("click", putMineBack);
+    document.getElementById("pm-card-min")?.addEventListener("click", hideCard);
+    document.getElementById("pm-card-discard")?.addEventListener("click", async () => { await putMineBack(); closeCard(); });
+    document.getElementById("pm-card-toggle")?.addEventListener("click", () => {
+      cardShowingOriginal = !cardShowingOriginal;
+      showDiffModal(cardResult);
+    });
+    document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
+    card.querySelectorAll("[data-pm-style]").forEach((b) =>
+      b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
+    document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
+    document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
+    wireCardUsed(card);
+    renderPill();
+    return;
+  }
+
   const body = `<div class="pm-card-comparison">` +
     `<div class="pm-card-reading"><div class="pm-card-pane-label">Selected: ${cardShowingOriginal ? "Original" : "Rewrite"}</div>` +
     `<div class="pm-card-text${cardShowingOriginal ? " pm-card-original" : ""}">${cardShowingOriginal ? original : enhanced}</div></div>` +
@@ -4994,6 +5148,7 @@ function showDiffModal(result) {
   // printed underneath the thing it qualifies is read too late to help.
   const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
+  card.classList.remove("pm-card-inbox");   // the same element, after Put mine back
 
   const textEl = card.querySelector(".pm-card-text");
   if (textEl && prevScroll && textEl.textContent === prevContent) {
@@ -5015,6 +5170,12 @@ function showDiffModal(result) {
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
+  wireCardUsed(card);
+  renderPill();
+}
+
+/** The context chip and list: open/close, untick and tick back, Retry. */
+function wireCardUsed(card) {
   document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
     cardUsedOpen = !cardUsedOpen;
     e.currentTarget.setAttribute("aria-expanded", String(cardUsedOpen));
@@ -5022,9 +5183,37 @@ function showDiffModal(result) {
     if (list) list.hidden = !cardUsedOpen;
     positionCard();
   });
-  card.querySelectorAll("[data-pm-drop]").forEach((b) =>
-    b.addEventListener("click", () => rerunWithout(b.dataset.pmDrop, b.dataset.pmTitle || "")));
-  renderPill();
+  // Unticking only marks it: several can be dropped, and nothing is spent,
+  // until Retry. (Each "Don't use" used to start a rewrite on its own.)
+  card.querySelectorAll("[data-pm-drop]").forEach((b) => b.addEventListener("click", () => {
+    const key = b.dataset.pmDrop;
+    if (cardDropPending.has(key)) cardDropPending.delete(key); else cardDropPending.add(key);
+    showDiffModal(cardResult);
+  }));
+  document.getElementById("pm-card-retry")?.addEventListener("click", retryWithoutDropped);
+  document.getElementById("pm-card-retry-cancel")?.addEventListener("click", () => {
+    cardDropPending = new Set();
+    showDiffModal(cardResult);
+  });
+}
+
+/**
+ * Rewrite the same text again, in the same style, without what the user
+ * unticked: the rest of the retrieved context is sent as it was, with no new
+ * search (see rerunDraft's reuse).
+ */
+async function retryWithoutDropped() {
+  if (cardState !== "ready" || !cardResult || cardStale || cardResult.direct || !cardDropPending.size) return;
+  const d = cardResult.context_details || {};
+  const matched = d.auto_matched_prompts || [];
+  const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
+  const droppedNow = matched.filter((m) => m.id && cardDropPending.has(m.id)).map((m) => ({ id: m.id, title: flat(m.title) || flat(m.content).slice(0, 40) }));
+  const droppedPatterns = new Set([...cardDropPending].filter((k) => k.startsWith("p:")).map((k) => Number(k.slice(2))));
+  const patternsLeftOut = (d.passive_patterns || []).filter((_, i) => droppedPatterns.has(i))
+    .map((pm) => ({ title: "Past prompt: " + flat(pm.original).slice(0, 30) }));
+  const excluded = [...(cardResult.excluded || []).filter((x) => !droppedNow.some((y) => y.id === x.id)), ...droppedNow, ...patternsLeftOut];
+  cardDropPending = new Set();
+  await rerunDraft(STYLES.includes(cardResult.mode) ? cardResult.mode : currentMode, excluded, { droppedPatterns });
 }
 
 /**
@@ -5040,11 +5229,17 @@ function showDiffModal(result) {
  */
 function cardUsedParts(result) {
   const none = { chip: "", list: "" };
-  if (cardShowingOriginal || cardStale) return none;
+  // With the rewrite in the box, the toggle only swaps which text the card
+  // shows; the rewrite's context, styles and versions stay.
+  if ((cardShowingOriginal && !cardInBox) || cardStale) return none;
   const d = result.context_details || {};
   const items = [
     ...(d.selected_prompts || []).map((p) => ({ ...p, kind: "attached" })),
-    ...(d.auto_matched_prompts || []).map((p) => ({ ...p, kind: "matched" })),
+    ...(d.auto_matched_prompts || []).map((p) => ({ ...p, kind: "matched", key: p.id })),
+    // Past rewrites the engine found similar: retrieved too, so droppable too.
+    ...(d.passive_patterns || []).map((pm, i) => ({
+      kind: "pattern", key: "p:" + i, title: "", content: pm.refined || pm.original, score: pm.score, from: pm.original,
+    })),
   ];
   const left = result.excluded || [];
   if (!items.length && !left.length) {
@@ -5053,32 +5248,42 @@ function cardUsedParts(result) {
     return n ? { chip: `<span class="pm-card-ctx" title="Saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${n} used</span>`, list: "" } : none;
   }
   const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
-  const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
+  const clip = (t, k) => (t.length > k ? t.slice(0, k - 1) + "\u2026" : t);
   const name = (p) => flat(p.title) || clip(flat(p.content), 40) || "Saved prompt";
   const summary = items.length
     ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
     : "None used";
   const all = items.length ? "Used: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used";
   const rows = items.map((p) => {
-    const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
+    const why = p.kind === "attached" ? "you attached it"
+      : p.kind === "pattern" ? `from a past prompt: \u201c${escHtml(clip(flat(p.from), 50))}\u201d`
+      : Number(p.score) >= 0.5 ? "found by Prompt Memory \u00b7 close match" : "found by Prompt Memory \u00b7 loose match";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
-    const drop = p.kind === "matched" && p.id && !cardStale
-      ? `<button type="button" class="pm-card-used-drop" data-pm-drop="${escHtml(p.id)}" data-pm-title="${escHtml(name(p))}" ` +
-        `title="Rewrite again without this saved prompt">Don\u2019t use</button>`
+    const off = p.key && cardDropPending.has(p.key);
+    // What the engine found can be unticked; what the user attached is theirs.
+    const drop = p.key && !cardStale
+      ? `<button type="button" class="pm-card-used-drop${off ? " pm-card-used-undrop" : ""}" data-pm-drop="${escHtml(p.key)}" ` +
+        `aria-pressed="${!off}" title="${off ? "Use it again" : "Leave it out of the next retry"}">${off ? "Use" : "Don\u2019t use"}</button>`
       : "";
-    return `<li class="pm-card-used-item pm-card-used-${p.kind}">` +
-      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : "\u2248"}</span>` +
+    return `<li class="pm-card-used-item pm-card-used-${p.kind}${off ? " pm-card-used-off" : ""}">` +
+      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : p.kind === "pattern" ? "\u21BA" : "\u2248"}</span>` +
       `<span class="pm-card-used-text"><span class="pm-card-used-name">${escHtml(clip(name(p), 60))}</span>` +
       `<span class="pm-card-used-why">${why}${preview}</span></span>${drop}</li>`;
   }).join("");
   const leftOut = left.length
     ? `<li class="pm-card-used-left">Left out: ${left.map((x) => escHtml(clip(flat(x.title) || "a saved prompt", 40))).join(", ")}</li>`
     : "";
+  const n = cardDropPending.size;
+  const retry = n
+    ? `<li class="pm-card-used-retry"><span>${n} left out. Nothing is searched again.</span>` +
+      `<button type="button" class="pm-card-used-cancel" id="pm-card-retry-cancel">Cancel</button>` +
+      `<button type="button" class="pm-card-used-go" id="pm-card-retry">Retry without ${n === 1 ? "it" : "them"}</button></li>`
+    : "";
   return {
     chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
       `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
-      `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
-    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul>`,
+      `<span class="pm-card-ctx-name">${summary}</span>${n ? `<span class="pm-card-ctx-pending">\u2212${n}</span>` : ""}<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
+    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}${retry}</ul>`,
   };
 }
 
@@ -5097,7 +5302,7 @@ function cardUsedParts(result) {
  * thing these buttons must never do.
  */
 function cardStyleButtons(result) {
-  if (cardShowingOriginal || cardStale) return "";
+  if ((cardShowingOriginal && !cardInBox) || cardStale) return "";
   const on = STYLES.includes(result.mode) ? result.mode : currentMode;
   const left = result.direct ? Infinity : usageData.limit - usageData.count;
   const cost = result.direct ? "Makes one more call with your own key." : "Uses one of today\u2019s rewrites.";
@@ -5123,7 +5328,7 @@ function cardStyleButtons(result) {
  */
 function cardVersionsHtml() {
   const n = cardVersions.length;
-  if (n < 2 || cardShowingOriginal || cardStale) return "";
+  if (n < 2 || (cardShowingOriginal && !cardInBox) || cardStale) return "";
   return `<span class="pm-card-versions" role="group" aria-label="Versions">` +
     `<button type="button" class="pm-card-ver" id="pm-card-ver-prev" aria-label="Previous version" title="Previous version ([)"${cardVersionIndex === 0 ? " disabled" : ""}>\u2039</button>` +
     `<span aria-live="polite">${cardVersionIndex + 1} of ${n}</span>` +
@@ -5135,8 +5340,9 @@ function cardVersionsHtml() {
 function stepVersion(delta) {
   const i = cardVersionIndex + delta;
   if (cardState !== "ready" || i < 0 || i >= cardVersions.length) return;
-  cardShowingOriginal = false;
+  if (!cardInBox) cardShowingOriginal = false;
   showDiffModal(cardVersions[i]);
+  if (cardInBox) fillBoxWith(cardVersions[i]);
 }
 
 /**
@@ -5158,8 +5364,26 @@ async function rerunWithout(id, title) {
   await rerunDraft(STYLES.includes(cardResult.mode) ? cardResult.mode : currentMode, excluded);
 }
 
+/**
+ * The context `result` was rewritten with, minus what is excluded: sent back
+ * so the rerun goes straight to the model with the same context instead of
+ * searching again. null when the server did not say (an older server), in
+ * which case it searches as before.
+ */
+function reuseContextFrom(result, excluded = [], droppedPatterns = new Set()) {
+  const d = result?.context_details;
+  if (!d) return null;
+  const out = new Set(excluded.map((x) => x.id).filter(Boolean));
+  return {
+    matched: (d.auto_matched_prompts || []).filter((m) => m.id && !out.has(m.id)).map((m) => ({ id: m.id, score: m.score })),
+    passive: (d.passive_patterns || []).filter((_, i) => !droppedPatterns.has(i))
+      .map((pm) => ({ original: pm.original, refined: pm.refined, score: pm.score })),
+  };
+}
+
 /** A new version of this draft; the versions already made are kept. */
-async function rerunDraft(style, excluded = []) {
+async function rerunDraft(style, excluded = [], opts = {}) {
+  const droppedPatterns = opts.droppedPatterns || new Set();
   tipDone("card");   // they found the style buttons
   if (enhanceInFlight) {
     showToast("Already enhancing \u2014 hang on a moment.", "info");
@@ -5171,6 +5395,7 @@ async function rerunDraft(style, excluded = []) {
   }
   const original = cardVersions[0]?.original || cardResult.original || cardOriginal;
   if (!original) return;
+  const from = cardResult;   // whose context the rerun reuses
   const route = await resolveEnhanceRoute();
   // The user may have inserted, discarded or edited while the worker answered.
   if (!route || cardState !== "ready" || isStaleAgainstComposer()) return;
@@ -5189,8 +5414,9 @@ async function rerunDraft(style, excluded = []) {
   try {
     if (route.route === "direct") await runDirectEnhance(original, route, style);
     else await runBackendEnhance(original, {
-      excludedIds: [...excluded.map((x) => x.id), ...(cardSubject ? [cardSubject.id] : [])],
+      excludedIds: [...excluded.map((x) => x.id).filter(Boolean), ...(cardSubject ? [cardSubject.id] : [])],
       excluded,
+      reuseContext: reuseContextFrom(from, excluded, droppedPatterns),
     }, style);
   } catch (err) {
     console.error("Prompt Memory: rerun failed", err);
@@ -5226,6 +5452,8 @@ function refreshCardStaleness() {
   // can change without the stale flag changing. renderPill() is a no-op
   // unless something it shows actually differs.
   renderPill();
+  // The user edited the rewrite we put in the box, or sent it: it is theirs.
+  if (stale && cardInBox && !cardWriting) { keepDraft(); return; }
   if (stale === cardStale) return;
   cardStale = stale;
   if (cardExpanded) showDiffModal(cardResult);
@@ -5240,6 +5468,7 @@ document.addEventListener("input", refreshCardStaleness, true);
 async function acceptCard() {
   if (cardState !== "ready" || !cardResult) return;
   if (cardSubject) { await acceptImprovement(); return; }
+  if (cardInBox) { await keepDraft(); return; }
   if (cardStale || isStaleAgainstComposer()) {
     // The dangerous action. Accepting here would replace what the user just
     // typed with a rewrite of text that no longer exists — and it would report
