@@ -1540,6 +1540,8 @@ const LIB_ICON = {
   close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
   tick: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 6.3 5 8.6l4.4-5"/></svg>',
   help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
+  // Two columns of dots: the thing a window is dragged by.
+  grip: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.15"/><circle cx="10" cy="4" r="1.15"/><circle cx="6" cy="8" r="1.15"/><circle cx="10" cy="8" r="1.15"/><circle cx="6" cy="12" r="1.15"/><circle cx="10" cy="12" r="1.15"/></svg>',
 };
 
 // "recent" is the History tab: every rewrite, as the popup and the consent
@@ -1626,6 +1628,7 @@ function createLibrary() {
   lib.addEventListener("change", onLibraryChange);
   lib.addEventListener("keydown", onLibraryKeydown);
   lib.addEventListener("pointerdown", startSheetResize);
+  lib.addEventListener("pointerdown", startSheetMove);
   lib.addEventListener("mousemove", (e) => {
     const row = e.target.closest?.(".pm-lib-row[data-i]");
     if (!row || Number(row.dataset.i) === libSel) return;
@@ -1696,10 +1699,12 @@ function createLibrary() {
   // Another tab: the user went somewhere else entirely.
   document.addEventListener("visibilitychange", () => { if (document.hidden && panelOpen) togglePanel(false); });
 
-  storageGet(["pm_slash", SHEET_SIZE_KEY], (r) => {
+  storageGet(["pm_slash", SHEET_SIZE_KEY, sheetPosKey()], (r) => {
     slashEnabled = r.pm_slash !== false;
     const size = r[SHEET_SIZE_KEY] || {};
     sheetSize = { w: Number(size.w) || 0, h: Number(size.h) || 0 };
+    const pos = r[sheetPosKey()];
+    sheetPos = pos && (Number.isFinite(pos.dx) || Number.isFinite(pos.x)) ? pos : null;
   });
 }
 
@@ -1859,14 +1864,21 @@ function focusLibrarySearch() {
 const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
 const LIB_HEIGHT = 520;        // the sheet's height when there is room for it
 const LIB_ROOM_USEFUL = 320;   // px above the chat box that is enough to open there
+// The usual width: room for the grip, the search box and its placeholder,
+// Saved | History, +, ⋯ and ×. 368 fitted them before the grip.
+const SHEET_W = 384;
 const SHEET_W_MIN = 300, SHEET_H_MIN = 240;   // the smallest a drag on its edges makes it
 // The size the user dragged the sheet to, kept on this device; 0 is "the usual".
 const SHEET_SIZE_KEY = "pm_sheet_size";
 let sheetSize = { w: 0, h: 0 };
+// Where the user dragged the sheet, per site, kept on this device; null is
+// "on the chat box". Measured from the chat box (its right edge and top) so it
+// follows the box from page to page and window size to window size, or from
+// the window when the page has no chat box.
+const sheetPosKey = () => `pm_sheet_pos:${window.location.hostname}`;
+let sheetPos = null;
+let sheetMoveTap = 0;          // when the grip was last pressed without a drag
 let sheetGripTap = 0;          // when an edge was last pressed without a drag
-// The usual width: room for the grip, the search box and its placeholder,
-// Saved | History, +, ⋯ and ×. 368 fitted them before the grip.
-const SHEET_W = 384;
 // The edges that size it: the one facing away from the pill (its width), the
 // one away from the chat box (its height), and the corner between them. The
 // sides they sit on follow where the sheet hangs (data-dock, data-side).
@@ -1927,6 +1939,89 @@ function startSheetResize(e) {
   window.addEventListener("pointercancel", end, true);
   lib.addEventListener("lostpointercapture", end);
 }
+/**
+ * Drag the grip in the sheet's head to put it anywhere. Kept per site and used
+ * every time it opens (see sheetPos). Two presses on the grip without a drag,
+ * or the ↙ in the head, put it back on the chat box.
+ */
+function startSheetMove(e) {
+  const grip = e.target.closest?.(".pm-lib-move");
+  const lib = document.getElementById("pm-library");
+  if (!grip || !lib || e.button !== 0) return;
+  e.preventDefault();
+  // Its laid-out place, not getBoundingClientRect(): grabbed while it is still
+  // opening, the open animation's scale put the start some pixels off.
+  const r = { left: lib.offsetLeft, top: lib.offsetTop, width: lib.offsetWidth };
+  const x0 = e.clientX, y0 = e.clientY;
+  try { lib.setPointerCapture(e.pointerId); } catch { /* window listeners finish it */ }
+  lib.classList.add("pm-lib-moving");
+  let moved = false;
+  const move = (m) => {
+    if (m.pointerId !== e.pointerId) return;
+    const dx = m.clientX - x0, dy = m.clientY - y0;
+    if (!moved && Math.hypot(dx, dy) < 3) return;
+    moved = true;
+    placeSheetFree(lib, r.left + dx, r.top + dy, r.width);
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    lib.removeEventListener("lostpointercapture", end);
+    lib.classList.remove("pm-lib-moving");
+    if (!moved) {
+      const again = Date.now() - sheetMoveTap < 450;
+      sheetMoveTap = again ? 0 : Date.now();
+      if (again) resetSheetPosition();
+      return;
+    }
+    const b = { left: lib.offsetLeft, top: lib.offsetTop };
+    const f = composerFrame(findComposer());
+    sheetPos = f && f.width >= 240
+      ? { dx: Math.round(b.left - f.right), dy: Math.round(b.top - f.top) }
+      : { x: Math.round(b.left), y: Math.round(b.top) };
+    storageSet({ [sheetPosKey()]: sheetPos });
+    renderLibrary();   // the head gains its ↙
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  lib.addEventListener("lostpointercapture", end);
+}
+
+/** Back on the chat box, where it opens by default. */
+function resetSheetPosition() {
+  sheetPos = null;
+  storageSet({ [sheetPosKey()]: null });
+  if (panelOpen) { renderLibrary(); focusLibrarySearch(); }
+}
+
+/**
+ * The sheet at a place the user chose, kept whole inside the window. Its top
+ * left corner is the one pinned, so a later resize moves its right and bottom
+ * edges (data-dock left, data-side below).
+ */
+function placeSheetFree(lib, x, y, width) {
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12;
+  const left = Math.round(Math.max(m, Math.min(x, vw - width - m)));
+  const top = Math.round(Math.max(m, Math.min(y, vh - SHEET_H_MIN - m)));
+  lib.dataset.dock = "left";
+  lib.dataset.side = "below";
+  lib.style.left = left + "px";
+  lib.style.right = "auto";
+  lib.style.top = top + "px";
+  lib.style.bottom = "auto";
+  const room = vh - top - m;
+  if (sheetSize.h) {
+    const h = Math.round(Math.min(room, Math.max(SHEET_H_MIN, sheetSize.h)));
+    lib.style.height = h + "px";
+    lib.style.maxHeight = h + "px";
+  } else {
+    lib.style.height = "";
+    lib.style.maxHeight = Math.round(Math.min(room, LIB_HEIGHT)) + "px";
+  }
+}
+
 const RAIL_GAP = 6, RAIL_ROW = 26;      // the chips' row: its gap above the box, and its height
 const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 
@@ -1950,6 +2045,18 @@ function positionLibrary() {
   const composer = findComposer();
   const frame = composerFrame(composer);
   const box = frame && frame.width >= 240 ? frame : null;
+
+  // Moved by hand: where it was put, measured from the chat box when there
+  // is one (see startSheetMove).
+  const free = sheetPos && (box && Number.isFinite(sheetPos.dx)
+    ? { x: box.right + sheetPos.dx, y: box.top + sheetPos.dy }
+    : Number.isFinite(sheetPos.x) ? { x: sheetPos.x, y: sheetPos.y } : null);
+  lib.classList.toggle("pm-lib-free", Boolean(free));
+  if (free) {
+    placeSheetFree(lib, free.x, free.y, width);
+    positionPeek();
+    return;
+  }
 
   let left, ceiling, floor;
   if (box) {
@@ -2084,23 +2191,27 @@ function libHeadHtml() {
   // × on every page, last in the row where a window keeps it. The sheet sits
   // where the Library chip was, so the chip cannot be its toggle; without this
   // the way out was esc or a click somewhere else, and neither is on screen.
-  const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
+  // The grip it is dragged by, first in every head; ↙ once it has been moved.
+  const grip = `<span class="pm-lib-move" title="Drag to move. Double-click to put it back on the chat box." aria-hidden="true">${LIB_ICON.grip}</span>`;
+  const home = sheetPos
+    ? `<button type="button" class="pm-lib-icon" id="pm-lib-home" data-act="home" aria-label="Put the library back on the chat box" data-pm-tip="Back on the chat box">\u2199</button>`
+    : "";
+  const more = home + `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
     `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" data-pm-tip="Close" data-pm-key="Esc">${LIB_ICON.close}</button>`;
   if (libPage === "privacy" || libPage === "feedback") {
     const title = { privacy: "Privacy", feedback: "Send feedback" }[libPage];
-    return `<div class="pm-lib-head pm-lib-head-sub">` +
+    return `<div class="pm-lib-head pm-lib-head-sub">${grip}` +
       `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
       `<span class="pm-lib-head-title">${title}</span>${more}</div>`;
   }
   if (libPage === "signin") {
-    return `<div class="pm-lib-head pm-lib-head-sub"><span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
+    return `<div class="pm-lib-head pm-lib-head-sub">${grip}<span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
   }
-  const placeholder = libView === "saved"
-    // Short enough to fit beside Saved | History, +, ⋯ and × in a 368px
-    // sheet; "Search 5 prompts" lost its last letters there.
-    ? "Search prompts"
-    : "Search history";
-  return `<div class="pm-lib-head">` +
+  // Short enough to fit beside the grip, Saved | History, +, ⋯ and × in a
+  // 384px sheet; "Search 5 prompts" lost its last letters there. Once the
+  // sheet has been moved its head also carries ↙, and it is just "Search".
+  const placeholder = sheetPos ? "Search" : libView === "saved" ? "Search prompts" : "Search history";
+  return `<div class="pm-lib-head">${grip}` +
     `<label class="pm-lib-search">${LIB_ICON.search}` +
     `<input id="pm-lib-q" type="text" autocomplete="off" spellcheck="false" placeholder="${placeholder}" value="${escHtml(searchQuery)}"` +
     ` aria-label="Search the library" role="combobox" aria-expanded="true" aria-controls="pm-lib-list" aria-autocomplete="list"></label>` +
@@ -2678,6 +2789,7 @@ function onLibraryClick(e) {
   if (libMenu && !e.target.closest(".pm-lib-menu")) { libMenu = false; renderLibrary(); if (!act) return; }
   switch (act) {
     case "close": closeLibrary(); return;
+    case "home": resetSheetPosition(); return;
     case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
     // The search first: the map gives the keyboard back to whatever had it,

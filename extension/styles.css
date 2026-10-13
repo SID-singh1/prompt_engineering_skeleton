@@ -2084,6 +2084,24 @@
     border-bottom: 1px solid var(--pm-con-border);
 }
 .pm-lib .pm-lib-head-sub { padding: 6px 8px; }
+/* The grip the sheet is dragged by, first in its head. */
+.pm-lib .pm-lib-move {
+    flex: none;
+    display: grid;
+    place-items: center;
+    width: 16px;
+    height: 28px;
+    margin: 0 -2px 0 -6px;
+    border-radius: 5px;
+    color: var(--pm-con-muted);
+    cursor: grab;
+    touch-action: none;
+}
+.pm-lib .pm-lib-move svg { width: 14px; height: 14px; display: block; }
+.pm-lib .pm-lib-move:hover { color: var(--pm-con-text); background: var(--pm-con-hover); }
+/* No animation change here: lifting it at the end of a drag replayed the open animation. */
+.pm-lib.pm-lib-moving { user-select: none; }
+.pm-lib.pm-lib-moving .pm-lib-move { cursor: grabbing; color: var(--pm-con-text); }
 .pm-lib .pm-lib-head-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; }
 .pm-lib .pm-lib-head-plain { padding-left: 6px; }
 .pm-lib .pm-lib-search {
