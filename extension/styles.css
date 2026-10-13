@@ -296,6 +296,23 @@
 
 .pm-trigger.pm-pill-open .pm-pill-glyph { width: 0; opacity: 0; }
 
+/* "⊕ Improve": the idle pill while the chat box holds a draft. The word is
+   what testers needed to find the ⊕ at all; the height stays 32px, lighter
+   than the host's Send. */
+.pm-pill-word {
+    display: none;
+    padding: 0 12px 0 0;
+    color: var(--pm-accent);
+    font: 600 12.5px/1 var(--pm-font);
+    white-space: nowrap;
+}
+.pm-trigger.pm-pill-invite:not(.pm-pill-open):not(.pm-pill-word-off) .pm-pill-word { display: inline; }
+.pm-trigger.pm-pill-invite:not(.pm-pill-open):not(.pm-pill-word-off) .pm-pill-glyph { width: 28px; margin-left: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+    .pm-trigger.pm-pill-invite:not(.pm-pill-open) .pm-pill-word { animation: pm-word-in .2s ease-out; }
+}
+@keyframes pm-word-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+
 /* The status light takes the lead position the glyph vacated. The halo is a
    spread-only shadow rather than a second element, so it costs nothing in
    the flex row and cannot drift out of alignment with the dot. */

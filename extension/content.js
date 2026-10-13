@@ -782,6 +782,8 @@ function createTrigger() {
   // meaning (cancel / dismiss / discard) also follows the state.
   btn.innerHTML =
     `<span class="pm-pill-glyph" aria-hidden="true">${PILL_GLYPH_SVG}</span>` +
+    // "Improve", beside the ⊕ while the chat box holds a draft (see renderPill).
+    `<span class="pm-pill-word" aria-hidden="true">Improve</span>` +
     `<span class="pm-pill-dot" aria-hidden="true"></span>` +
     `<span class="pm-pill-labelwrap"><span class="pm-pill-label"></span></span>` +
     `<button class="pm-pill-insert" type="button" hidden></button>` +
@@ -1088,12 +1090,18 @@ function renderPill() {
     if (pillApplied.undo && !pillApplied.thanked) verb = "Undo";
   }
 
-  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
+  // Idle with a draft in the chat box, the ⊕ says what it does: "⊕ Improve".
+  // Two testers never found a bare ⊕ in the window's corner; a word beside
+  // it, appearing as they type, is what the eye catches.
+  const invite = state === "idle" && norm(getCurrentInputText()).length >= 3;
+
+  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}|${invite}`;
   if (sig === pillSignature) return;
   pillSignature = sig;
 
   pill.dataset.state = state;
   pill.classList.toggle("pm-pill-open", state !== "idle");
+  pill.classList.toggle("pm-pill-invite", invite);
   const labelEl = pill.querySelector(".pm-pill-label");
   labelEl.textContent = label.replace(/\s+/g, " ").trim().slice(0, 120);
 
@@ -1121,7 +1129,7 @@ function renderPill() {
   if (ctxBadge) { ctxBadge.hidden = !ctx || state !== "idle"; ctxBadge.textContent = String(ctx); }
   const withCtx = ctx ? ` with ${ctx} saved prompt${ctx === 1 ? "" : "s"} as context` : "";
   pill.setAttribute("aria-label", {
-    idle: "Enhance this prompt" + withCtx,
+    idle: (invite ? "Improve this prompt" : "Enhance this prompt") + withCtx,
     streaming: "Rewriting your prompt",
     ready: "Enhanced prompt ready. Click to review or use Insert.",
     stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
@@ -3817,6 +3825,7 @@ function onComposerChanged() {
     refreshCardStaleness();
     positionRail();
     tipsOnComposerChanged();
+    renderPill();   // "⊕ Improve" appears with a draft, and goes when it is sent
   });
 }
 
@@ -3829,8 +3838,9 @@ function setupLibraryListeners() {
       checkSlash();
       requestAnimationFrame(positionRail);
       // A <textarea> composer changes its value, not its DOM, so the
-      // MutationObserver never fires for it: the tips hear typing here too.
+      // MutationObserver never fires for it: the tips and the pill hear typing here too.
       tipsOnComposerChanged();
+      renderPill();
     }
   }, true);
   // The caret moving (a click, an arrow key) opens or closes // too, and it is
