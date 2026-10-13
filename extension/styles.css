@@ -1612,7 +1612,48 @@
     display: inline-flex;
     align-items: center;
     flex-wrap: wrap;
-    padding: 2px 22px 12px 15px;
+    gap: 2px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px;
+    border-radius: 14px;
+    border: 1px solid var(--pm-border);
+    background: var(--pm-bg-soft);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .05);
+}
+.pm-card-sep { flex: none; width: 1px; height: 18px; margin: 0 4px; background: var(--pm-border); }
+.pm-card-dock .pm-card-meta { padding: 0 8px; }
+
+/* In the dock every control is the same height and corner. */
+.pm-card-dock .pm-card-act.pm-card-btn {
+    height: 32px;
+    min-height: 32px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 10px;
+    font-size: 12.5px;
+}
+.pm-card-dock .pm-card-act.pm-card-btn.pm-card-primary {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 4px 14px rgba(80, 200, 168, .22);
+}
+.pm-card-dock .pm-card-act.pm-card-btn.pm-card-redo {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, .25), 0 4px 14px rgba(212, 160, 106, .22);
+}
+.pm-card-dock .pm-card-style { height: 32px; border-radius: 10px; color: var(--pm-text); font-size: 12.5px; }
+.pm-card-style svg { width: 12px; height: 12px; flex: none; color: var(--pm-accent); }
+/* Made already: the dot (free to switch back) in place of the sparkle (a new rewrite). */
+.pm-card-style-made svg { display: none; }
+.pm-card-dock .pm-card-act.pm-card-icon { width: 32px; height: 32px; border-radius: 10px; color: var(--pm-text-secondary); }
+
+/* A narrow card: Replace and the icons share the first line and the styles
+   take the second, inside the same tray. Left to wrap on its own the dock
+   broke into three ragged lines with dividers dangling at their ends. */
+.pm-card { container-type: inline-size; }
+@container (max-width: 500px) {
+    .pm-card-dock { display: flex; width: 100%; }
+    .pm-card-sep { display: none; }
+    .pm-card-dock .pm-card-tools { order: 1; margin-left: auto; }
+    .pm-card-dock .pm-card-styles { order: 2; width: 100%; margin-top: 2px; padding-top: 4px; border-top: 1px solid var(--pm-border); }
 }
 
 .pm-card-act {
