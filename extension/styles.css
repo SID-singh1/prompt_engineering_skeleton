@@ -1006,6 +1006,22 @@
     margin: 0 0 16px;
 }
 
+/* The own-key way in: a quiet link under sign-in. */
+.pm-setup-alt {
+    display: block;
+    margin: 14px auto 0;
+    padding: 4px 6px;
+    border: 0;
+    background: none;
+    color: var(--pm-text-muted);
+    font: 12.5px/1.4 var(--pm-font);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+.pm-setup-alt:hover { color: var(--pm-text); }
+.pm-setup-alt:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; border-radius: 4px; }
+
 .pm-setup-option {
     border: 1px solid var(--pm-border);
     border-radius: 12px;

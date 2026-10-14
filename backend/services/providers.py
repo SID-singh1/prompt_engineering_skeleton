@@ -199,6 +199,36 @@ DEFAULT_CHAIN: tuple[ModelSpec, ...] = (
 
 # Models proven dead this process — never retried. Populated on 404/400 so a
 # decommissioned model costs one failed request per boot, not one per user.
+def _extra_server_models() -> tuple[ModelSpec, ...]:
+    """
+    Rungs named in SERVER_EXTRA_MODELS, after the Groq chain. Every Groq rung
+    draws on the same Groq organisation (each model with its own daily
+    allowance, and a second key in that organisation adds none), so a busy
+    day can spend them all; a rung on another provider keeps rewrites going
+    then. Off unless configured, because a provider's terms travel with the
+    prompts sent to it (see PROVIDERS).
+    """
+    out = []
+    for item in (getattr(settings, "SERVER_EXTRA_MODELS", "") or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        provider, _, model_id = item.partition(":")
+        provider, model_id = provider.strip(), model_id.strip()
+        if provider not in PROVIDERS or not model_id:
+            logger.warning(f"SERVER_EXTRA_MODELS: ignoring {item!r} (want provider:model, provider one of {sorted(PROVIDERS)})")
+            continue
+        out.append(ModelSpec(provider=provider, model_id=model_id,
+                             params={"max_completion_tokens": 1200},
+                             note="Extra server rung from SERVER_EXTRA_MODELS."))
+    return tuple(out)
+
+
+def server_chain() -> tuple[ModelSpec, ...]:
+    """The shared chain: the tuned Groq models, then any configured extras."""
+    return DEFAULT_CHAIN + _extra_server_models()
+
+
 _dead_models: set[str] = set()
 
 # provider -> {key_index: cooldown_until_epoch}
@@ -299,6 +329,41 @@ def _pick_key(provider_name: str) -> tuple[Optional[str], int]:
     return keys[soonest], soonest
 
 
+# What each shared key has left, per model, as the provider last reported it
+# in its x-ratelimit-* headers: label -> key index -> fields. In memory only;
+# it is a live view, refreshed by every request through a shared key.
+_headroom: dict[str, dict[int, dict]] = {}
+_RATE_HEADERS = {
+    "requests_left": "x-ratelimit-remaining-requests",
+    "requests_limit": "x-ratelimit-limit-requests",
+    "tokens_left": "x-ratelimit-remaining-tokens",
+    "tokens_limit": "x-ratelimit-limit-tokens",
+    "requests_reset": "x-ratelimit-reset-requests",
+    "tokens_reset": "x-ratelimit-reset-tokens",
+}
+
+
+def _note_headroom(spec: "ModelSpec", key_index: int, headers) -> None:
+    """Keep a shared key's reported limits. A user's own key (-1) is theirs, not ours."""
+    if key_index < 0 or headers is None:
+        return
+    seen = {}
+    for name, header in _RATE_HEADERS.items():
+        value = headers.get(header)
+        if value is None:
+            continue
+        if name.endswith("_reset"):
+            seen[name] = str(value)
+            continue
+        try:
+            seen[name] = int(float(value))
+        except (TypeError, ValueError):
+            pass
+    if seen:
+        seen["at"] = round(time.time())
+        _headroom.setdefault(spec.label, {})[key_index] = seen
+
+
 def _cool_down(provider_name: str, index: int, seconds: float = 60.0) -> None:
     if index < 0:
         return
@@ -324,10 +389,17 @@ def pool_status() -> dict:
                 for i in range(len(keys))
             ],
         }
+    chain = server_chain()
     return {
         "providers": out,
-        "chain": [m.label for m in DEFAULT_CHAIN],
+        "chain": [m.label for m in chain],
+        "extra_models": [m.label for m in chain[len(DEFAULT_CHAIN):]],
         "dead_models": sorted(_dead_models),
+        # Requests and tokens left per shared key, per model, as last reported.
+        "headroom": {
+            label: {str(i): dict(v) for i, v in sorted(per_key.items())}
+            for label, per_key in _headroom.items()
+        },
     }
 
 
@@ -503,7 +575,7 @@ def _resolve_chain(
     chain: list[tuple[ModelSpec, Optional[str]]] = []
 
     if user_key and user_provider in PROVIDERS:
-        known = {m.model_id: m for m in DEFAULT_CHAIN if m.provider == user_provider}
+        known = {m.model_id: m for m in server_chain() if m.provider == user_provider}
         ordered_ids = list(BYOK_MODELS.get(user_provider, ()))
 
         if user_model and user_model in ordered_ids:
@@ -522,7 +594,7 @@ def _resolve_chain(
             chain.append((spec, user_key))
 
     if allow_shared_fallback or not chain:
-        for spec in DEFAULT_CHAIN:
+        for spec in server_chain():
             chain.append((spec, None))
 
     return [(s, k) for s, k in chain if s.label not in _dead_models]
@@ -574,6 +646,7 @@ def chat(
             attempts.append((spec.label, f"network error: {exc}"))
             continue
 
+        _note_headroom(spec, key_index, getattr(res, "headers", None))
         if res.status_code == 200:
             data = res.json()
             choice = data["choices"][0]
@@ -650,6 +723,7 @@ def chat_stream(
                 json=payload,
                 timeout=timeout,
             ) as res:
+                    _note_headroom(spec, key_index, getattr(res, "headers", None))
                     if res.status_code != 200:
                         body = res.read().decode(errors="replace")[:400]
                         kind = _classify(res.status_code, body)

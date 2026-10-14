@@ -146,7 +146,11 @@ def main():
         check(prof.get("pm_data_consent_v1") is True, "Agree stores the consent")
         check(visible_screen(page) == "setup", "then asks how to rewrite")
         check(page.inner_text("#head-state").strip() == "Setup needed", "and the header says setup is needed")
-        check(page.is_visible("#google-login-btn") and page.is_visible("#key-open"), "both ways are offered side by side")
+        check(page.inner_text("#screen-setup h1").strip() == "Sign in to start", "the page asks for one thing: sign in")
+        check(page.is_visible("#google-login-btn") and page.locator("#screen-setup .choice").count() == 1,
+              "Google is the one way in, not one of two equal choices")
+        check(page.is_visible("#key-open") and "btn-link" in page.get_attribute("#key-open", "class"),
+              "an own key is still one quiet link away")
         page.click("#key-open")
         check(page.is_visible("#key-input") and page.is_visible("#key-get-link"), "the key form opens with a link to get one")
         check(page.get_attribute("#key-get-link", "href") == "https://console.groq.com/keys", "which goes to the Groq console")
@@ -154,7 +158,10 @@ def main():
         check("Paste your key first" in page.inner_text("#key-status"), "an empty key is caught before any request")
         page.fill("#key-input", "gsk_first_run_demo_9f2c")
         page.click("#key-save")
-        page.wait_for_function("!document.getElementById('screen-ready').hidden", timeout=8000)
+        # A selector wait, not wait_for_function: the popup's CSP (script-src
+        # 'self') sometimes refused the evaluated string, failing this run
+        # about one time in three.
+        page.wait_for_selector("#screen-ready:not([hidden])", timeout=8000)
         check(prof.get("byok_key") == "gsk_first_run_demo_9f2c", "the tested key is saved")
         check(page.inner_text("#ready-heading").startswith("You're ready"), "and the page says what to do next")
         sites = [a.get_attribute("href") for a in page.locator("#ready-card .site").all()]
@@ -211,14 +218,16 @@ def main():
         modal = page.locator(".pm-modal").bounding_box()
         google = page.locator("#pm-setup-signin").bounding_box()
         check(google["y"] + google["height"] <= modal["y"] + modal["height"],
-              "the setup modal shows both options without scrolling (the Google one was below the fold)")
+              "the setup modal shows sign-in without scrolling (it was once below the fold)")
+        check(page.locator(".pm-modal .pm-setup-option").count() == 1 and "pm-setup-alt" in page.get_attribute("#pm-setup-byok", "class"),
+              "one way in on the chat page too; the own key is a link under it")
         check(page.evaluate("getComputedStyle(document.querySelector('.pm-modal-body')).whiteSpace") == "normal",
               "and does not render its template's line breaks as blank space")
         with prof.ctx.expect_page() as new:
             page.click("#pm-setup-byok")
         tab = new.value
         tab.wait_for_load_state()
-        check(tab.url.endswith("popup.html?onboarding=1#key"), f"Add a free key opens the key step, got {tab.url}")
+        check(tab.url.endswith("popup.html?onboarding=1#key"), f"the own-key link opens the key step, got {tab.url}")
         tab.wait_for_timeout(400)
         check(tab.is_visible("#key-input"), "with the key form already open")
         check(prof.get("pm_tips", ) and prof.get("pm_tips").get("meet"), "acting on a tip retires it")

@@ -151,6 +151,12 @@
 
         /* ── Choice cards (setup) ── */
         .choices { display: flex; flex-direction: column; gap: 10px; }
+        /* The own-key way in: one quiet link under sign-in, its form opening in place. */
+        .alt-way { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+        .alt-way .btn-link { font-size: 12.5px; color: var(--muted, #6b6b78); text-decoration: underline; text-underline-offset: 3px; }
+        .alt-way .btn-link:hover { color: var(--text, inherit); }
+        .alt-way #key-form-slot { align-self: stretch; }
+        .alt-way #key-form-slot:empty { display: none; }
         .choice { border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); padding: 14px; }
         .choice > * + * { margin-top: 10px; }
         .choice-head { display: flex; align-items: center; gap: 6px 8px; flex-wrap: wrap; }
@@ -313,15 +319,18 @@
 
     <!-- ═══ 2. SETUP: choose what does the rewriting ═══ -->
     <main id="screen-setup" hidden>
+        <!-- One way in. Testers met two equal choices here and stopped to work
+             out what an API key was; the key is still one link away below,
+             and in Your setup once signed in. -->
         <div>
-            <h1>Choose how it rewrites</h1>
-            <p class="lead" style="margin-top:6px">Both are free. You can add the other one later.</p>
+            <h1>Sign in to start</h1>
+            <p class="lead" style="margin-top:6px">It's free: 15 rewrites a day, no key or card needed.</p>
         </div>
 
         <div class="choices">
             <section class="choice" id="choice-google" aria-labelledby="choice-google-title">
-                <div class="choice-head"><span class="choice-title" id="choice-google-title">Sign in with Google</span><span class="badge">Quickest</span></div>
-                <p class="choice-desc">15 free rewrites a day. Keeps your saved prompts and History, on every computer.</p>
+                <div class="choice-head"><span class="choice-title" id="choice-google-title">Sign in with Google</span></div>
+                <p class="choice-desc">Your saved prompts and History follow you to every computer.</p>
                 <button class="btn btn-google btn-block" id="google-login-btn" type="button">
                     <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
                         <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" />
@@ -334,12 +343,11 @@
                 <p class="status" id="status" role="status"></p>
             </section>
 
-            <section class="choice" id="choice-key" aria-labelledby="choice-key-title">
-                <div class="choice-head"><span class="choice-title" id="choice-key-title">Use your own free key</span><span class="badge">Most private</span></div>
-                <p class="choice-desc">No account with us. Your drafts go straight from this browser to the AI provider, within its own free limits.</p>
-                <button class="btn btn-quiet btn-block" id="key-open" type="button" aria-expanded="false" aria-controls="key-form">Add a free key</button>
-                <div id="key-form-slot"></div>
-            </section>
+        </div>
+
+        <div class="alt-way" id="choice-key">
+            <button class="btn-link" id="key-open" type="button" aria-expanded="false" aria-controls="key-form">I have my own API key</button>
+            <div id="key-form-slot"></div>
         </div>
     </main>
 

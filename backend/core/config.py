@@ -18,6 +18,13 @@ class Settings:
     # key (BYOK) do not require any of these to be set.
     GROQ_API_KEY = os.getenv("GROQ_API_KEY")
     GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2")
+    # Extra rungs for the shared server chain, after the Groq models, as
+    # "provider:model" pairs separated by commas, e.g.
+    # "gemini:gemini-3.5-flash-lite". Empty (the default) adds nothing. Each
+    # rung is used only when that provider's key is set. A free-tier Gemini
+    # key lets Google use the prompts to improve its products: use a paid key,
+    # or say so in the privacy policy, before turning this on.
+    SERVER_EXTRA_MODELS = os.getenv("SERVER_EXTRA_MODELS", "")
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
     MONGO_URI = os.getenv("MONGO_URI")

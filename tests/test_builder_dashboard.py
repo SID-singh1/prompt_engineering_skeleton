@@ -241,3 +241,63 @@ def test_dashboard_marks_a_bounded_log_sample(monkeypatch):
 
     assert summary["range"]["logs_truncated"] is True
     assert summary["summary"]["enhancements"] == 1
+
+
+def test_dashboard_counts_rewrites_used_without_any_text(client):
+    """
+    How often a rewrite is put into the chat box: the number to fine-tune on
+    later. Counted from accepted_at alone; the text never leaves the log.
+    """
+    now = datetime.now()
+    used, unused = now - timedelta(hours=3), now - timedelta(hours=2)
+
+    def log(mode, accepted, when):
+        entry = {"user_id": "u", "timestamp": when, "source": "active", "mode": mode,
+                 "enhanced": "private rewrite text", "original": "private draft", "latency": 1.0}
+        if accepted:
+            entry["accepted_at"] = when + timedelta(seconds=20)
+        return entry
+
+    in_memory_prompt_logs.extend([
+        log("deep", True, used), log("deep", True, used), log("deep", False, unused),
+        log("quick", True, used), log("quick", False, unused), log("quick", False, unused),
+    ])
+    response = client.get("/builder/dashboard/summary?days=7", headers={"X-Builder-Key": "builder-test-secret"})
+    body = response.json()
+    assert body["summary"]["accepted"] == 3
+    assert body["summary"]["acceptance_rate"] == 0.5
+    by_mode = body["breakdowns"]["acceptance_by_mode"]
+    assert by_mode["deep"] == {"enhancements": 3, "accepted": 2, "rate": 0.667}
+    assert by_mode["quick"] == {"enhancements": 3, "accepted": 1, "rate": 0.333}
+    assert sum(day["accepted"] for day in body["daily"]) == 3
+    assert "private rewrite text" not in response.text and "private draft" not in response.text
+
+
+def test_mongo_dashboard_path_reads_accepted_at(monkeypatch):
+    """The Mongo projection must carry accepted_at, or production reports 0% used."""
+    now = datetime.now()
+    prompts = _ProjectionCollection([
+        {"user_id": "one", "timestamp": now, "source": "active", "enhanced": "a", "accepted_at": now},
+        {"user_id": "two", "timestamp": now, "source": "active", "enhanced": "b"},
+    ])
+    monkeypatch.setattr(MongoDB, "prompts_col", prompts)
+    monkeypatch.setattr(MongoDB, "analytics_col", _ProjectionCollection())
+    monkeypatch.setattr(MongoDB, "users_col", _ProjectionCollection([{}, {}]))
+    monkeypatch.setattr(MongoDB, "saved_prompts_col", _ProjectionCollection())
+    monkeypatch.setattr(MongoDB, "db", _FakeDB(prompt_feedback=_ProjectionCollection()))
+    monkeypatch.setattr(QdrantDB, "health", lambda: {"connected": True})
+
+    summary = AnalyticsService.summary(7)
+    assert summary["summary"]["accepted"] == 1 and summary["summary"]["acceptance_rate"] == 0.5
+
+
+def test_an_empty_window_reports_no_rate_rather_than_dividing_by_zero(client):
+    body = client.get("/builder/dashboard/summary?days=7", headers={"X-Builder-Key": "builder-test-secret"}).json()
+    assert body["summary"]["accepted"] == 0 and body["summary"]["acceptance_rate"] == 0.0
+    assert body["breakdowns"]["acceptance_by_mode"] == {}
+
+
+def test_the_dashboard_shows_shared_key_capacity(client):
+    body = client.get("/builder/dashboard/summary?days=7", headers={"X-Builder-Key": "builder-test-secret"}).json()
+    providers = body["system"]["providers"]
+    assert providers["chain"] and "headroom" in providers and "extra_models" in providers
