@@ -21,6 +21,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 CONTENT_JS = (ROOT / "extension" / "content.js").read_text(encoding="utf-8")
+SITES_JS = (ROOT / "extension" / "sites.js").read_text(encoding="utf-8")
 STYLES_CSS = (ROOT / "extension" / "styles.css").read_text(encoding="utf-8")
 MANIFEST = (ROOT / "extension" / "manifest.json").read_text(encoding="utf-8")
 BACKGROUND_JS = (ROOT / "extension" / "background.js").read_text(encoding="utf-8")
@@ -105,6 +106,18 @@ def test_supported_matches_in_worker_track_the_manifest():
     listed = set(re.findall(r'"(https://[^"]+)"',
                             re.search(r"SUPPORTED_MATCHES = \[(.*?)\]", worker, re.S).group(1)))
     assert listed == declared, f"drifted: only in manifest={declared - listed}, only in worker={listed - declared}"
+
+
+def test_open_tabs_get_every_content_script_file():
+    """
+    Install injects into chat tabs that were already open. It named only
+    content.js, so once content.js read sites.js's PM_SITES those tabs threw
+    on load and never showed the pill. It now injects the manifest's own list.
+    """
+    body = _function_bodies(BACKGROUND_JS, r"activateExistingTabs")["activateExistingTabs"]
+    assert "files: CONTENT_SCRIPT.js" in body and "files: CONTENT_SCRIPT.css" in body
+    assert "const CONTENT_SCRIPT = chrome.runtime.getManifest().content_scripts[0];" in BACKGROUND_JS
+    assert '"content.js"' not in BACKGROUND_JS and '"styles.css"' not in BACKGROUND_JS, "a file list was typed in again"
 
 
 def test_extension_origins_match_the_manifest():
@@ -1764,16 +1777,16 @@ def test_every_key_a_tooltip_shows_is_one_the_map_lists():
 def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
     """ChatGPT dropped data-message-author-role (seen live on 2026-10-01).
     Conversation context and the sent-prompt bookmark read both markings."""
-    scrape = _function_bodies(CONTENT_JS, r"scrapeConversation")["scrapeConversation"]
+    chatgpt = SITES_JS[SITES_JS.index('"chatgpt.com": Object.freeze({'):][:600]
     for mark in ("[data-message-author-role]", "[data-markdown-text-tone='user-message']",
                  "[data-markdown-text-style='assistant-message']"):
-        assert mark in scrape, f"the conversation reader misses {mark}"
-    assert "data-user-message-bubble" in CONTENT_JS and 'data-markdown-text-tone="user-message"' in CONTENT_JS
+        assert mark in chatgpt, f"the conversation reader misses {mark}"
+    assert "data-user-message-bubble" in SITES_JS and 'data-markdown-text-tone="user-message"' in SITES_JS
 
 
 def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
     body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
-    assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS
+    assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in SITES_JS
 
 
 def test_new_and_edit_prompt_are_a_page_of_the_library():
@@ -1844,4 +1857,24 @@ def test_a_draft_pill_is_fitted_beside_the_chat_box_before_it_moves():
     assert body.index('pill.style.maxWidth = "";') < body.index("let w = pill.offsetWidth;")
     assert "room >= PILL_MIN_OPEN_W" in body
     assert 'const box = pill.classList.contains("pm-pill-open") ? c : null;' in body, "an idle pill never steps"
+
+
+def test_every_site_selector_lives_in_sites_js():
+    """
+    Chat sites change their markup without notice; twice in one week of
+    October 2026 the fix was a selector buried in content.js. Every selector
+    that reads a chat page is in sites.js, loaded first, so the next change is
+    an edit to that one file.
+    """
+    import json
+    scripts = json.loads(MANIFEST)["content_scripts"][0]["js"]
+    assert scripts.index("sites.js") < scripts.index("content.js"), "content.js reads PM_SITES as it loads"
+    assert "const COMPOSER_SELECTORS = PM_SITES.composer;" in CONTENT_JS
+    assert "const SENT_PROMPT_SELECTOR = PM_SITES.sentPrompt;" in CONTENT_JS
+    scrape = _function_bodies(CONTENT_JS, r"scrapeConversation")["scrapeConversation"]
+    assert "PM_SITES.conversation[" in scrape and "hostname ===" not in scrape, "a site's markings crept back into content.js"
+    for marking in ("#prompt-textarea", "data-message-author-role", "query-text", "user-query", "cdk-visually-hidden"):
+        assert marking in SITES_JS, f"{marking} is not in sites.js"
+    for host in ("chatgpt.com", "claude.ai", "gemini.google.com", "grok.com"):
+        assert f'"{host}": Object.freeze({{' in SITES_JS
 

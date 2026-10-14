@@ -564,56 +564,27 @@ function scrapeConversation() {
   const messages = [];
   if (!contextEnabled) return messages;  // Respect privacy setting
   const hostname = window.location.hostname;
+  // Each site's markings are in sites.js (PM_SITES.conversation).
+  const site = PM_SITES.conversation[PM_SITES.conversationAliases[hostname] || hostname];
 
   try {
-    if (hostname === "chatgpt.com") {
-      // ChatGPT dropped data-message-author-role (seen live, 2026-10-01): the
-      // two sides are now marked on their text, as a user "tone" and an
-      // assistant "style". Both markings are read, in page order, and an
-      // element inside one already taken is not counted twice.
-      const sel = "[data-message-author-role], [data-markdown-text-tone='user-message'], [data-markdown-text-style='assistant-message']";
+    if (site) {
       const taken = [];
-      document.querySelectorAll(sel).forEach((el) => {
-        if (taken.some((t) => t.contains(el))) return;
-        taken.push(el);
-        const role = el.getAttribute("data-message-author-role") ||
-          (el.getAttribute("data-markdown-text-tone") === "user-message" ? "user" : "assistant");
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          messages.push(`[${role}]: ${text.substring(0, 500)}`);
+      document.querySelectorAll(site.messages).forEach((el) => {
+        if (site.nested) {
+          if (taken.some((t) => t.contains(el))) return;
+          taken.push(el);
         }
-      });
-    } else if (hostname === "claude.ai") {
-      document.querySelectorAll("[class*='Message'], [data-testid*='message']").forEach((el) => {
         const text = el.innerText?.trim();
         if (text && text.length > 2) {
-          const isUser = el.className?.includes("human") || el.getAttribute("data-testid")?.includes("human");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
-        }
-      });
-    } else if (hostname === "gemini.google.com") {
-      // Gemini distinguishes the two sides in the DOM, so tag them. Emitting
-      // "[message]" for both threw that information away — see below.
-      document.querySelectorAll("message-content, .model-response-text, .query-text").forEach((el) => {
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          const isUser = el.classList.contains("query-text") || el.closest(".query-text");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
-        }
-      });
-    } else if (hostname === "grok.com" || hostname === "x.com") {
-      document.querySelectorAll("[class*='message'], [class*='Message'], [data-testid*='message'], [class*='response'], [class*='query']").forEach((el) => {
-        const text = el.innerText?.trim();
-        if (text && text.length > 2) {
-          const cls = `${el.className || ""} ${el.getAttribute("data-testid") || ""}`.toLowerCase();
-          const isUser = cls.includes("query") || cls.includes("user") || cls.includes("human");
-          messages.push(`[${isUser ? "user" : "assistant"}]: ${text.substring(0, 500)}`);
+          messages.push(`[${site.role(el)}]: ${text.substring(0, 500)}`);
         }
       });
     } else {
-      document.querySelectorAll("[class*='message'], [class*='Message'], [role='presentation']").forEach((el) => {
+      const fallback = PM_SITES.conversationFallback;
+      document.querySelectorAll(fallback.messages).forEach((el) => {
         const text = el.innerText?.trim();
-        if (text && text.length > 5 && text.length < 2000) {
+        if (text && text.length >= fallback.minLength && text.length <= fallback.maxLength) {
           // Genuinely unknown role on an unrecognised site. Tag it explicitly
           // rather than pushing bare text, so the backend can tell the
           // difference between "not a user message" and "role unknown".
@@ -2615,14 +2586,10 @@ async function submitSaveForm() {
 // by it. The selectors are the ones each site marks the user's side with:
 // ChatGPT, Gemini, and Claude.
 
-// ChatGPT marks the user's side two ways depending on the build: the old
-// author role, and (live since 2026-10) a bubble with a user-toned text inside.
-const SENT_PROMPT_SELECTOR = '[data-message-author-role="user"], [data-user-message-bubble], ' +
-  '[data-markdown-text-tone="user-message"], user-query, [data-testid="user-message"]';
-const SENT_PROMPT_WORDS = '[data-markdown-text-tone="user-message"], .query-text';
-// Text a screen reader hears and the eye does not: Gemini starts every one of
-// your messages with a hidden "You said", which is not part of the prompt.
-const VISUALLY_HIDDEN = '.cdk-visually-hidden, .sr-only, [class*="visually-hidden"]';
+// How each site marks the user's side, and its hidden "You said", are in sites.js.
+const SENT_PROMPT_SELECTOR = PM_SITES.sentPrompt;
+const SENT_PROMPT_WORDS = PM_SITES.sentPromptWords;
+const VISUALLY_HIDDEN = PM_SITES.visuallyHidden;
 const BOOKMARK_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 2.5h7v11L8 10.8l-3.5 2.7z"/></svg>';
 let msgSaveTarget = null;
 let msgSaveHideTimer = null;
@@ -6155,18 +6122,10 @@ function closeModal() {
 // INPUT DETECTION & PASSIVE TRACKING
 // ══════════════════════════════════════════════════════════════
 
-// Ordered most- to least-specific. querySelector returns the FIRST match in
-// document order, which on several of these sites is a hidden search box or an
-// off-screen editor, so visibility is checked before a candidate is accepted.
-const COMPOSER_SELECTORS = [
-  "#prompt-textarea",                          // ChatGPT
-  "div[contenteditable='true'][role='textbox']",
-  "[data-testid='chat-input'] [contenteditable='true']",
-  "form [contenteditable='true']",
-  "form textarea",
-  "[contenteditable='true']",
-  "textarea",
-];
+// The chat box's selectors live in sites.js with every other site-specific
+// one, most- to least-specific; each candidate is checked for visibility
+// before it is taken (isUsable).
+const COMPOSER_SELECTORS = PM_SITES.composer;
 
 function isUsable(el) {
   if (!el || el.offsetParent === null) return false;
@@ -6424,14 +6383,14 @@ async function applyOrFallback(text, successMessage = "Prompt applied to input!"
 }
 
 /**
- * x.com matches only /i/grok, but a content script keeps running after a
- * client-side navigation away from it. Without this check the tracker stayed
+ * x.com matches only /i/grok (PM_SITES.onlyPaths), but a content script keeps
+ * running after a client-side navigation away from it. Without this check the tracker stayed
  * live while the user moved on to DMs, the tweet composer and search — none of
  * which the extension has any business recording.
  */
 function onTrackableSurface() {
-  if (window.location.hostname !== "x.com") return true;
-  return window.location.pathname.startsWith("/i/grok");
+  const only = PM_SITES.onlyPaths[window.location.hostname];
+  return !only || window.location.pathname.startsWith(only);
 }
 
 function setupPassiveTracking() {
@@ -6442,7 +6401,7 @@ function setupPassiveTracking() {
     if (!promptTrackingEnabled || !onTrackableSurface()) return;
     const el = e.target;
     if (
-      el.matches("#prompt-textarea, [contenteditable='true'], textarea") &&
+      el.matches(PM_SITES.typingTarget) &&
       el.offsetParent !== null
     ) {
       lastText = el.innerText || el.value || "";

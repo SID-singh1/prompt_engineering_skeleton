@@ -93,7 +93,13 @@ window.E = {
   },
 };
 window.EDITOR_READY = true;
-const s = document.createElement("script");
-s.src = "../content.js";
-document.body.appendChild(s);
+// sites.js first, as the manifest loads them: content.js reads PM_SITES.
+const sites = document.createElement("script");
+sites.src = "../sites.js";
+sites.onload = () => {
+  const s = document.createElement("script");
+  s.src = "../content.js";
+  document.body.appendChild(s);
+};
+document.body.appendChild(sites);
 </script>

@@ -34,7 +34,9 @@ except ImportError:
     sys.exit("Playwright is not installed: pip install playwright")
 
 ROOT = Path(__file__).resolve().parents[1]
-EXT = ROOT / "extension"
+# PM_EXT_DIR points this at another copy of the extension: check_release_zip.py
+# runs it against the unpacked store ZIP, so what is uploaded is what passed.
+EXT = Path(os.environ["PM_EXT_DIR"]) if os.environ.get("PM_EXT_DIR") else ROOT / "extension"
 checks = 0
 
 ORIG = "hw do i sort a list of dicts by a key in python, some dont have the key"

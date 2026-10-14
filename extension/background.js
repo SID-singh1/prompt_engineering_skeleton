@@ -437,6 +437,9 @@ const SUPPORTED_MATCHES = [
   "https://grok.com/*",
   "https://x.com/i/grok*",
 ];
+// The content script's files, in the manifest's order. content.js reads
+// sites.js's PM_SITES as it loads, so injecting content.js alone fails.
+const CONTENT_SCRIPT = chrome.runtime.getManifest().content_scripts[0];
 
 /**
  * Inject into tabs that were already open.
@@ -457,8 +460,8 @@ async function activateExistingTabs() {
   for (const tab of tabs) {
     if (tab.id === undefined) continue;
     try {
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["styles.css"] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: CONTENT_SCRIPT.css });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: CONTENT_SCRIPT.js });
     } catch {
       // Chrome Web Store pages, pre-render tabs and discarded tabs all reject
       // injection. Nothing to do for those.
