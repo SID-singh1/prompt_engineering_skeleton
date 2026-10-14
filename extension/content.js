@@ -79,6 +79,12 @@ const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
 // Mac writes chords as glyphs, Windows and Linux spell them out. CMD_KEY
 // alone renders "Ctrl+⇧E" off-platform, which is neither convention.
 const MOD_SHIFT = IS_MAC ? "⌘⇧" : "Ctrl+Shift+";
+// Voice. It was ⌘⇧V / Ctrl+Shift+V, which is "paste as plain text" in Chrome
+// and most apps, and "paste and match style" on a Mac: taking it broke paste.
+// Space is free in Chrome on every platform and on ChatGPT, Claude and Gemini
+// (Gemini has ⌘⇧K, Claude and ChatGPT ⌘⇧O, S, C and ;), and holding it reads
+// as push to talk. Chrome lets the user change it at chrome://extensions/shortcuts.
+const VOICE_KEY = `${MOD_SHIFT}Space`;
 // The same goes for the keys themselves. ↵ and ⇥ are what a Mac keyboard and
 // its menus print; on Windows the keycap says Enter and Tab, and "Ctrl+↵" was
 // half of each convention.
@@ -104,7 +110,7 @@ const SHORTCUTS = () => [
     where: "Anywhere on the page",
     rows: [
       { keys: [`${MOD_SHIFT}E`], what: "Rewrite what is in the chat box" },
-      { keys: [`${MOD_SHIFT}V`], what: "Start voice input" },
+      { keys: [VOICE_KEY], what: "Start voice input" },
       { keys: [`${MOD_SHIFT}L`], what: "Open the library" },
       { keys: ["?"], what: "Show this list", note: "when you are not typing" },
     ],
@@ -1464,7 +1470,7 @@ function setupKeyboardShortcut() {
     if (e.code === "KeyE") {
       e.preventDefault();
       handleEnhance({ reveal: true });
-    } else if (e.code === "KeyV") {
+    } else if (e.code === "Space") {
       e.preventDefault();
       toggleVoice();
     } else if (e.code === "KeyL") {
@@ -1540,12 +1546,17 @@ const LIB_ICON = {
   close: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/></svg>',
   tick: '<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.6 6.3 5 8.6l4.4-5"/></svg>',
   help: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6a2 2 0 1 1 2.6 1.9c-.5.2-.8.7-.8 1.2v.4"/><circle cx="7.8" cy="11.8" r="0.85" fill="currentColor" stroke="none"/></svg>',
+  // Two columns of dots: the thing a window is dragged by.
+  grip: '<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><circle cx="6" cy="4" r="1.15"/><circle cx="10" cy="4" r="1.15"/><circle cx="6" cy="8" r="1.15"/><circle cx="10" cy="8" r="1.15"/><circle cx="6" cy="12" r="1.15"/><circle cx="10" cy="12" r="1.15"/></svg>',
 };
 
 // "recent" is the History tab: every rewrite, as the popup and the consent
 // notice call it. "Recent" read as "recently saved", the same thing as Saved.
 let libView = "saved";        // "saved" | "recent" (shown as History)
-let libPage = "list";         // "list" | "privacy" | "feedback" | "signin"
+let libPage = "list";         // "list" | "privacy" | "feedback" | "signin" | "edit"
+// The New / Edit prompt page: what is typed there, kept as it is typed so a
+// redraw of the sheet (a list arriving, a save going out) never loses it.
+let libEdit = null;           // { id, original, content, title, tags: Set, tagText, busy, status, error }
 let libSel = 0;               // the highlighted row
 let libMenu = false;          // the ⋯ menu is open
 let libRowMenu = null;        // a row whose ⋯ (Edit, Delete, …) is open
@@ -1626,6 +1637,7 @@ function createLibrary() {
   lib.addEventListener("change", onLibraryChange);
   lib.addEventListener("keydown", onLibraryKeydown);
   lib.addEventListener("pointerdown", startSheetResize);
+  lib.addEventListener("pointerdown", startSheetMove);
   lib.addEventListener("mousemove", (e) => {
     const row = e.target.closest?.(".pm-lib-row[data-i]");
     if (!row || Number(row.dataset.i) === libSel) return;
@@ -1696,10 +1708,12 @@ function createLibrary() {
   // Another tab: the user went somewhere else entirely.
   document.addEventListener("visibilitychange", () => { if (document.hidden && panelOpen) togglePanel(false); });
 
-  storageGet(["pm_slash", SHEET_SIZE_KEY], (r) => {
+  storageGet(["pm_slash", SHEET_SIZE_KEY, sheetPosKey()], (r) => {
     slashEnabled = r.pm_slash !== false;
     const size = r[SHEET_SIZE_KEY] || {};
     sheetSize = { w: Number(size.w) || 0, h: Number(size.h) || 0 };
+    const pos = r[sheetPosKey()];
+    sheetPos = pos && (Number.isFinite(pos.dx) || Number.isFinite(pos.x)) ? pos : null;
   });
 }
 
@@ -1734,6 +1748,7 @@ function togglePanel(force) {
       hideCard();
     }
     libPage = "list";
+    libEdit = null;
     libView = "saved";
     searchQuery = "";
     libSel = 0;
@@ -1858,10 +1873,21 @@ function focusLibrarySearch() {
 
 const LIB_ROOM_WANTED = 420;   // px above the chat box before the sheet may come down over its text
 const LIB_HEIGHT = 520;        // the sheet's height when there is room for it
+const LIB_ROOM_USEFUL = 320;   // px above the chat box that is enough to open there
+// The usual width: room for the grip, the search box and its placeholder,
+// Saved | History, +, ⋯ and ×. 368 fitted them before the grip.
+const SHEET_W = 384;
 const SHEET_W_MIN = 300, SHEET_H_MIN = 240;   // the smallest a drag on its edges makes it
 // The size the user dragged the sheet to, kept on this device; 0 is "the usual".
 const SHEET_SIZE_KEY = "pm_sheet_size";
 let sheetSize = { w: 0, h: 0 };
+// Where the user dragged the sheet, per site, kept on this device; null is
+// "on the chat box". Measured from the chat box (its right edge and top) so it
+// follows the box from page to page and window size to window size, or from
+// the window when the page has no chat box.
+const sheetPosKey = () => `pm_sheet_pos:${window.location.hostname}`;
+let sheetPos = null;
+let sheetMoveTap = 0;          // when the grip was last pressed without a drag
 let sheetGripTap = 0;          // when an edge was last pressed without a drag
 // The edges that size it: the one facing away from the pill (its width), the
 // one away from the chat box (its height), and the corner between them. The
@@ -1923,50 +1949,158 @@ function startSheetResize(e) {
   window.addEventListener("pointercancel", end, true);
   lib.addEventListener("lostpointercapture", end);
 }
+/**
+ * Drag the grip in the sheet's head to put it anywhere. Kept per site and used
+ * every time it opens (see sheetPos). Two presses on the grip without a drag,
+ * or the ↙ in the head, put it back on the chat box.
+ */
+function startSheetMove(e) {
+  const grip = e.target.closest?.(".pm-lib-move");
+  const lib = document.getElementById("pm-library");
+  if (!grip || !lib || e.button !== 0) return;
+  e.preventDefault();
+  // Its laid-out place, not getBoundingClientRect(): grabbed while it is still
+  // opening, the open animation's scale put the start some pixels off.
+  const r = { left: lib.offsetLeft, top: lib.offsetTop, width: lib.offsetWidth };
+  const x0 = e.clientX, y0 = e.clientY;
+  try { lib.setPointerCapture(e.pointerId); } catch { /* window listeners finish it */ }
+  lib.classList.add("pm-lib-moving");
+  let moved = false;
+  const move = (m) => {
+    if (m.pointerId !== e.pointerId) return;
+    const dx = m.clientX - x0, dy = m.clientY - y0;
+    if (!moved && Math.hypot(dx, dy) < 3) return;
+    moved = true;
+    placeSheetFree(lib, r.left + dx, r.top + dy, r.width);
+  };
+  const end = () => {
+    window.removeEventListener("pointermove", move, true);
+    window.removeEventListener("pointerup", end, true);
+    window.removeEventListener("pointercancel", end, true);
+    lib.removeEventListener("lostpointercapture", end);
+    lib.classList.remove("pm-lib-moving");
+    if (!moved) {
+      const again = Date.now() - sheetMoveTap < 450;
+      sheetMoveTap = again ? 0 : Date.now();
+      if (again) resetSheetPosition();
+      return;
+    }
+    const b = { left: lib.offsetLeft, top: lib.offsetTop };
+    const f = composerFrame(findComposer());
+    sheetPos = f && f.width >= 240
+      ? { dx: Math.round(b.left - f.right), dy: Math.round(b.top - f.top) }
+      : { x: Math.round(b.left), y: Math.round(b.top) };
+    storageSet({ [sheetPosKey()]: sheetPos });
+    renderLibrary();   // the head gains its ↙
+  };
+  window.addEventListener("pointermove", move, true);
+  window.addEventListener("pointerup", end, true);
+  window.addEventListener("pointercancel", end, true);
+  lib.addEventListener("lostpointercapture", end);
+}
+
+/** Back on the chat box, where it opens by default. */
+function resetSheetPosition() {
+  sheetPos = null;
+  storageSet({ [sheetPosKey()]: null });
+  if (panelOpen) { renderLibrary(); focusLibrarySearch(); }
+}
+
+/**
+ * The sheet at a place the user chose, kept whole inside the window. Its top
+ * left corner is the one pinned, so a later resize moves its right and bottom
+ * edges (data-dock left, data-side below).
+ */
+function placeSheetFree(lib, x, y, width) {
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12;
+  const left = Math.round(Math.max(m, Math.min(x, vw - width - m)));
+  const top = Math.round(Math.max(m, Math.min(y, vh - SHEET_H_MIN - m)));
+  lib.dataset.dock = "left";
+  lib.dataset.side = "below";
+  lib.style.left = left + "px";
+  lib.style.right = "auto";
+  lib.style.top = top + "px";
+  lib.style.bottom = "auto";
+  const room = vh - top - m;
+  if (sheetSize.h) {
+    const h = Math.round(Math.min(room, Math.max(SHEET_H_MIN, sheetSize.h)));
+    lib.style.height = h + "px";
+    lib.style.maxHeight = h + "px";
+  } else {
+    lib.style.height = "";
+    lib.style.maxHeight = Math.round(Math.min(room, LIB_HEIGHT)) + "px";
+  }
+}
+
 const RAIL_GAP = 6, RAIL_ROW = 26;      // the chips' row: its gap above the box, and its height
 const RAIL_SLOT = RAIL_GAP + RAIL_ROW;
 
-/** Where the sheet goes: on the pill's side, above it if there is room, else below. */
+/**
+ * Where the sheet goes: on the chat box it works on, directly above it and
+ * lined up with its right edge, the side the pill and the Library chip are
+ * on. It used to hang off the pill, which sits in the window's corner, so on
+ * a chat box centred in the page (a new chat) the sheet came out in the
+ * top-right corner, nowhere near the box. Below the box only when there is
+ * more room there. With no chat box on the page it hangs off the pill.
+ */
 function positionLibrary() {
   const lib = document.getElementById("pm-library");
   const pill = document.getElementById("pm-trigger");
   if (!lib || lib.hidden || !pill) return;
-  const p = pill.getBoundingClientRect();
   const vw = window.innerWidth, vh = window.innerHeight, m = 12, gap = 10;
   // A size the user dragged the sheet to wins, within the window and the
   // room it has (see startSheetResize).
-  const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : 368, vw - 2 * m));
+  const width = Math.round(Math.min(sheetSize.w ? Math.max(SHEET_W_MIN, sheetSize.w) : SHEET_W, vw - 2 * m));
   lib.style.width = width + "px";
-  const onRight = p.left + p.width / 2 > vw / 2;
-  lib.dataset.dock = onRight ? "right" : "left";
-  lib.style.left = onRight ? "auto" : Math.max(m, Math.min(p.left, vw - width - m)) + "px";
-  lib.style.right = onRight ? Math.max(m, Math.min(vw - p.right, vw - width - m)) + "px" : "auto";
-  // Opening upward, the sheet also clears the chat box when it would overlap
-  // it sideways: the host's send button lives on that box's edge, and a sheet
-  // resting on it is a sheet that swallows the click meant for Send.
-  const left = onRight ? vw - parseFloat(lib.style.right) - width : parseFloat(lib.style.left);
   const composer = findComposer();
   const frame = composerFrame(composer);
-  const overlapsBox = frame && left < frame.right && left + width > frame.left && frame.top < p.top;
-  // Over the box, it stands on the row the context chips land on, whether or
-  // not any have yet. It used to stand on the chips themselves, so the chip
-  // that first reached under it, and each that wrapped them onto another row,
-  // pushed the sheet up or made it shorter: picking a second or third prompt
-  // moved the list being picked from. While the sheet is open the chips keep
-  // to that one row (see fitRailToOneRow).
-  let ceiling = overlapsBox ? Math.min(p.top, frame.top - RAIL_SLOT) : p.top;
-  // A tall or centred chat box (ChatGPT's new chat with a draft in it) left
-  // too little room above it, and the sheet came out two rows high at the
-  // top of the window, nowhere near the pill (seen live, 2026-10-01). It may
-  // then come down over the box's text, but still not over its row of
-  // buttons, where Send is.
-  if (overlapsBox && ceiling - gap - m < LIB_ROOM_WANTED) {
-    const controls = composerControlsTop(composer);
-    if (controls !== null) ceiling = Math.min(p.top, Math.max(ceiling, controls));
+  const box = frame && frame.width >= 240 ? frame : null;
+
+  // Moved by hand: where it was put, measured from the chat box when there
+  // is one (see startSheetMove).
+  const free = sheetPos && (box && Number.isFinite(sheetPos.dx)
+    ? { x: box.right + sheetPos.dx, y: box.top + sheetPos.dy }
+    : Number.isFinite(sheetPos.x) ? { x: sheetPos.x, y: sheetPos.y } : null);
+  lib.classList.toggle("pm-lib-free", Boolean(free));
+  if (free) {
+    placeSheetFree(lib, free.x, free.y, width);
+    positionPeek();
+    return;
   }
-  const above = ceiling - gap - m, below = vh - p.bottom - gap - m;
-  const up = above >= 260 || above >= below;
-  lib.style.top = up ? "auto" : (p.bottom + gap) + "px";
+
+  let left, ceiling, floor;
+  if (box) {
+    left = Math.max(m, Math.min(box.right - width, vw - width - m));
+    // Above the box it stands on the row the context chips land on, whether
+    // or not any have yet. Standing on the chips themselves, the chip that
+    // first reached under it, and each that wrapped them onto another row,
+    // pushed the sheet up: picking a prompt moved the list being picked
+    // from. While the sheet is open the chips keep to that one row (see
+    // fitRailToOneRow).
+    ceiling = box.top - RAIL_SLOT;
+    floor = box.bottom;
+    // A tall chat box (a long draft) can leave too little room above it. The
+    // sheet may then come down over the box's text, but never over its row
+    // of buttons, where Send is.
+    if (ceiling - gap - m < LIB_ROOM_WANTED) {
+      const controls = composerControlsTop(composer);
+      if (controls !== null) ceiling = Math.max(ceiling, Math.min(controls, ceiling + LIB_ROOM_WANTED));
+    }
+  } else {
+    const p = pill.getBoundingClientRect();
+    const onRight = p.left + p.width / 2 > vw / 2;
+    left = onRight ? Math.max(m, Math.min(p.right - width, vw - width - m)) : Math.max(m, Math.min(p.left, vw - width - m));
+    ceiling = p.top;
+    floor = p.bottom;
+  }
+  // Above unless that leaves it too short to read a list in (a chat box
+  // centred in the page leaves about 280px) and there is more room below.
+  const above = ceiling - gap - m, below = vh - floor - gap - m;
+  const up = above >= LIB_ROOM_USEFUL || above >= below;
+  lib.dataset.dock = left + width / 2 > vw / 2 ? "right" : "left";
+  lib.style.left = lib.dataset.dock === "left" ? left + "px" : "auto";
+  lib.style.right = lib.dataset.dock === "right" ? (vw - left - width) + "px" : "auto";
+  lib.style.top = up ? "auto" : (floor + gap) + "px";
   lib.style.bottom = up ? (vh - ceiling + gap) + "px" : "auto";
   // It fits what it holds, up to the usual height (a sign-in note or one
   // prompt in a 520px box was mostly empty), or is the height the user
@@ -2067,23 +2201,28 @@ function libHeadHtml() {
   // × on every page, last in the row where a window keeps it. The sheet sits
   // where the Library chip was, so the chip cannot be its toggle; without this
   // the way out was esc or a click somewhere else, and neither is on screen.
-  const more = `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
+  // The grip it is dragged by, first in every head; ↙ once it has been moved.
+  const grip = `<span class="pm-lib-move" title="Drag to move. Double-click to put it back on the chat box." aria-hidden="true">${LIB_ICON.grip}</span>`;
+  const home = sheetPos
+    ? `<button type="button" class="pm-lib-icon" id="pm-lib-home" data-act="home" aria-label="Put the library back on the chat box" data-pm-tip="Back on the chat box">\u2199</button>`
+    : "";
+  const more = home + `<button type="button" class="pm-lib-icon" id="pm-lib-more" data-act="menu" aria-label="Library menu" aria-haspopup="menu" aria-expanded="${libMenu}">${LIB_ICON.more}</button>` +
     `<button type="button" class="pm-lib-icon" id="pm-lib-close" data-act="close" aria-label="Close the library" data-pm-tip="Close" data-pm-key="Esc">${LIB_ICON.close}</button>`;
-  if (libPage === "privacy" || libPage === "feedback") {
-    const title = { privacy: "Privacy", feedback: "Send feedback" }[libPage];
-    return `<div class="pm-lib-head pm-lib-head-sub">` +
+  if (libPage === "privacy" || libPage === "feedback" || libPage === "edit") {
+    const title = { privacy: "Privacy", feedback: "Send feedback",
+      edit: libEdit?.id != null ? "Edit prompt" : "New prompt" }[libPage];
+    return `<div class="pm-lib-head pm-lib-head-sub">${grip}` +
       `<button type="button" class="pm-lib-icon" id="pm-lib-back" data-act="back" aria-label="Back to the library">${LIB_ICON.back}</button>` +
       `<span class="pm-lib-head-title">${title}</span>${more}</div>`;
   }
   if (libPage === "signin") {
-    return `<div class="pm-lib-head pm-lib-head-sub"><span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
+    return `<div class="pm-lib-head pm-lib-head-sub">${grip}<span class="pm-lib-head-title pm-lib-head-plain">Library</span>${more}</div>`;
   }
-  const placeholder = libView === "saved"
-    // Short enough to fit beside Saved | History, +, ⋯ and × in a 368px
-    // sheet; "Search 5 prompts" lost its last letters there.
-    ? "Search prompts"
-    : "Search history";
-  return `<div class="pm-lib-head">` +
+  // Short enough to fit beside the grip, Saved | History, +, ⋯ and × in a
+  // 384px sheet; "Search 5 prompts" lost its last letters there. Once the
+  // sheet has been moved its head also carries ↙, and it is just "Search".
+  const placeholder = sheetPos ? "Search" : libView === "saved" ? "Search prompts" : "Search history";
+  return `<div class="pm-lib-head">${grip}` +
     `<label class="pm-lib-search">${LIB_ICON.search}` +
     `<input id="pm-lib-q" type="text" autocomplete="off" spellcheck="false" placeholder="${placeholder}" value="${escHtml(searchQuery)}"` +
     ` aria-label="Search the library" role="combobox" aria-expanded="true" aria-controls="pm-lib-list" aria-autocomplete="list"></label>` +
@@ -2114,6 +2253,7 @@ function libBodyHtml() {
       row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
+  if (libPage === "edit" && libEdit) return libEditHtml();
   if (libPage === "feedback") {
     return `<div class="pm-lib-page pm-lib-form">` +
       `<label class="pm-lib-field"><span>Kind</span><select id="pm-feedback-type" class="pm-lib-input">` +
@@ -2220,7 +2360,7 @@ function libMenuHtml() {
     `<div class="pm-lib-menu-group"><div class="pm-lib-menu-cap">Rewrite style for ⊕</div>` +
     `<div class="pm-lib-views pm-lib-views-wide" role="group" aria-label="Default rewrite style">${STYLES.map(style).join("")}</div></div>` +
     `<hr>` +
-    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${MOD_SHIFT}V</span></button>` +
+    `<button type="button" class="pm-lib-mi" role="menuitem" data-act="voice">Voice input<span>${VOICE_KEY}</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="shortcuts">Keyboard shortcuts<span>?</span></button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="privacy">Privacy settings…</button>` +
     `<button type="button" class="pm-lib-mi" role="menuitem" data-act="feedback">Send feedback…</button>` +
@@ -2599,7 +2739,7 @@ function libAct(act, i) {
       renderLibraryList();
       return;
     case "edit":
-      if (it?.kind === "saved") { libRowMenu = null; showEditModal(it.p); }
+      if (it?.kind === "saved") { libRowMenu = null; openPromptPage(it.p); }
       return;
     case "improve":
       if (it?.kind === "saved") { libRowMenu = null; improveSavedPrompt(it.p); }
@@ -2640,6 +2780,13 @@ function libAct(act, i) {
 
 function onLibraryClick(e) {
   const b = e.target.closest("button");
+  if (b?.dataset.tag !== undefined && libPage === "edit" && libEdit) {
+    // In place, not by a redraw, so the keyboard stays where it was.
+    const t = b.dataset.tag;
+    if (libEdit.tags.has(t)) libEdit.tags.delete(t); else libEdit.tags.add(t);
+    b.setAttribute("aria-pressed", String(libEdit.tags.has(t)));
+    return;
+  }
   if (b?.dataset.view) {
     libView = b.dataset.view;
     libSel = 0; libRowMenu = null; libConfirm = null;
@@ -2661,7 +2808,10 @@ function onLibraryClick(e) {
   if (libMenu && !e.target.closest(".pm-lib-menu")) { libMenu = false; renderLibrary(); if (!act) return; }
   switch (act) {
     case "close": closeLibrary(); return;
-    case "back": libPage = "list"; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
+    case "home": resetSheetPosition(); return;
+    case "back": libPage = "list"; libEdit = null; libMenu = false; renderLibrary(); focusLibrarySearch(); return;
+    case "editcancel": leavePromptPage(); return;
+    case "editsave": savePromptPage(); return;
     case "privacy": libPage = "privacy"; libMenu = false; renderLibrary(); return;
     // The search first: the map gives the keyboard back to whatever had it,
     // and the menu item that was clicked is gone once the menu closes.
@@ -2686,6 +2836,11 @@ function onLibraryClick(e) {
 }
 
 function onLibraryInput(e) {
+  if (libPage === "edit" && libEdit) {
+    const field = { "pm-edit-content": "content", "pm-edit-title": "title", "pm-edit-tags": "tagText" }[e.target.id];
+    if (field) libEdit[field] = e.target.value;
+    return;
+  }
   if (e.target.id !== "pm-lib-q") return;
   searchQuery = e.target.value;
   libSel = 0; libRowMenu = null; libConfirm = null;
@@ -2708,11 +2863,15 @@ function onLibraryKeydown(e) {
     e.preventDefault(); e.stopPropagation();
     if (libMenu || libRowMenu || libConfirm) { libMenu = false; libRowMenu = null; libConfirm = null; renderLibrary(); focusLibrarySearch(); return; }
     if (libPeek !== null) { hidePeek(); return; }
+    if (libPage === "edit") { leavePromptPage(); return; }
     if (libPage === "privacy" || libPage === "feedback") {
       libPage = "list"; renderLibrary(); focusLibrarySearch(); return;
     }
     closeLibrary();
     return;
+  }
+  if (libPage === "edit" && mod && e.key === "Enter") {
+    e.preventDefault(); e.stopPropagation(); savePromptPage(); return;
   }
   // The keys below drive the list from the search box, as in a combobox.
   if (e.target.id !== "pm-lib-q" || libPage !== "list") return;
@@ -2998,10 +3157,12 @@ for (const type of ["pointerdown", "keydown", "wheel"]) {
   document.addEventListener(type, () => { if (keytipFor || document.getElementById("pm-keytip")?.hidden === false) hideKeytip(); }, { capture: true, passive: true });
 }
 
-/** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too. */
+/** A chord as the keys it is pressed with: ⌘⇧E is three keys, Ctrl+Shift+E too,
+ *  and ⌘⇧Space is three as well: each glyph a key, the named key one. */
 function keyCaps(key) {
   if (key.length > 1 && key.includes("+")) return key.split("+").filter(Boolean);
-  if (/^[⌘⇧⌥⌃]/.test(key)) return Array.from(key);
+  const glyphs = /^[⌘⇧⌥⌃]+/.exec(key);
+  if (glyphs) return [...Array.from(glyphs[0]), key.slice(glyphs[0].length)].filter(Boolean);
   return [key];
 }
 
@@ -3031,7 +3192,7 @@ function keyMapHtml(here) {
     // script cannot link to chrome:// — a link there does nothing when
     // clicked. So the address is text they can copy, on its own line: a
     // broken address is one a reader cannot check.
-    `<div class="pm-keys-foot"><p>${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(`${MOD_SHIFT}V`)} are Chrome shortcuts. If another app has taken one, change it here:</p>` +
+    `<div class="pm-keys-foot"><p>${escHtml(`${MOD_SHIFT}E`)} and ${escHtml(VOICE_KEY)} are Chrome shortcuts. If another app has taken one, change it here:</p>` +
     `<div class="pm-kb-urlrow"><code class="pm-kb-url">chrome://extensions/shortcuts</code>` +
     `<button type="button" class="pm-kb-copy" data-act="copyshortcuts">Copy</button></div></div>`;
 }
@@ -4612,7 +4773,7 @@ function hideCard() {
 
 /** What counts as "the page" and not the extension's own surfaces. */
 const PM_SURFACES = "#pm-card, #pm-trigger, #pm-library, #pm-library-btn, #pm-help-btn, #pm-peek, #pm-save, #pm-keys, #pm-caret, #pm-rail, " +
-  "#pm-tip, #pm-toast-stack, .pm-modal-overlay, .pm-voice-overlay";
+  "#pm-tip, #pm-toast-stack, .pm-modal-overlay, #pm-voice";
 
 function renderStrip() {
   const strip = document.getElementById("pm-card-strip");
@@ -5395,7 +5556,7 @@ async function undoCardSave(result, id) {
  */
 function overlayHasInput() {
   return Boolean(
-    document.querySelector(".pm-modal-overlay.pm-visible, .pm-voice-overlay.pm-visible")
+    document.querySelector(".pm-modal-overlay.pm-visible, #pm-voice.pm-visible")
   );
 }
 
@@ -5403,8 +5564,12 @@ function overlayHasInput() {
 // to the composer, pill, or card; ordinary typing never invokes card actions.
 function handleCardKeydown(e) {
   if (e.key === "Tab" || e.isComposing || e.defaultPrevented) return;
-  if (e.key === "Escape" && document.querySelector(".pm-voice-overlay.pm-visible")) {
-    e.preventDefault(); e.stopPropagation(); cancelVoice(); return;
+  // Esc stops a recording, but folds a transcript under review: throwing
+  // away words the user is reading is the bin button's job, not a key's.
+  if (e.key === "Escape" && document.querySelector("#pm-voice.pm-visible")) {
+    e.preventDefault(); e.stopPropagation();
+    if (voiceState === "reviewing") foldVoice(true); else cancelVoice();
+    return;
   }
   if (cardState === "idle" || overlayHasInput()) return;
   const card = document.getElementById("pm-card");
@@ -5672,126 +5837,153 @@ function showToast(message, type = "info", action = null) {
 }
 
 // ══════════════════════════════════════════════════════════════
-// EDIT MODAL
+// NEW / EDIT PROMPT: a page of the library
 // ══════════════════════════════════════════════════════════════
+//
+// It was a window of its own: the whole page blurred behind it, a gradient
+// Save, and the look of nothing else in the extension. It is now a page of
+// the sheet, in the sheet's own fields and buttons (the ones the save form
+// uses), with the tags already in use one click away.
 
 /**
- * + New: a prompt written from scratch, in the edit window. A draft in the
- * chat box starts it off, since that is usually what the user wants to keep.
+ * + New: a prompt written from scratch. A draft in the chat box starts it
+ * off, since that is usually what the user wants to keep.
  */
 function openNewPrompt() {
-  showEditModal({ content: String(getCurrentInputText() || "").trim(), title: "", tags: [] });
+  openPromptPage({ content: String(getCurrentInputText() || "").trim(), title: "", tags: [] });
 }
 
-/** The edit window, for a saved prompt or (with no id) a new one. */
-function showEditModal(prompt) {
-  const isNew = prompt.id == null;
-  const overlay = getOrCreateModalOverlay();
-  const modal = overlay.querySelector(".pm-modal");
-
-  modal.innerHTML = `
-    <div class="pm-modal-header">
-      <span class="pm-modal-title">${isNew ? "New prompt" : "Edit prompt"}</span>
-      <button class="pm-header-close pm-modal-close-btn" aria-label="Close">×</button>
-    </div>
-    <div class="pm-modal-body">
-      <label class="pm-label" for="pm-edit-content">Prompt</label>
-      <textarea class="pm-edit-textarea" id="pm-edit-content" placeholder="The prompt you want to reuse">${escHtml(prompt.content)}</textarea>
-      <label class="pm-label" for="pm-edit-title">Name <span style="color:var(--pm-text-muted)">(optional)</span></label>
-      <input class="pm-edit-input" id="pm-edit-title" value="${escHtml(prompt.title || "")}" placeholder="What you will look for it by" />
-      <label class="pm-label" for="pm-edit-tags">Tags <span style="color:var(--pm-text-muted)">(optional, comma-separated)</span></label>
-      <input class="pm-edit-input" id="pm-edit-tags" value="${escHtml((prompt.tags || []).join(", "))}" placeholder="e.g. coding, review" />
-      <span class="pm-edit-status" id="pm-edit-status" role="status"></span>
-    </div>
-    <div class="pm-modal-footer">
-      <button class="pm-btn pm-btn-secondary" id="pm-edit-cancel">Cancel</button>
-      <button class="pm-btn pm-btn-primary" id="pm-edit-save" title="${CMD_ENTER}">${isNew ? "Save" : "Save changes"}</button>
-    </div>
-  `;
-
-  // Cancel is a button like Save, not the header's ×: it carried the ×'s
-  // class to get its click, and with it the ×'s 28px box, so Save sat on it.
-  const cancel = () => { closeModal(); if (panelOpen) focusLibrarySearch(); };
-  overlay.querySelector(".pm-modal-close-btn")?.addEventListener("click", cancel);
-  document.getElementById("pm-edit-cancel").addEventListener("click", cancel);
-
-  const save = async () => {
-    const content = document.getElementById("pm-edit-content").value.trim();
-    const title = document.getElementById("pm-edit-title").value.trim();
-    const tagsRaw = document.getElementById("pm-edit-tags").value.trim();
-    const tags = tagsRaw ? [...new Set(tagsRaw.split(",").map((t) => t.trim().replace(/^#/, "")).filter((t) => t))] : [];
-    const status = document.getElementById("pm-edit-status");
-    if (!content) {
-      if (status) status.textContent = "Write the prompt first.";
-      document.getElementById("pm-edit-content").focus();
-      return;
-    }
-    const btn = document.getElementById("pm-edit-save");
-    if (btn.disabled) return;
-
-    if (isNew) {
-      btn.disabled = true;
-      btn.textContent = "Saving\u2026";
-      const outcome = await createSavedPrompt(content, title, tags);
-      if (outcome === "failed") {
-        btn.disabled = false;
-        btn.textContent = "Save";
-        if (status) status.textContent = "Could not save. Check your connection and try again.";
-        return;
-      }
-      closeModal();
-      if (outcome === "duplicate") {
-        showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(content) });
-        return;
-      }
-      const id = lastSavedPromptId;
-      statsBump("saves");
-      tipDone("save");
-      showToast(title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library",
-        "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
-      await fetchSavedPrompts();
-      if (panelOpen) {
-        libView = "saved";
-        searchQuery = "";
-        const at = libraryItems().findIndex((it) => it.p?.id === id);
-        libSel = at >= 0 ? at : 0;
-        renderLibrary();
-        focusLibrarySearch();
-      }
-      return;
-    }
-
-    const fields = {};
-    if (content !== prompt.content) fields.content = content;
-    if (title !== (prompt.title || "")) fields.title = title || null;
-    if (JSON.stringify(tags) !== JSON.stringify(prompt.tags || [])) fields.tags = tags;
-
-    if (Object.keys(fields).length === 0) { closeModal(); return; }
-
-    btn.disabled = true;
-    btn.textContent = "Saving\u2026";
-
-    const ok = await updateSavedPrompt(prompt.id, fields);
-    if (ok) {
-      await fetchSavedPrompts();
-      renderLibrary();
-    }
-    closeModal();
-    if (panelOpen) focusLibrarySearch();
+/** The page, for a saved prompt or (with no id) a new one. */
+function openPromptPage(prompt) {
+  if (!panelOpen) togglePanel(true);
+  libEdit = {
+    id: prompt.id ?? null,
+    original: prompt,
+    content: prompt.content || "",
+    title: prompt.title || "",
+    tags: new Set(prompt.tags || []),
+    tagText: "",
+    busy: false,
+    status: "",
+    error: false,
   };
-  document.getElementById("pm-edit-save").addEventListener("click", save);
-  // esc cancels, ⌘↵ saves: the keys every other form here answers to. Kept
-  // to the window, so esc does not also close the library under it.
-  modal.onkeydown = (e) => {
-    if (e.isComposing) return;
-    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); cancel(); }
-    else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); e.stopPropagation(); save(); }
-  };
-
-  overlay.classList.add("pm-visible");
+  libPage = "edit";
+  libMenu = false;
+  libRowMenu = null;
+  libConfirm = null;
+  hidePeek();
+  renderLibrary();
   const ta = document.getElementById("pm-edit-content");
-  ta.focus({ preventScroll: true });
-  ta.setSelectionRange(ta.value.length, ta.value.length);
+  ta?.focus({ preventScroll: true });
+  ta?.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function libEditHtml() {
+  const e = libEdit;
+  const tags = [...new Set([...savedTagSuggestions(8), ...e.tags])];
+  const status = e.status
+    ? escHtml(e.status)
+    : `<kbd>${CMD_ENTER}</kbd>save<kbd>esc</kbd>back`;
+  return `<div class="pm-lib-page pm-lib-edit">` +
+    `<textarea id="pm-edit-content" class="pm-lib-input pm-edit-text" rows="5" spellcheck="true" ` +
+    `placeholder="The prompt you want to reuse" aria-label="Prompt">${escHtml(e.content)}</textarea>` +
+    `<label class="pm-save-field"><span>Name</span><input id="pm-edit-title" class="pm-lib-input" type="text" maxlength="120" ` +
+    `autocomplete="off" spellcheck="false" value="${escHtml(e.title)}" placeholder="Optional. Unnamed prompts show their words"></label>` +
+    `<div class="pm-save-field"><span>Tags</span>` +
+    (tags.length
+      ? `<div class="pm-save-tags">${tags.map((t) =>
+          `<button type="button" data-tag="${escHtml(t)}" aria-pressed="${e.tags.has(t)}">#${escHtml(t)}</button>`).join("")}</div>`
+      : "") +
+    `<input id="pm-edit-tags" class="pm-lib-input" type="text" autocomplete="off" spellcheck="false" value="${escHtml(e.tagText)}" ` +
+    `placeholder="New tags, comma separated" aria-label="New tags"></div>` +
+    `<div class="pm-save-foot"><span class="pm-save-status${e.error ? " pm-save-error" : ""}" id="pm-edit-status" role="status">${status}</span>` +
+    `<button type="button" class="pm-lib-verb pm-lib-verb-quiet" id="pm-edit-cancel" data-act="editcancel">Cancel</button>` +
+    `<button type="button" class="pm-lib-verb" id="pm-edit-save" data-act="editsave"${e.busy ? " disabled" : ""}>` +
+    `${e.busy ? "Saving\u2026" : e.id != null ? "Save changes" : "Save"}</button></div></div>`;
+}
+
+/** Back to the list, nothing saved. */
+function leavePromptPage() {
+  libEdit = null;
+  libPage = "list";
+  renderLibrary();
+  focusLibrarySearch();
+}
+
+/** Show a problem on the page, and give the keyboard back to `focusId`. */
+function promptPageSays(e, message, focusId = "") {
+  e.status = message;
+  e.error = true;
+  renderLibrary();
+  if (focusId) document.getElementById(focusId)?.focus({ preventScroll: true });
+}
+
+async function savePromptPage() {
+  const e = libEdit;
+  if (!e || e.busy) return;
+  const content = e.content.trim();
+  const title = e.title.trim();
+  const typed = e.tagText.split(",").map((t) => t.trim().replace(/^#/, "")).filter(Boolean);
+  const tags = [...new Set([...e.tags, ...typed])];
+  if (!content) { promptPageSays(e, "Write the prompt first.", "pm-edit-content"); return; }
+
+  if (e.id == null) {
+    e.busy = true;
+    e.status = ""; e.error = false;
+    renderLibrary();
+    const outcome = await createSavedPrompt(content, title, tags);
+    if (libEdit !== e) return;   // left the page while the request was out
+    e.busy = false;
+    if (outcome === "failed") { promptPageSays(e, "Could not save. Check your connection and try again."); return; }
+    libEdit = null;
+    libPage = "list";
+    if (outcome === "duplicate") {
+      renderLibrary();
+      focusLibrarySearch();
+      showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(content) });
+      return;
+    }
+    const id = lastSavedPromptId;
+    statsBump("saves");
+    tipDone("save");
+    showToast(title ? `Saved \u201c${clipText(title, 40)}\u201d to your library` : "Saved to your library",
+      "success", id ? { label: "Undo", run: () => undoSave(id) } : null);
+    // Back to the list at once; it is drawn again, the new prompt picked out,
+    // once the library has it.
+    renderLibrary();
+    focusLibrarySearch();
+    await fetchSavedPrompts();
+    if (panelOpen && libPage === "list") {
+      libView = "saved";
+      searchQuery = "";
+      const at = libraryItems().findIndex((it) => it.p?.id === id);
+      libSel = at >= 0 ? at : 0;
+      renderLibrary();
+      focusLibrarySearch();
+    }
+    return;
+  }
+
+  const p = e.original;
+  const fields = {};
+  if (content !== p.content) fields.content = content;
+  if (title !== (p.title || "")) fields.title = title || null;
+  if (JSON.stringify(tags) !== JSON.stringify(p.tags || [])) fields.tags = tags;
+  if (!Object.keys(fields).length) { leavePromptPage(); return; }
+  e.busy = true;
+  e.status = ""; e.error = false;
+  renderLibrary();
+  const ok = await updateSavedPrompt(p.id, fields);
+  if (libEdit !== e) return;
+  e.busy = false;
+  // The window this replaces closed on a failed save as if it had worked.
+  if (!ok) { promptPageSays(e, "Could not save the changes. Check your connection and try again."); return; }
+  libEdit = null;
+  libPage = "list";
+  renderLibrary();
+  focusLibrarySearch();
+  await fetchSavedPrompts();
+  if (panelOpen && libPage === "list") renderLibrary();
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -6372,10 +6564,8 @@ async function startVoice() {
 
   recordingTimer = setInterval(() => {
     const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
-    const mins = String(Math.floor(elapsed / 60)).padStart(2, "0");
-    const secs = String(elapsed % 60).padStart(2, "0");
     const timerEl = document.getElementById("pm-voice-timer");
-    if (timerEl) timerEl.textContent = `${mins}:${secs}`;
+    if (timerEl) timerEl.textContent = voiceClock(elapsed);
   }, 1000);
   voiceStopTimer = setTimeout(() => {
     if (voiceState !== "recording") return;
@@ -6383,7 +6573,6 @@ async function startVoice() {
     stopVoice();
   }, VOICE_MAX_RECORDING_SECONDS * 1000);
 
-  showToast("🎤 Recording… you will review the transcript before enhancement.", "info");
 }
 
 function stopVoice() {
@@ -6466,7 +6655,7 @@ async function transcribeVoiceAudio(audioBlob, token, durationSeconds) {
     if (voiceState !== "transcribing") return; // cancelled while the request was in flight
 
     voiceDetectedLanguage = data.detected_language || "unknown";
-    showVoiceTranscriptReview(data.transcription || "", data.transcription_time);
+    showVoiceTranscriptReview(data.transcription || "");
   } catch (error) {
     if (error?.name === "AbortError") return;
     cleanupVoice();
@@ -6477,42 +6666,109 @@ async function transcribeVoiceAudio(audioBlob, token, durationSeconds) {
   }
 }
 
-function showVoiceTranscriptReview(transcript, transcriptionTime) {
+/**
+ * The transcript to look over, in a card on the chat box: what was heard,
+ * editable, then Improve it, use it as it is, or throw it away. It was a
+ * window over the whole page, blurred behind, with the time the transcription
+ * took and a gradient button. On a small window it starts folded to one line,
+ * so it never takes the screen; the line opens it again.
+ */
+function showVoiceTranscriptReview(transcript) {
   if (!transcript.trim()) {
     cleanupVoice();
     showToast("Could not understand the recording. Please try again.", "error");
     return;
   }
-
   voiceState = "reviewing";
-  const overlay = document.getElementById("pm-voice-overlay");
-  if (!overlay) return;
-  const language = voiceDetectedLanguage === "unknown" ? "Language auto-detected" : `Language: ${voiceDetectedLanguage}`;
-  overlay.innerHTML = `
-    <div class="pm-voice-card pm-voice-review-card" role="dialog" aria-modal="true" aria-label="Review voice transcript">
-      <div class="pm-voice-indicator"><span class="pm-voice-label">Review transcript</span></div>
-      <p class="pm-voice-hint">${escHtml(language)} · transcribed in ${Number(transcriptionTime || 0).toFixed(2)}s. Edit anything before it is enhanced.</p>
-      <label class="pm-voice-transcript-label" for="pm-voice-transcript">Transcript</label>
-      <textarea id="pm-voice-transcript" class="pm-voice-transcript" rows="7" spellcheck="true">${escHtml(transcript)}</textarea>
-      <div class="pm-voice-actions">
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-draft" type="button">Use as draft</button>
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Discard</button>
-        <button class="pm-btn pm-btn-primary" id="pm-voice-enhance" type="button">Enhance transcript</button>
-      </div>
-    </div>
-  `;
-  document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
+  const el = document.getElementById("pm-voice");
+  if (!el) return;
+  const lang = voiceDetectedLanguage && voiceDetectedLanguage !== "unknown" ? ` \u00b7 ${escHtml(voiceDetectedLanguage.toUpperCase())}` : "";
+  el.className = "pm-card pm-voice pm-voice-review pm-card-visible pm-visible";
+  el.setAttribute("role", "dialog");
+  el.setAttribute("aria-label", "Your words, to review");
+  el.innerHTML =
+    `<div class="pm-card-head"><span class="pm-card-head-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-title">Your words${lang}</span>` +
+    `<button class="pm-card-min" type="button" id="pm-voice-min" data-pm-tip="Fold to one line" data-pm-key="Esc" aria-label="Fold to one line">${CARD_MIN_SVG}</button></div>` +
+    `<textarea id="pm-voice-transcript" class="pm-voice-text" rows="3" spellcheck="true" aria-label="Transcript">${escHtml(transcript)}</textarea>` +
+    `<p class="pm-voice-note">Edit anything first. Nothing goes in the chat box until you choose.</p>` +
+    cardFoot([
+      `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-voice-enhance" type="button" data-pm-tip="Rewrite it as a prompt" data-pm-key="${CMD_ENTER}">${CARD_SPARK_SVG}Improve</button>`,
+      CARD_SEP,
+      `<button class="pm-card-act pm-card-btn pm-voice-plain" id="pm-voice-draft" type="button" data-pm-tip="Put your words in the chat box as they are">Use as is</button>`,
+      CARD_SEP,
+      `<button class="pm-card-act pm-card-icon pm-card-discard" id="pm-voice-cancel" type="button" aria-label="Discard the transcript" data-pm-tip="Discard the transcript">${CARD_DISCARD_SVG}</button>`,
+    ]) +
+    `<div class="pm-card-strip pm-voice-strip" id="pm-voice-strip"></div>`;
+  document.getElementById("pm-voice-cancel")?.addEventListener("click", () => {
+    cancelVoice();
+    showToast("Transcript discarded.", "info");
+  });
+  document.getElementById("pm-voice-min")?.addEventListener("click", () => foldVoice(true));
   document.getElementById("pm-voice-draft")?.addEventListener("click", async () => {
-    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
+    const value = voiceTranscriptValue();
     if (!value) return showToast("Transcript is empty.", "error");
-    await applyOrFallback(value, "Transcript added to the chat input.");
+    await applyOrFallback(value, "Your words are in the chat box.");
     cleanupVoice();
   });
-  document.getElementById("pm-voice-enhance")?.addEventListener("click", () => {
-    const value = document.getElementById("pm-voice-transcript")?.value.trim() || "";
-    void enhanceVoiceTranscript(value);
+  document.getElementById("pm-voice-enhance")?.addEventListener("click", () => void enhanceVoiceTranscript(voiceTranscriptValue()));
+  const ta = document.getElementById("pm-voice-transcript");
+  ta?.addEventListener("input", () => { fitVoiceText(); renderVoiceStrip(); });
+  ta?.addEventListener("keydown", (e) => {
+    if (e.isComposing) return;
+    if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); e.stopPropagation(); void enhanceVoiceTranscript(voiceTranscriptValue()); }
   });
-  requestAnimationFrame(() => document.getElementById("pm-voice-transcript")?.focus());
+  // A short or low window: start folded to one line rather than take it.
+  foldVoice(window.innerHeight < 620 || window.innerWidth < 520, false);
+  fitVoiceText();
+  positionVoice();
+  if (!el.classList.contains("pm-card-tucked")) requestAnimationFrame(() => ta?.focus({ preventScroll: true }));
+}
+
+function voiceTranscriptValue() {
+  return document.getElementById("pm-voice-transcript")?.value.trim() || "";
+}
+
+/** The transcript box as tall as its words, up to the room there is. */
+function fitVoiceText() {
+  const ta = document.getElementById("pm-voice-transcript");
+  if (!ta) return;
+  ta.style.height = "auto";
+  ta.style.height = Math.min(ta.scrollHeight + 2, voiceTextRoom()) + "px";
+}
+
+/** Fold the review to one line, or open it again. */
+function foldVoice(folded, focus = true) {
+  const el = document.getElementById("pm-voice");
+  if (!el || voiceState !== "reviewing") return;
+  el.classList.toggle("pm-card-tucked", folded);
+  renderVoiceStrip();
+  positionVoice();
+  if (!folded) {
+    fitVoiceText();
+    if (focus) document.getElementById("pm-voice-transcript")?.focus({ preventScroll: true });
+  }
+}
+
+/** The one line a folded review is: what was heard, Improve, and a way back up. */
+function renderVoiceStrip() {
+  const strip = document.getElementById("pm-voice-strip");
+  if (!strip) return;
+  strip.innerHTML =
+    `<span class="pm-card-strip-dot" aria-hidden="true"></span>` +
+    `<span class="pm-card-strip-label">Your words</span>` +
+    `<span class="pm-card-strip-gist">${escHtml(norm(voiceTranscriptValue()))}</span>` +
+    `<button type="button" class="pm-card-strip-verb" data-act="improve">Improve</button>` +
+    `<button type="button" class="pm-card-strip-open" data-act="open" aria-label="Show the whole transcript" data-pm-tip="Show the whole transcript">` +
+    `<svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7.5 6 4.5l3 3"/></svg></button>`;
+  if (!strip._pmWired) {
+    strip._pmWired = true;
+    strip.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (e.target.closest("[data-act='improve']")) { void enhanceVoiceTranscript(voiceTranscriptValue()); return; }
+      foldVoice(false);
+    });
+  }
 }
 
 async function enhanceVoiceTranscript(transcript) {
@@ -6548,77 +6804,112 @@ async function enhanceVoiceTranscript(transcript) {
   }
 }
 
-// ── Voice UI: Recording Overlay ──
+// ── Voice UI: a bar, then a card, on the chat box ──
+//
+// Recording took the whole page: a window over a blurred screen with a big
+// timer and gradient buttons, so the conversation being answered was hidden
+// while the user spoke about it. It is a slim bar on the chat box now, where
+// the rewrite card sits, in the card's own look; the transcript to review
+// becomes a card in the same place (showVoiceTranscriptReview).
 
 function showVoiceOverlay() {
-  let overlay = document.getElementById("pm-voice-overlay");
-  if (!overlay) {
-    overlay = document.createElement("div");
-    overlay.id = "pm-voice-overlay";
-    overlay.className = "pm-voice-overlay";
-    // The voice screen is also created on demand, so it must inherit the
-    // panel's active theme instead of resolving its variables from :root.
-    overlay.setAttribute(
-      "data-pm-theme",
-      uiTheme
-    );
-    document.body.appendChild(overlay);
+  // One thing on the chat box at a time: the library goes, and a rewrite card
+  // folds into the pill, which keeps its draft.
+  if (panelOpen) togglePanel(false);
+  if (cardExpanded && cardState !== "idle") hideCard();
+  let el = document.getElementById("pm-voice");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "pm-voice";
+    document.body.appendChild(el);
   }
-
-  overlay.innerHTML = `
-    <div class="pm-voice-card">
-      <div class="pm-voice-indicator">
-        <div class="pm-voice-bars">
-          <span class="pm-bar"></span><span class="pm-bar"></span><span class="pm-bar"></span>
-          <span class="pm-bar"></span><span class="pm-bar"></span>
-        </div>
-        <span class="pm-voice-label">Recording</span>
-      </div>
-      <div class="pm-voice-timer" id="pm-voice-timer">00:00</div>
-      <div class="pm-voice-hint">Speak naturally. You will review the transcript before anything is enhanced.</div>
-      <div class="pm-voice-actions">
-        <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
-        <button class="pm-btn pm-btn-primary pm-voice-stop" id="pm-voice-stop" type="button">Stop recording</button>
-      </div>
-    </div>
-  `;
-
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) cancelVoice(); });
+  el.className = "pm-card pm-voice pm-voice-recording";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-label", "Recording");
+  el.innerHTML =
+    `<div class="pm-voice-bar">` +
+    `<span class="pm-voice-rec" aria-hidden="true"></span>` +
+    `<span class="pm-voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>` +
+    `<span class="pm-voice-time" id="pm-voice-timer">0:00</span>` +
+    `<span class="pm-voice-msg">Listening. You review the words before anything changes.</span>` +
+    `<div class="pm-card-dock">` +
+    `<button class="pm-card-act pm-card-btn" id="pm-voice-cancel" type="button" data-pm-tip="Throw the recording away" data-pm-key="Esc">Cancel</button>` +
+    `<button class="pm-card-act pm-card-btn pm-card-primary" id="pm-voice-stop" type="button" data-pm-tip="Stop and transcribe">` +
+    `<span class="pm-voice-stop-sq" aria-hidden="true"></span>Stop</button></div></div>`;
   document.getElementById("pm-voice-cancel").addEventListener("click", cancelVoice);
   document.getElementById("pm-voice-stop").addEventListener("click", stopVoice);
+  watchVoicePlace(true);
+  positionVoice();
+  requestAnimationFrame(() => el.classList.add("pm-card-visible", "pm-visible"));
+}
 
-  requestAnimationFrame(() => overlay.classList.add("pm-visible"));
+/** The recording timer's text: m:ss. */
+function voiceClock(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
 function updateVoiceOverlayState(state) {
-  const card = document.querySelector(".pm-voice-card");
-  if (!card) return;
-
-  if (state === "transcribing" || state === "enhancing") {
-    const label = state === "transcribing" ? "Transcribing recording…" : "Enhancing transcript…";
-    const hint = state === "transcribing"
-      ? "Whisper is processing your audio. Audio is not saved by Prompt Memory."
-      : "Building your improved prompt…";
-    card.innerHTML = `
-      <div class="pm-voice-indicator">
-        <div class="pm-voice-spinner"></div>
-        <span class="pm-voice-label">${label}</span>
-      </div>
-      <div class="pm-voice-hint">${hint}</div>
-      <button class="pm-btn pm-btn-secondary" id="pm-voice-cancel" type="button">Cancel</button>
-    `;
-    document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
-  }
+  const el = document.getElementById("pm-voice");
+  if (!el || (state !== "transcribing" && state !== "enhancing")) return;
+  el.className = "pm-card pm-voice pm-voice-busy pm-card-visible pm-visible";
+  el.innerHTML =
+    `<div class="pm-voice-bar">` +
+    `<span class="pm-voice-spin" aria-hidden="true"></span>` +
+    `<span class="pm-voice-msg pm-voice-msg-strong">${state === "transcribing" ? "Turning your words into text\u2026" : "Improving your words\u2026"}</span>` +
+    `<span class="pm-voice-msg">${state === "transcribing" ? "The audio is not kept." : ""}</span>` +
+    `<div class="pm-card-dock"><button class="pm-card-act pm-card-btn" id="pm-voice-cancel" type="button" data-pm-key="Esc">Cancel</button></div></div>`;
+  document.getElementById("pm-voice-cancel")?.addEventListener("click", cancelVoice);
+  positionVoice();
 }
 
 function hideVoiceOverlay() {
-  const overlay = document.getElementById("pm-voice-overlay");
-  if (overlay) {
-    overlay.classList.remove("pm-visible");
-    setTimeout(() => {
-      if (!overlay.classList.contains("pm-visible")) overlay.remove();
-    }, 300);
+  const el = document.getElementById("pm-voice");
+  watchVoicePlace(false);
+  if (!el) return;
+  el.classList.remove("pm-card-visible", "pm-visible");
+  setTimeout(() => { if (!el.classList.contains("pm-visible")) el.remove(); }, 200);
+}
+
+let voicePlaceWatch = null;
+function watchVoicePlace(on) {
+  if (on && !voicePlaceWatch) {
+    voicePlaceWatch = () => positionVoice();
+    window.addEventListener("resize", voicePlaceWatch, true);
+    window.addEventListener("scroll", voicePlaceWatch, true);
+  } else if (!on && voicePlaceWatch) {
+    window.removeEventListener("resize", voicePlaceWatch, true);
+    window.removeEventListener("scroll", voicePlaceWatch, true);
+    voicePlaceWatch = null;
   }
+}
+
+/** Room for the transcript box: the space above the chat box, less the card's head and foot. */
+function voiceTextRoom() {
+  const el = document.getElementById("pm-voice");
+  const bottom = el ? parseFloat(el.style.bottom) || 24 : 24;
+  return Math.max(72, Math.min(window.innerHeight * 0.4, window.innerHeight - bottom - 12 - 150));
+}
+
+/**
+ * On the chat box, as the rewrite card is: as wide as the box (capped, and
+ * never narrower than 320px), its right edge on the box's, standing just
+ * above it. With no chat box found, or one too near the top of the window,
+ * it sits at the foot of the window.
+ */
+function positionVoice() {
+  const el = document.getElementById("pm-voice");
+  if (!el) return;
+  const vw = window.innerWidth, vh = window.innerHeight, m = 12;
+  const box = composerFrame(findComposer());
+  // Any chat box with room above it, however narrow: at the window's foot it
+  // would sit on the box.
+  const onBox = box && box.top > 140;
+  const width = Math.round(Math.min(600, vw - 2 * m, onBox ? Math.max(320, box.width) : 560));
+  const left = onBox ? Math.max(m, Math.min(box.right - width, vw - width - m)) : Math.round((vw - width) / 2);
+  const bottom = onBox ? Math.round(vh - box.top + 8) : 24;
+  el.style.width = width + "px";
+  el.style.left = left + "px";
+  el.style.bottom = bottom + "px";
 }
 
 function updateVoiceUI(recording) {
@@ -6657,7 +6948,7 @@ function applyTheme(theme) {
   const els = [
     document.getElementById("pm-trigger"),
     document.querySelector(".pm-modal-overlay"),
-    document.querySelector(".pm-voice-overlay"),
+    document.getElementById("pm-voice"),
     // The card and the toast stack read the theme when they are built. Left out
     // of this list they kept whatever theme they were born with, so toggling
     // the theme with a rewrite on screen recoloured everything except the two

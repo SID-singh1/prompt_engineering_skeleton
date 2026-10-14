@@ -363,15 +363,16 @@ def main():
                      c.font = getComputedStyle(q).font; return c.measureText(q.placeholder).width <= q.clientWidth; })()"""),
               "and the search box's placeholder still fits beside it")
         page.click("#pm-lib-new")
-        page.wait_for_selector("#pm-modal-overlay.pm-visible #pm-edit-content")
-        check(page.inner_text("#pm-modal-overlay .pm-modal-title") == "New prompt", "+ New opens the edit window as a new prompt")
+        page.wait_for_selector("#pm-library #pm-edit-content")
+        check(page.inner_text("#pm-library .pm-lib-head-title") == "New prompt", "+ New opens the New prompt page of the library")
+        check(not ev("!!document.querySelector('#pm-modal-overlay.pm-visible')"), "a page of the sheet: nothing blurs the chat behind it")
         check(page.input_value("#pm-edit-content") == "Turn these meeting notes into action items with owners",
               "starting from what is in the chat box")
         check(ev("document.activeElement.id") == "pm-edit-content"
               and ev("document.activeElement.selectionStart") == len("Turn these meeting notes into action items with owners"),
               "with the caret at the end of it")
         check(page.input_value("#pm-edit-title") == "", "the name starts empty: an unnamed prompt shows its words")
-        check(ev("panelOpen"), "and the library stays open under it")
+        check(ev("panelOpen") and ev("libPage") == "edit", "and it is the library, on its New prompt page")
         cancel_r, save_r = rect("#pm-edit-cancel"), rect("#pm-edit-save")
         check(not overlaps(cancel_r, save_r) and cancel_r["r"] - cancel_r["l"] > 50, f"Cancel is a whole button beside Save, got {cancel_r}")
         page.fill("#pm-edit-tags", "meetings, #notes, writing")
@@ -383,9 +384,8 @@ def main():
         check(not post.get("title") and post["content"] == "Turn these meeting notes into action items with owners"
               and sorted(post.get("tags", [])) == ["meetings", "notes", "writing"],
               f"⌘↵ saves it unnamed, with its tags, got {post}")
-        page.wait_for_function("!document.querySelector('#pm-modal-overlay.pm-visible') && "
-                               "document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
-        check(ev("document.activeElement.id") == "pm-lib-q", "the window goes, the keyboard back in the search")
+        page.wait_for_function("libPage === 'list' && document.querySelectorAll('#pm-library .pm-lib-row').length === 6")
+        check(ev("document.activeElement.id") == "pm-lib-q", "back to the list, the keyboard back in the search")
         check("Undo" in page.inner_text(".pm-toast"), "the toast offers Undo")
         toast = rect(".pm-toast")
         for what, sel in (("the context chips", "#pm-rail"), ("the chat box", "form"), ("the open library", "#pm-library")):
@@ -394,11 +394,38 @@ def main():
         check(any("Turn these meeting notes" in r for r in rows()), f"saved and listed, got {rows()[:2]}")
         check("Turn these meeting notes" in page.inner_text("#pm-library .pm-lib-row.pm-sel"), "and highlighted")
         page.click("#pm-lib-new")
-        page.wait_for_selector("#pm-modal-overlay.pm-visible")
+        page.wait_for_selector("#pm-library #pm-edit-content")
         page.keyboard.press("Escape")
-        check(not ev("!!document.querySelector('#pm-modal-overlay.pm-visible')") and ev("panelOpen"),
-              "esc in the window cancels it, and leaves the library open")
+        check(ev("libPage") == "list" and ev("panelOpen"),
+              "esc on the page goes back to the list, and leaves the library open")
         check(len(calls("POST", "/saved-prompts")) == 1, "without saving anything")
+
+        # ── Edit, on the same page ──
+        row = page.locator("#pm-library .pm-lib-row", has_text="Code review template")
+        row.hover()
+        row.locator("[data-act='more']").click()
+        page.click("#pm-library [data-act='edit']")
+        page.wait_for_selector("#pm-library #pm-edit-content")
+        check(page.inner_text("#pm-library .pm-lib-head-title") == "Edit prompt" and page.input_value("#pm-edit-title") == "Code review template",
+              "Edit opens the same page, filled in")
+        on = page.locator("#pm-library .pm-lib-edit .pm-save-tags button[aria-pressed='true']").all_inner_texts()
+        check(sorted(on) == ["#coding", "#review"], f"with its tags already on, got {on}")
+        page.fill("#pm-edit-title", "Code review, senior")
+        page.click("#pm-library .pm-lib-edit .pm-save-tags button[data-tag='review']")
+        check(ev("document.activeElement.id") != "pm-library" and page.input_value("#pm-edit-title") == "Code review, senior",
+              "a tag toggles in place: nothing typed is lost")
+        ev("""(() => { const f = window.fetch; window.__realFetch = f;
+              window.fetch = (u, o = {}) => (o.method === 'PUT' ? Promise.resolve(new Response('{}', { status: 500 })) : f(u, o)); })()""")
+        page.click("#pm-edit-save")
+        page.wait_for_function("(document.getElementById('pm-edit-status')?.textContent || '').includes('Could not save')", timeout=3000)
+        check(ev("libPage") == "edit" and page.input_value("#pm-edit-title") == "Code review, senior",
+              "a failed save stays on the page with what was typed, and says so")
+        ev("window.fetch = window.__realFetch")
+        page.click("#pm-edit-save")
+        page.wait_for_function("libPage === 'list' && [...document.querySelectorAll('#pm-library .pm-lib-title')].some(t => t.textContent.includes('Code review, senior'))", timeout=3000)
+        put = [c for c in ev("FAKE_API.calls") if c["method"] == "PUT"][-1]["body"]
+        check(put == {"title": "Code review, senior", "tags": ["coding"]}, f"saving sends only what changed, got {put}")
+        check(any("Code review, senior" in r for r in rows()), f"and the list shows it, got {rows()[:2]}")
         check("Rewrite with it" in page.inner_text("#pm-lib-foot"), "with text in the box, the foot offers the rewrite")
         # The harness routes rewrites to its fake direct path; that the ticked
         # ids ride with a server rewrite is checked in check_extension_e2e.py.
@@ -590,7 +617,7 @@ def main():
         lib, box = rect("#pm-library"), rect("form")
         for what, sel in (("Send", ".send"), ("the model picker", ".tools .model"), ("the mic", ".tools .mic")):
             check(not overlaps(lib, rect(sel)), f"the sheet stays off the box's {what}, got {lib} vs {rect(sel)}")
-        check(lib["b"] <= box["t"] or lib["l"] >= box["r"], f"and off the box itself, got {lib} vs {box}")
+        check(lib["b"] <= box["t"] or lib["t"] >= box["b"] or lib["l"] >= box["r"], f"and off the box itself, above or below it, got {lib} vs {box}")
         page.keyboard.press("Escape")
         ev("H.type(H.ORIG); H.stream(); H.done()")
         page.wait_for_selector("#pm-card #pm-card-accept")
@@ -892,6 +919,92 @@ def main():
         ev("closeCard(); clearAttachments()")
         page.set_viewport_size({"width": 1440, "height": 900})
 
+        # ── the sheet opens on the chat box, wherever the pill is ──
+        lib_on_box = """(() => { const l = document.getElementById('pm-library').getBoundingClientRect();
+            const f = composerFrame(findComposer()); return { gapAbove: Math.round(f.top - l.bottom), gapBelow: Math.round(l.top - f.bottom),
+            rightDiff: Math.round(Math.abs(l.right - f.right)), side: document.getElementById('pm-library').dataset.side }; })()"""
+        open_lib()
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1,
+              f"the sheet stands just above the chat box, its right edge on the box's, got {on}")
+        page.keyboard.press("Escape")
+        for dock, bottom in (("left", 120), ("right", 600), ("left", 700)):
+            ev(f"pillDock = '{dock}'; pillBottom = {bottom}; placePill()")
+            open_lib()
+            on = ev(lib_on_box)
+            check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1,
+                  f"with the pill moved ({dock}, {bottom}px up) the sheet still opens on the box, got {on}")
+            page.keyboard.press("Escape")
+        ev("pillDock = 'right'; pillBottom = 24; placePill()")
+        ev("document.body.classList.add('center')")
+        page.wait_for_timeout(150)
+        open_lib()
+        on = ev(lib_on_box)
+        near = (on["side"] == "above" and 0 <= on["gapAbove"] <= 60) or (on["side"] == "below" and 0 <= on["gapBelow"] <= 20)
+        check(near and on["rightDiff"] <= 1, f"a new chat's centred box still has the sheet beside it, not in a corner, got {on}")
+        page.keyboard.press("Escape")
+        ev("document.body.classList.remove('center')")
+
+        # ── drag it anywhere; it stays there, follows the box, and comes back ──
+        def drag_grip(dx, dy):
+            g = page.locator("#pm-library .pm-lib-move").bounding_box()
+            x, y = g["x"] + g["width"] / 2, g["y"] + g["height"] / 2
+            page.mouse.move(x, y)
+            page.mouse.down()
+            page.mouse.move(x + dx / 2, y + dy / 2, steps=4)
+            page.mouse.move(x + dx, y + dy, steps=4)
+            page.mouse.up()
+
+        open_lib()
+        page.wait_for_timeout(250)   # the open animation scales it
+        before = rect("#pm-library")
+        drag_grip(-420, -160)
+        after = rect("#pm-library")
+        check(abs(after["l"] - (before["l"] - 420)) <= 2 and abs(after["t"] - (before["t"] - 160)) <= 2,
+              f"the grip drags the sheet where the pointer goes, {before} -> {after}")
+        check(page.locator("#pm-lib-home").count() == 1, "once moved, the head offers ↙ to put it back")
+        check(ev("""(() => { const q = document.getElementById('pm-lib-q'), c = document.createElement('canvas').getContext('2d');
+                     c.font = getComputedStyle(q).font; return c.measureText(q.placeholder).width <= q.clientWidth; })()"""),
+              "and the search box's placeholder still fits beside it")
+        page.keyboard.press("Escape")
+        open_lib()
+        page.wait_for_timeout(250)
+        again = rect("#pm-library")
+        check(abs(again["l"] - after["l"]) <= 2 and abs(again["t"] - after["t"]) <= 2, f"it opens where it was put, {after} vs {again}")
+        load()
+        open_lib()
+        page.wait_for_timeout(250)
+        again = rect("#pm-library")
+        check(abs(again["l"] - after["l"]) <= 2 and abs(again["t"] - after["t"]) <= 2, f"and after a reload, {after} vs {again}")
+        box0 = rect("form")
+        page.set_viewport_size({"width": 1200, "height": 900})
+        page.wait_for_timeout(200)
+        box1, moved = rect("form"), rect("#pm-library")
+        check(abs((moved["l"] - box1["r"]) - (after["l"] - box0["r"])) <= 2 and abs((moved["t"] - box1["t"]) - (after["t"] - box0["t"])) <= 2,
+              f"it keeps its place beside the chat box when the window changes, {moved} vs box {box1}")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(150)
+        drag_grip(-3000, -3000)
+        off = rect("#pm-library")
+        check(off["l"] >= 11 and off["t"] >= 11, f"dragged past the corner it stops inside the window, got {off}")
+        drag_grip(5000, 5000)
+        off = rect("#pm-library")
+        check(off["r"] <= 1440 - 11 and off["b"] <= 900 - 11, f"on every side, got {off}")
+        page.click("#pm-lib-home")
+        page.wait_for_timeout(150)
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and 0 <= on["gapAbove"] <= 60 and on["rightDiff"] <= 1 and page.locator("#pm-lib-home").count() == 0,
+              f"↙ puts it back on the chat box, and goes, got {on}")
+        drag_grip(-300, -100)
+        g = page.locator("#pm-library .pm-lib-move").bounding_box()
+        page.mouse.click(g["x"] + 8, g["y"] + 14)
+        page.mouse.click(g["x"] + 8, g["y"] + 14)
+        page.wait_for_timeout(150)
+        on = ev(lib_on_box)
+        check(on["side"] == "above" and on["rightDiff"] <= 1, f"so does a double-click on the grip, got {on}")
+        check(ev("sheetPos") is None, "and the place it was put is forgotten")
+        page.keyboard.press("Escape")
+
         check(not errors, f"page errors: {errors}")
         page.close()
         reach_the_chip_from_anywhere(browser, url)
@@ -926,7 +1039,7 @@ def keys_on_windows(browser, url):
     page.wait_for_selector("#pm-keytip:not([hidden])", timeout=1500)
     check(page.locator("#pm-keytip kbd").all_inner_texts() == ["Ctrl", "Enter"], "Windows: Insert's tooltip draws Ctrl and Enter")
     page.click("#pm-lib-more")
-    check(page.inner_text(".pm-lib-mi[data-act='voice'] span") == "Ctrl+Shift+V", "Windows: the menu writes Ctrl+Shift+V")
+    check(page.inner_text(".pm-lib-mi[data-act='voice'] span") == "Ctrl+Shift+Space", "Windows: the menu writes Ctrl+Shift+Space")
     page.click("[data-act='shortcuts']")
     page.wait_for_selector("#pm-keys:not([hidden])")
     caps = page.locator("#pm-keys kbd").all_inner_texts()

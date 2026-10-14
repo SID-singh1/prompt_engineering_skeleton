@@ -506,10 +506,15 @@ def test_lazy_created_modal_inherits_the_current_theme():
     assert "uiTheme = theme" in _function_bodies(CONTENT_JS, r"applyTheme")["applyTheme"]
 
 
-def test_lazy_created_voice_overlay_inherits_the_current_theme():
-    """The on-demand voice overlay must use the active theme."""
+def test_lazy_created_voice_ui_wears_the_cards_palette():
+    """
+    The voice UI is created on demand. It used to read the panel's theme; it
+    is now a .pm-card, so it wears the console palette the card redefines its
+    tokens to, the same black on every theme, as the card and the pill do.
+    """
     body = _function_bodies(CONTENT_JS, r"showVoiceOverlay")["showVoiceOverlay"]
-    assert "data-pm-theme" in body and "uiTheme" in body
+    assert 'el.className = "pm-card pm-voice' in body
+    assert re.search(r"\.pm-card \{[^}]*--pm-bg: var\(--pm-con-bg-solid\)", STYLES_CSS, re.S)
 
 
 def test_voice_flow_requires_review_before_it_can_enhance():
@@ -523,8 +528,8 @@ def test_voice_flow_requires_review_before_it_can_enhance():
     assert "supportedVoiceMimeType" in start
     assert "/voice-transcribe" in transcribe
     assert "AbortController" in transcribe
-    assert "Enhance transcript" in review
-    assert "Use as draft" in review
+    assert ">Improve</button>" in review.replace("${CARD_SPARK_SVG}", "")
+    assert "Use as is" in review
     assert "cancelVoice" in review
     assert "voice-enhance" not in transcribe
 
@@ -674,9 +679,9 @@ def test_nothing_covers_the_card_that_does_not_also_take_its_keys():
     assert "focusLibrarySearch()" in _function_bodies(CONTENT_JS, r"togglePanel")["togglePanel"], \
         "the library covers the card without taking its keys"
     assert z["--pm-z-overlay"] > z["--pm-z-card"], \
-        "the card punches through the full-screen modal and voice backdrops"
+        "the card punches through the full-screen modal backdrop"
     body = _function_bodies(CONTENT_JS, r"overlayHasInput")["overlayHasInput"]
-    assert "pm-modal-overlay.pm-visible" in body and "pm-voice-overlay.pm-visible" in body
+    assert "pm-modal-overlay.pm-visible" in body and "#pm-voice.pm-visible" in body
 
 
 def test_the_card_keymap_defers_to_an_overlay():
@@ -1554,7 +1559,7 @@ def test_every_listed_chord_is_one_the_code_answers():
     listed = _shortcuts_block()
     for chord, handler in (
         ("${MOD_SHIFT}E", 'e.code === "KeyE"'),
-        ("${MOD_SHIFT}V", 'e.code === "KeyV"'),
+        ("VOICE_KEY", 'e.code === "Space"'),
         ("${MOD_SHIFT}L", 'e.code === "KeyL"'),
         ("${MOD_SHIFT}P", 'e.code === "KeyP"'),
         ("CMD_ENTER", 'e.key === "Enter"'),
@@ -1769,3 +1774,53 @@ def test_chatgpt_messages_are_read_by_how_chatgpt_marks_them_now():
 def test_a_hidden_you_said_is_not_saved_as_part_of_the_prompt():
     body = _function_bodies(CONTENT_JS, r"sentPromptText")["sentPromptText"]
     assert "VISUALLY_HIDDEN" in body and "cdk-visually-hidden" in CONTENT_JS
+
+
+def test_new_and_edit_prompt_are_a_page_of_the_library():
+    """
+    New and Edit prompt were a window of their own: the whole page blurred
+    behind it and a gradient Save, the look of nothing else here. They are a
+    page of the sheet now, and a failed edit says so instead of closing as
+    if it had worked.
+    """
+    assert "function showEditModal" not in CONTENT_JS
+    page = _function_bodies(CONTENT_JS, r"openPromptPage")["openPromptPage"]
+    assert 'libPage = "edit"' in page and "getOrCreateModalOverlay" not in page
+    html = _function_bodies(CONTENT_JS, r"libEditHtml")["libEditHtml"]
+    assert "pm-btn-primary" not in html and "pm-lib-verb" in html, "the page uses the sheet's own buttons"
+    save = _function_bodies(CONTENT_JS, r"savePromptPage")["savePromptPage"]
+    assert "Could not save the changes" in save and "if (libEdit !== e) return;" in save
+    assert ".pm-edit-textarea" not in STYLES_CSS, "the window's styles are gone with it"
+
+
+def test_voice_sits_on_the_chat_box_and_esc_never_discards_a_transcript():
+    """
+    Voice was a window over the whole page, blurred behind, with gradient
+    buttons; the conversation being answered was hidden while the user spoke.
+    It is a bar, then a card, on the chat box. Esc stops a recording but only
+    folds a transcript under review: throwing away words is the bin's job.
+    """
+    assert ".pm-voice-overlay" not in STYLES_CSS and "pm-voice-overlay" not in CONTENT_JS
+    show = _function_bodies(CONTENT_JS, r"showVoiceOverlay")["showVoiceOverlay"]
+    assert "pm-card pm-voice" in show and "pm-btn-primary" not in show
+    review = _function_bodies(CONTENT_JS, r"showVoiceTranscriptReview")["showVoiceTranscriptReview"]
+    assert "pm-btn-primary" not in review and "transcribed in" not in review
+    assert "foldVoice(window.innerHeight < 620 || window.innerWidth < 520" in review, "a small window starts folded"
+    keys = _function_bodies(CONTENT_JS, r"handleCardKeydown")["handleCardKeydown"]
+    assert 'if (voiceState === "reviewing") foldVoice(true); else cancelVoice();' in keys
+    assert "composerFrame(findComposer())" in _function_bodies(CONTENT_JS, r"positionVoice")["positionVoice"]
+
+
+def test_voice_no_longer_takes_paste_as_plain_text():
+    """Ctrl/⌘+Shift+V is paste as plain text (paste and match style on a Mac).
+    Voice took it, both as the Chrome command and in the page's own listener,
+    which called preventDefault on it."""
+    import json
+    manifest = json.loads(MANIFEST)
+    key = manifest["commands"]["voice-prompt"]["suggested_key"]
+    assert key == {"default": "Ctrl+Shift+Space", "mac": "Command+Shift+Space"}
+    assert 'e.code === "KeyV"' not in CONTENT_JS, "the page still swallows paste as plain text"
+    assert "const VOICE_KEY = `${MOD_SHIFT}Space`;" in CONTENT_JS
+    caps = _function_bodies(CONTENT_JS, r"keyCaps")["keyCaps"]
+    assert "key.slice(glyphs[0].length)" in caps, "⌘⇧Space would be drawn as S p a c e"
+
