@@ -33,7 +33,7 @@ function foldVoice() { actions.push('fold'); }
 let voiceState = 'recording';
 function cancelStreaming() { actions.push('cancel'); }
 function stepVersion(d) { actions.push('step' + d); }
-let cardVersions = [];
+let cardVersions = [], cardExpanded = true;
 function key(key, extra = {}) {
   actions = [];
   const e = {key, code:'', preventDefault() {actions.push('prevent');}, stopPropagation(){actions.push('stop');}, ...extra};
@@ -46,8 +46,18 @@ for (const state of ['idle','streaming','ready','error']) for (const focus of ['
 cardState='ready'; open=true;
 for (const focus of ['outside','composer']) {
   active=focus; composerFocused=focus==='composer';
-  for (const [k,extra] of [['s',{metaKey:true}],['Enter',{ctrlKey:true}],['\\',{}]]) assert(key(k,extra)==='', 'Host editor shortcut hijacked');
+  for (const [k,extra] of [['Enter',{ctrlKey:true}],['\\',{}]]) assert(key(k,extra)==='', 'Host editor shortcut hijacked');
 }
+// ⌘S / Ctrl+S saves a finished rewrite from the chat box too: pressed there it
+// fell through to the browser's Save page. Only while one is open to save, and
+// not from focus elsewhere on the page.
+active='outside';composerFocused=false;assert(key('s',{metaKey:true})==='','Save taken from outside the chat box');
+active='composer';composerFocused=true;
+assert(key('s',{metaKey:true})==='prevent,stop,save','⌘S in the chat box saves the open rewrite');
+assert(key('s',{ctrlKey:true})==='prevent,stop,save','Ctrl+S in the chat box saves the open rewrite');
+assert(key('S',{metaKey:true,shiftKey:true})==='','⌘⇧S taken as save');
+cardExpanded=false;assert(key('s',{metaKey:true})==='','Save taken with the card folded away');cardExpanded=true;
+cardState='streaming';assert(key('s',{metaKey:true})==='','Save taken mid-stream');cardState='ready';
 active='card';composerFocused=false;
 assert(key('s',{metaKey:true})==='prevent,stop,save','Card save shortcut');
 assert(key('Enter',{ctrlKey:true})==='prevent,stop,redo','Card redo shortcut');

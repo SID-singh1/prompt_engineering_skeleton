@@ -296,6 +296,23 @@
 
 .pm-trigger.pm-pill-open .pm-pill-glyph { width: 0; opacity: 0; }
 
+/* "⊕ Improve": the idle pill while the chat box holds a draft. The word is
+   what testers needed to find the ⊕ at all; the height stays 32px, lighter
+   than the host's Send. */
+.pm-pill-word {
+    display: none;
+    padding: 0 12px 0 0;
+    color: var(--pm-accent);
+    font: 600 12.5px/1 var(--pm-font);
+    white-space: nowrap;
+}
+.pm-trigger.pm-pill-invite:not(.pm-pill-open):not(.pm-pill-word-off) .pm-pill-word { display: inline; }
+.pm-trigger.pm-pill-invite:not(.pm-pill-open):not(.pm-pill-word-off) .pm-pill-glyph { width: 28px; margin-left: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+    .pm-trigger.pm-pill-invite:not(.pm-pill-open) .pm-pill-word { animation: pm-word-in .2s ease-out; }
+}
+@keyframes pm-word-in { from { opacity: 0; transform: translateX(-4px); } to { opacity: 1; transform: none; } }
+
 /* The status light takes the lead position the glyph vacated. The halo is a
    spread-only shadow rather than a second element, so it costs nothing in
    the flex row and cannot drift out of alignment with the dot. */
@@ -2946,6 +2963,7 @@
 .pm-card-used-drop:hover { border-color: var(--pm-danger, #e5484d); color: var(--pm-danger, #e5484d); }
 .pm-card-used-drop:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
 .pm-card-used-left { font-size: 11px; color: var(--pm-text-muted); padding: 4px 8px 0; }
+.pm-card-used-head { font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--pm-text-muted); padding: 2px 8px 4px; }
 
 /* One action inside a toast (Undo after updating a saved prompt). */
 .pm-toast-action {
@@ -3021,6 +3039,20 @@
     line-height: 1.5;
 }
 .pm-card-tip b { color: var(--pm-text-secondary); font-weight: 600; }
+
+/* "Good rewrite? 👍 👎": one quiet line over the actions, as the tip is. */
+.pm-card-rate { display: flex; align-items: center; gap: 2px; margin: 0 17px 6px; color: var(--pm-text-muted); font-size: 11.5px; }
+.pm-card-rate span { margin-right: 4px; }
+.pm-card-rate button {
+    display: grid; place-items: center; width: 26px; height: 26px; padding: 0;
+    border: 0; border-radius: 7px; background: none; color: var(--pm-text-muted); cursor: pointer;
+    transition: background var(--pm-transition), color var(--pm-transition);
+}
+.pm-card-rate button svg { width: 13px; height: 13px; display: block; }
+.pm-card-rate button:hover { background: var(--pm-bg-hover); color: var(--pm-text); }
+.pm-card-rate button[data-rate="up"]:hover { color: var(--pm-accent); }
+.pm-card-rate button:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+.pm-card-rate.pm-card-rate-done { min-height: 26px; color: var(--pm-accent); }
 @media (prefers-reduced-motion: reduce) {
     .pm-tip { transition: none; }
     .pm-trigger.pm-pill-hint { animation: none; }

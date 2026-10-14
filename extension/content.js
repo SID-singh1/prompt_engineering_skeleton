@@ -736,6 +736,9 @@ const draftStore = {
 
 const PILL_MARGIN = 16;
 const PILL_HOME_BOTTOM = 24;   // home: the bottom corner on the docked side
+// The narrowest an open pill gets made to fit beside the chat box: its dot,
+// verb and × with a few letters of preview. Narrower than that it steps up.
+const PILL_MIN_OPEN_W = 150;
 let pillDock = "right";        // "left" | "right" — which side the pill snaps to
 let pillBottom = PILL_HOME_BOTTOM; // distance from the viewport bottom, in px
 let pillSuppressClick = false; // a drag just ended; swallow the click it fires
@@ -782,6 +785,8 @@ function createTrigger() {
   // meaning (cancel / dismiss / discard) also follows the state.
   btn.innerHTML =
     `<span class="pm-pill-glyph" aria-hidden="true">${PILL_GLYPH_SVG}</span>` +
+    // "Improve", beside the ⊕ while the chat box holds a draft (see renderPill).
+    `<span class="pm-pill-word" aria-hidden="true">Improve</span>` +
     `<span class="pm-pill-dot" aria-hidden="true"></span>` +
     `<span class="pm-pill-labelwrap"><span class="pm-pill-label"></span></span>` +
     `<button class="pm-pill-insert" type="button" hidden></button>` +
@@ -1032,6 +1037,7 @@ function ratePill(rating) {
   const a = pillApplied;
   if (!a || !a.result || a.thanked) return;
   sendFeedback(a.result.log_id, rating, a.result.original, a.result.enhanced);
+  cardRatings.set(a.result.log_id, rating);
   clearTimeout(a.timer);
   a.thanked = rating;
   a.timer = setTimeout(clearApplied, 1200);
@@ -1087,12 +1093,18 @@ function renderPill() {
     if (pillApplied.undo && !pillApplied.thanked) verb = "Undo";
   }
 
-  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}`;
+  // Idle with a draft in the chat box, the ⊕ says what it does: "⊕ Improve".
+  // Two testers never found a bare ⊕ in the window's corner; a word beside
+  // it, appearing as they type, is what the eye catches.
+  const invite = state === "idle" && norm(getCurrentInputText()).length >= 3;
+
+  const sig = `${state}|${label.slice(0, 60)}|${verb}|${discard}|${selectedIds.size}|${invite}`;
   if (sig === pillSignature) return;
   pillSignature = sig;
 
   pill.dataset.state = state;
   pill.classList.toggle("pm-pill-open", state !== "idle");
+  pill.classList.toggle("pm-pill-invite", invite);
   const labelEl = pill.querySelector(".pm-pill-label");
   labelEl.textContent = label.replace(/\s+/g, " ").trim().slice(0, 120);
 
@@ -1120,7 +1132,7 @@ function renderPill() {
   if (ctxBadge) { ctxBadge.hidden = !ctx || state !== "idle"; ctxBadge.textContent = String(ctx); }
   const withCtx = ctx ? ` with ${ctx} saved prompt${ctx === 1 ? "" : "s"} as context` : "";
   pill.setAttribute("aria-label", {
-    idle: "Enhance this prompt" + withCtx,
+    idle: (invite ? "Improve this prompt" : "Enhance this prompt") + withCtx,
     streaming: "Rewriting your prompt",
     ready: "Enhanced prompt ready. Click to review or use Insert.",
     stale: "Enhanced prompt ready, but the chat box has changed since. Redo rewrites the new text.",
@@ -1198,7 +1210,12 @@ function placePill() {
   // pill, and the pill needs its box to know whether to step aside.
   positionCard();
   if (!panelOpen || composer) {
-    const w = pill.offsetWidth, h = pill.offsetHeight;
+    // Its whole width, whatever an earlier pass capped it to, so what is
+    // decided below follows from the page alone and cannot flap.
+    pill.style.maxWidth = "";
+    pill.classList.remove("pm-pill-word-off");
+    let w = pill.offsetWidth;
+    const h = pill.offsetHeight;
     const at = () => ({
       left: pillDock === "left" ? inset : window.innerWidth - inset - w,
       top: window.innerHeight - bottom - h,
@@ -1214,13 +1231,30 @@ function placePill() {
     };
     // The box as drawn, as the card and the chips use: measured by its
     // editable, the pill came to rest 11px down over the box's frame.
-    const c = composer && pill.classList.contains("pm-pill-open") ? composerFrame(composer) : null;
+    const wide = pill.classList.contains("pm-pill-open") || pill.classList.contains("pm-pill-invite");
+    const c = composer && wide ? composerFrame(composer) : null;
     const cardEl = document.getElementById("pm-card");
     const cb = cardEl ? cardEl.getBoundingClientRect() : null;
-    if (hits(c) || hits(cb)) {
+    // Wider than the corner beside the chat box: stay home, made to fit. A
+    // draft's preview shortens to the room there (its fade still ends it);
+    // "⊕ Improve" drops its word. It used to step up onto the box's corner,
+    // and testers saw the pill wander off whenever a draft arrived.
+    if (hits(c)) {
+      const room = Math.floor(pillDock === "left" ? c.left - 8 - PILL_MARGIN : window.innerWidth - PILL_MARGIN - c.right - 8);
+      if (pill.classList.contains("pm-pill-open")) {
+        if (room >= PILL_MIN_OPEN_W) { pill.style.maxWidth = room + "px"; w = Math.min(w, room); }
+      } else {
+        pill.classList.add("pm-pill-word-off");
+        w = pill.offsetWidth;
+      }
+    }
+    // Only a pill carrying a draft steps aside; an idle one stays where the
+    // user put it, as it always has, its word dropped above if it must.
+    const box = pill.classList.contains("pm-pill-open") ? c : null;
+    if (hits(box) || hits(cb)) {
       bottom = Math.min(maxBottom, PILL_HOME_BOTTOM);
       inset = PILL_MARGIN;
-      if (hits(c)) stepAbove(c, 8);
+      if (hits(box)) stepAbove(box, 8);
       if (hits(cb)) stepAbove(cb, 8);
     }
   }
@@ -3816,6 +3850,7 @@ function onComposerChanged() {
     refreshCardStaleness();
     positionRail();
     tipsOnComposerChanged();
+    renderPill();   // "⊕ Improve" appears with a draft, and goes when it is sent
   });
 }
 
@@ -3828,8 +3863,9 @@ function setupLibraryListeners() {
       checkSlash();
       requestAnimationFrame(positionRail);
       // A <textarea> composer changes its value, not its DOM, so the
-      // MutationObserver never fires for it: the tips hear typing here too.
+      // MutationObserver never fires for it: the tips and the pill hear typing here too.
       tipsOnComposerChanged();
+      renderPill();
     }
   }, true);
   // The caret moving (a click, an arrow key) opens or closes // too, and it is
@@ -4740,6 +4776,10 @@ function hideCard() {
     card._pmEndGesture?.();
     if (card.contains(document.activeElement)) document.getElementById("pm-trigger")?.focus({ preventScroll: true });
     card.id = "";
+    // Its controls' ids go too. A card opened during the fade wires its
+    // buttons by id, and getElementById returns the first match in the page:
+    // the leaving card's. Its Replace then had no listener and did nothing.
+    card.querySelectorAll("[id]").forEach((el) => el.removeAttribute("id"));
     card._pmResize?.disconnect();
     const pill = document.getElementById("pm-trigger");
     const up = pill && pill.getBoundingClientRect().top < card.getBoundingClientRect().top;
@@ -5153,7 +5193,7 @@ function showDiffModal(result) {
 
   // The bar goes above the body: it qualifies the whole card, and a status
   // printed underneath the thing it qualifies is read too late to help.
-  const card = openCard(head + body + used.list + cardTipHtml() + cardFoot(actions));
+  const card = openCard(head + body + used.list + cardTipHtml() + cardRateHtml(result) + cardFoot(actions));
   card.classList.toggle("pm-card-stale", cardStale);
 
   const textEl = card.querySelector(".pm-card-text");
@@ -5174,6 +5214,8 @@ function showDiffModal(result) {
   document.getElementById("pm-card-save")?.addEventListener("click", saveCard);
   card.querySelectorAll("[data-pm-style]").forEach((b) =>
     b.addEventListener("click", () => rerunInStyle(b.dataset.pmStyle)));
+  card.querySelectorAll("#pm-card-rate [data-rate]").forEach((b) =>
+    b.addEventListener("click", () => rateCard(b.dataset.rate)));
   document.getElementById("pm-card-ver-prev")?.addEventListener("click", () => stepVersion(-1));
   document.getElementById("pm-card-ver-next")?.addEventListener("click", () => stepVersion(1));
   document.getElementById("pm-card-used-toggle")?.addEventListener("click", (e) => {
@@ -5219,16 +5261,18 @@ function cardUsedParts(result) {
   const summary = items.length
     ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
     : "None used";
-  const all = items.length ? "Used: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used";
+  const all = items.length ? "Context: " + items.map((p) => escHtml(clip(name(p), 60))).join(", ") : "No saved prompts used as context";
   const rows = items.map((p) => {
-    const why = p.kind === "attached" ? "you attached it" : Number(p.score) >= 0.5 ? "close match" : "loose match";
+    // Said the way a person would: "close match" and "loose match" named the
+    // matcher's score, and testers did not know what to make of it.
+    const why = p.kind === "attached" ? "you added it" : "picked for you";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
     const drop = p.kind === "matched" && p.id && !cardStale
       ? `<button type="button" class="pm-card-used-drop" data-pm-drop="${escHtml(p.id)}" data-pm-title="${escHtml(name(p))}" ` +
         `title="Rewrite again without this saved prompt">Don\u2019t use</button>`
       : "";
     return `<li class="pm-card-used-item pm-card-used-${p.kind}">` +
-      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : "\u2248"}</span>` +
+      `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : CARD_SPARK_SVG}</span>` +
       `<span class="pm-card-used-text"><span class="pm-card-used-name">${escHtml(clip(name(p), 60))}</span>` +
       `<span class="pm-card-used-why">${why}${preview}</span></span>${drop}</li>`;
   }).join("");
@@ -5239,7 +5283,8 @@ function cardUsedParts(result) {
     chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
       `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
       `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
-    list: `<ul class="pm-card-used-list" id="pm-card-used-list"${cardUsedOpen ? "" : " hidden"}>${rows}${leftOut}</ul>`,
+    list: `<ul class="pm-card-used-list" id="pm-card-used-list" aria-label="Context for this rewrite"${cardUsedOpen ? "" : " hidden"}>` +
+      `<li class="pm-card-used-head">Context for this rewrite</li>${rows}${leftOut}</ul>`,
   };
 }
 
@@ -5425,7 +5470,8 @@ async function acceptCard() {
   // so applyOrFallback is told to stay quiet on success — but only when there
   // is actually something to rate. Without a log_id the rating cannot be sent
   // anywhere, and asking anyway spends the user's attention on nothing.
-  const canRate = Boolean(result.log_id);
+  // Rated on the card already: the pill confirms and does not ask again.
+  const canRate = Boolean(result.log_id) && !cardRatings.has(result.log_id);
   const applied = await applyOrFallback(text, null);
   // The pill says "Inserted" and, when there is a log_id to rate against,
   // asks how it was — in the object the user was already looking at, rather
@@ -5592,16 +5638,21 @@ function handleCardKeydown(e) {
     else closeCard();
     return;
   }
-  // Save/redo belong to the review controls, not the host's editor.
+  // ⌘S / Ctrl+S saves the rewrite on screen from the chat box too. It used to
+  // answer only with focus inside the card, so pressed where people type it
+  // fell through to the browser's Save page, on Windows and Mac alike. Taken
+  // from the page only while there is a finished rewrite open to save.
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "s" &&
+      cardState === "ready" && cardExpanded) {
+    e.preventDefault(); e.stopPropagation(); saveCard(); return;
+  }
+  // Redo and the version keys belong to the review controls, not the host's editor.
   if (!inCard || cardState !== "ready") return;
   if ((e.key === "[" || e.key === "]") && !e.metaKey && !e.ctrlKey && !e.altKey && cardVersions.length > 1) {
     e.preventDefault(); e.stopPropagation(); stepVersion(e.key === "]" ? 1 : -1); return;
   }
   if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
     e.preventDefault(); e.stopPropagation(); redoCard(); return;
-  }
-  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "s") {
-    e.preventDefault(); e.stopPropagation(); saveCard();
   }
 }
 document.addEventListener("keydown", handleCardKeydown, true);
@@ -7176,6 +7227,39 @@ function cardTipHtml() {
   if (!tips.loaded || tips.off || tips.seen.card || cardSubject || cardShowingOriginal || cardStale) return "";
   return `<div class="pm-card-tip" id="pm-card-tip"><b>Replace draft</b> puts this in your chat box. ` +
     `Not quite right? Try another style; every version is kept.</div>`;
+}
+
+// Rewrites rated, by log id: "up" or "down". Asked on the card, where the
+// rewrite is read, and not asked again in the pill after Replace.
+const cardRatings = new Map();
+
+/**
+ * "Good rewrite? 👍 👎", one quiet line over the actions. The rating was only
+ * asked in the pill, for six seconds after Replace; testers never saw it.
+ * Only for a rewrite the server logged (there is nothing to rate against
+ * otherwise), not yet rated, and never with the first-run tip, which has
+ * that line.
+ */
+function cardRateHtml(result) {
+  if (!result?.log_id || cardRatings.has(result.log_id) || cardShowingOriginal || cardStale || cardSubject) return "";
+  if (cardTipHtml()) return "";
+  return `<div class="pm-card-rate" id="pm-card-rate"><span>Good rewrite?</span>` +
+    `<button type="button" data-rate="up" aria-label="Good rewrite" data-pm-tip="Good rewrite">${PILL_THUMB_SVG(false)}</button>` +
+    `<button type="button" data-rate="down" aria-label="Not a good rewrite" data-pm-tip="Not a good rewrite">${PILL_THUMB_SVG(true)}</button></div>`;
+}
+
+/** Send the card's rating, and say thanks in its place until the card is next drawn. */
+function rateCard(rating) {
+  const r = cardResult;
+  if (!r?.log_id || cardRatings.has(r.log_id)) return;
+  cardRatings.set(r.log_id, rating);
+  sendFeedback(r.log_id, rating, r.original || cardOriginal, r.enhanced).catch(() => {});
+  const line = document.getElementById("pm-card-rate");
+  if (line) {
+    line.classList.add("pm-card-rate-done");
+    line.setAttribute("role", "status");
+    line.textContent = "Thanks, that helps.";
+  }
 }
 
 /** Tip 3: after the first Replace, how to keep a prompt that worked. */

@@ -71,6 +71,9 @@ def main():
                 "t => (document.querySelector('#pm-card .pm-card-title')?.textContent || '').toLowerCase().trim() === t",
                 arg=text.lower(), timeout=5000)
 
+        def rect(sel):
+            return ev(f"(() => {{ const r = document.querySelector('{sel}')?.getBoundingClientRect(); return r && {{ l: r.left, t: r.top, r: r.right, b: r.bottom }}; }})()")
+
         def styles():
             return [b.strip() for b in page.locator("#pm-card .pm-card-style").all_inner_texts()]
 
@@ -403,6 +406,69 @@ def main():
         check(foot == ["Try again", "Dismiss"], f"a failed rewrite offers Try again and Dismiss, got {foot}")
         ev("closeCard()")
 
+        # ── "⊕ Improve": the idle pill says what it does once there is a draft ──
+        ev("closeCard(); clearApplied(); H.type('')")
+        page.wait_for_timeout(150)
+        check(not ev("document.getElementById('pm-trigger').classList.contains('pm-pill-invite')")
+              and page.is_hidden("#pm-trigger .pm-pill-word"), "an empty chat box: the plain ⊕")
+        ev("H.type('hw do i sort')")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="visible", timeout=2000)
+        check(page.inner_text("#pm-trigger .pm-pill-word").strip() == "Improve"
+              and page.get_attribute("#pm-trigger", "aria-label").startswith("Improve this prompt"),
+              "typing a draft turns it into ⊕ Improve")
+        ev("H.type('')")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="hidden", timeout=2000)
+        # ProseMirror and Lexical change the box without an input event: the observer hears it.
+        ev("document.getElementById('composer').textContent = 'words with no input event'; 0")
+        page.wait_for_selector("#pm-trigger .pm-pill-word", state="visible", timeout=2000)
+        check(True, "it appears for text written without an input event too")
+
+        # ── a waiting rewrite stays in its corner beside the chat box ──
+        ev("H.type(H.ORIG); H.stream(); H.done(); hideCard()")
+        page.wait_for_timeout(450)
+        pill, box = rect("#pm-trigger"), rect("form")
+        check(abs((900 - pill["b"]) - ev("PILL_HOME_BOTTOM")) <= 1 and abs(1440 - pill["r"] - ev("PILL_MARGIN")) <= 1,
+              f"with room beside the chat box, the draft's pill stays home, got {pill}")
+        check(pill["l"] >= box["r"], f"made to fit beside the box rather than over it: {pill} vs {box}")
+        page.set_viewport_size({"width": 1000, "height": 900})
+        page.wait_for_timeout(450)
+        pill, box = rect("#pm-trigger"), rect("form")
+        check(pill["b"] <= box["t"] + 1, f"with no room beside it, it still steps up off the box, got {pill} vs {box}")
+        page.set_viewport_size({"width": 1440, "height": 900})
+        page.wait_for_timeout(200)
+        ev("closeCard(); H.type('')")
+
+        # ── Good rewrite? asked on the card, where it is read ──
+        # Ends in a value, not the function: Playwright calls an expression that yields one.
+        ev("window.__fb = []; sendFeedback = (...a) => { window.__fb.push(a); return Promise.resolve(); }; 0")
+        ev("tipDone('card'); closeCard(); H.type(H.ORIG); H.stream(); H.done()")
+        page.wait_for_selector("#pm-card #pm-card-rate")
+        check(page.inner_text("#pm-card-rate").strip().startswith("Good rewrite?") and page.locator("#pm-card-rate [data-rate]").count() == 2,
+              "a logged rewrite asks Good rewrite? with 👍 and 👎 on the card")
+        page.click("#pm-card-rate [data-rate='up']")
+        check(ev("window.__fb.length") == 1 and ev("window.__fb[0][0]") == "log_1" and ev("window.__fb[0][1]") == "up",
+              "👍 sends the rating for that rewrite")
+        check(page.inner_text("#pm-card-rate").strip() == "Thanks, that helps.", "and says thanks in its place")
+        ev("showDiffModal(cardResult)")
+        check(page.locator("#pm-card-rate").count() == 0, "once rated, it is not asked again")
+        page.click("#pm-card-accept")
+        page.wait_for_function("pillApplied?.undo", timeout=3000)
+        check(page.is_hidden("#pm-trigger .pm-pill-rate"), "nor in the pill after Replace")
+        ev("clearApplied(); H.type(H.ORIG); H.stream(); H.done(false)")
+        check(page.locator("#pm-card-rate").count() == 0, "a rewrite the server did not log has nothing to rate against")
+        ev("closeCard(); H.type(H.ORIG); H.stream(); H.done(); H.type('something else entirely')")
+        page.wait_for_function("cardStale === true")
+        check(page.locator("#pm-card-rate").count() == 0, "and a stale rewrite is not asked about")
+        ev("closeCard()")
+
+        # ── a card opened while the last one fades: its buttons work ──
+        ev("H.type(H.ORIG); H.stream(); H.done(); closeCard(); H.type(H.ORIG); H.stream(); H.done(); 0")
+        check(ev("document.querySelectorAll('[id=\"pm-card-accept\"]').length") == 1, "the leaving card keeps no ids")
+        page.click("#pm-card-accept")
+        page.wait_for_function("document.getElementById('composer').textContent.startsWith('Show me how')", polling=100, timeout=3000)
+        check(True, "Replace on a card opened during the last one's fade still replaces")
+        ev("clearApplied(); closeCard(); H.type(H.ORIG)")
+
         # ── Undo after Replace ──
         def pill_text():
             return ev("document.querySelector('#pm-trigger .pm-pill-label').textContent.trim()")
@@ -467,6 +533,20 @@ def main():
         page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
         check(True, "deleted from the library elsewhere, the bookmark empties: the library is the truth")
 
+        # ⌘S from the chat box, where people type: it used to need focus in the card
+        ev("""async () => { cardSavePending.clear(); FAKE_API.prompts = FAKE_API.prompts.filter(p => p.content !== H.DRAFT);
+              await fetchSavedPrompts(); showDiffModal(cardResult); }""")
+        page.wait_for_selector("#pm-card-save[aria-pressed='false']", timeout=3000)
+        page.focus("#composer")
+        mod = "Meta" if ev("IS_MAC") else "Control"
+        page.keyboard.press(f"{mod}+s")
+        # Polled on a timer: rAF polling stalled here once a key went to the composer.
+        page.wait_for_function("document.getElementById('pm-card-save')?.getAttribute('aria-pressed') === 'true'", polling=100, timeout=3000)
+        check(ev("document.activeElement.id") == "composer", "⌘S in the chat box saves the open rewrite, and leaves the keyboard there")
+        # Unsave it again: the checks below start from an unsaved draft.
+        ev("""async () => { FAKE_API.prompts = FAKE_API.prompts.filter(p => p.content !== H.DRAFT);
+              await fetchSavedPrompts(); showDiffModal(cardResult); }""")
+
         ev("cardVersions = [cardResult, { ...cardResult, enhanced: FAKE.text.quick, mode: 'quick' }]; showDiffModal(cardVersions[1])")
         page.click("#pm-card-save")
         page.wait_for_selector("#pm-card-save[aria-pressed='true']", timeout=3000)
@@ -478,6 +558,12 @@ def main():
         check(ev("FAKE_API.prompts.filter(p => p.content === FAKE.text.quick).length") == 1,
               "pressing a filled bookmark shows the prompt in the library, and saves nothing twice")
         ev("togglePanel(false); closeCard()")
+        page.focus("#composer")
+        n = ev("FAKE_API.calls.filter(c => c.method === 'POST').length")
+        prevented = ev("""(() => { const e = new KeyboardEvent('keydown', { key: 's', metaKey: true, ctrlKey: true, bubbles: true, cancelable: true });
+                          document.getElementById('composer').dispatchEvent(e); return e.defaultPrevented; })()""")
+        check(not prevented and ev("FAKE_API.calls.filter(c => c.method === 'POST').length") == n,
+              "with no rewrite open, ⌘S is left to the browser")
 
         # ── screenshots, dark and light host ──
         if args.shots:

@@ -158,7 +158,7 @@ def main():
         check(ev("voiceState") == "idle", "the bin throws the transcript away")
         check(page.locator("#pm-toast-stack .pm-toast", has_text="discarded").count() >= 1, "and says so")
 
-        ev("window.__improved = null; enhanceVoiceTranscript = (v) => { window.__improved = v; }")
+        ev("window.__improved = null; enhanceVoiceTranscript = (v) => { window.__improved = v; }; 0")
         review()
         page.focus("#pm-voice-transcript")
         page.keyboard.press("Meta+Enter")

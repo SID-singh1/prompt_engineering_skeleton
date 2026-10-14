@@ -433,8 +433,10 @@ def main():
         check(page.is_hidden("#pm-card-used-list"), "the list starts folded")
         page.click("#pm-card-used-toggle")
         items = [t.replace("\n", " ") for t in page.locator("#pm-card-used-list .pm-card-used-item").all_inner_texts()]
-        check(len(items) == 2 and "close match" in items[0] and "loose match" in items[1],
-              f"each one says how strongly it matched, got {items}")
+        check(len(items) == 2 and "picked for you" in items[0] and "picked for you" in items[1],
+              f"each one says plainly why it is there, with no matcher scores, got {items}")
+        check(not any("match" in i for i in items) and page.inner_text("#pm-card-used-list .pm-card-used-head").strip().lower() == "context for this rewrite",
+              "and the list is headed as the rewrite's context")
         n = len(server["stream"])
         page.click("#pm-card-used-list [data-pm-drop='s2']")
         page.wait_for_function(f"document.querySelector('#pm-card .pm-card-versions')?.textContent.includes('2 of 2')", timeout=8000)
