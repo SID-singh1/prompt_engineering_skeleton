@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Prompt Memory",
   "version": "4.12.0",
-  "description": "One-click prompt engineering — turns your raw thoughts into precision-crafted LLM queries. Free, with your own API key.",
+  "description": "Turn a rough draft into a clear prompt in one click, right in ChatGPT, Claude, Gemini, Perplexity and Grok.",
   "icons": {
     "16": "icon16.png",
     "48": "icon48.png",

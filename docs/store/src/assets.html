@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Prompt Memory store assets</title>
+<!--
+  Source for the store images. render_assets.py screenshots each element by id:
+    #icon128   128x128, artwork 96x96 centred, transparent padding (store icon)
+    #logo512   512x512 (profile picture)
+    #small     440x280 small promo tile
+    #marquee   1400x560 marquee tile
+-->
+<style>
+  :root {
+    --bg: #0b0d10;
+    --mint: #50c8a8;
+    --text: #eef2f1;
+    --muted: #9aa6a2;
+    --font: "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, Roboto, Arial, sans-serif;
+  }
+  html, body { margin: 0; background: transparent; }
+  body { display: flex; flex-direction: column; gap: 40px; padding: 20px; align-items: flex-start; }
+  .box { position: relative; overflow: hidden; }
+  #icon128 { width: 128px; height: 128px; display: grid; place-items: center; }
+  #logo512 { width: 512px; height: 512px; display: grid; place-items: center; }
+  .tile { background:
+      radial-gradient(60% 90% at 18% 50%, rgba(80, 200, 168, .16), transparent 70%),
+      radial-gradient(50% 80% at 95% 10%, rgba(113, 89, 235, .14), transparent 70%),
+      var(--bg);
+    color: var(--text); font-family: var(--font); display: flex; align-items: center; }
+  #small { width: 440px; height: 280px; padding: 0 30px; box-sizing: border-box; gap: 24px; }
+  #marquee { width: 1400px; height: 560px; padding: 0 110px; box-sizing: border-box; gap: 80px; }
+  .words h1 { margin: 0; font-weight: 750; letter-spacing: -.02em; line-height: 1.08; }
+  .words p { margin: 0; color: var(--muted); line-height: 1.4; }
+  .words .accent { background: linear-gradient(90deg, #38cdaf, #4b97ca 55%, #7159eb); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  #small .words h1 { font-size: 30px; }
+  #small .words p { margin-top: 10px; font-size: 14.5px; }
+  #marquee .words h1 { font-size: 72px; }
+  #marquee .words p { margin-top: 20px; font-size: 27px; }
+  /* The chat box with the rewrite in it, and the card above: what it does, drawn. */
+  .demo { display: flex; flex-direction: column; gap: 14px; width: 520px; flex: none; }
+  .card { border-radius: 16px; background: #121519; border: 1px solid rgba(255,255,255,.09); padding: 18px 20px 16px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.7); }
+  .card .lab { font: 700 13px var(--font); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .card .lab i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 4px rgba(80,200,168,.18); }
+  .card .was { margin-top: 12px; color: var(--muted); font-size: 19px; }
+  .card .row { margin-top: 16px; display: flex; gap: 10px; }
+  .card .btn { padding: 8px 16px; border-radius: 10px; font: 600 16px var(--font); border: 1px solid rgba(255,255,255,.12); color: var(--text); }
+  .card .btn.go { background: var(--mint); color: #062a22; border-color: transparent; }
+  .chat { border-radius: 22px; background: #23262c; border: 1px solid rgba(255,255,255,.12); padding: 18px 70px 18px 22px; position: relative; font-size: 19px; line-height: 1.45; color: var(--text); }
+  .chat .send { position: absolute; right: 14px; bottom: 14px; width: 40px; height: 40px; border-radius: 50%; background: #d97757; display: grid; place-items: center; color: #fff; font-size: 20px; }
+</style>
+</head>
+<body>
+
+<!-- The mark: the gradient disc and ⊕ of the current icon, inside an orbit with
+     a point of light on it, as the ⊕ on the page animates. -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#38CDAF"/><stop offset=".5" stop-color="#4B97CA"/><stop offset="1" stop-color="#7159EB"/>
+    </linearGradient>
+    <radialGradient id="spark">
+      <stop offset="0" stop-color="#ffffff"/><stop offset=".45" stop-color="#d9fff5"/><stop offset="1" stop-color="#50c8a8" stop-opacity="0"/>
+    </radialGradient>
+    <symbol id="mark" viewBox="0 0 96 96">
+      <!-- A chat bubble with a sparkle in it: a rough message, made clear. -->
+      <rect width="96" height="96" rx="24" fill="url(#g)"/>
+      <path d="M30 20h36a14 14 0 0 1 14 14v22a14 14 0 0 1-14 14H44l-14 11v-11a14 14 0 0 1-14-14V34a14 14 0 0 1 14-14z" fill="#fff"/>
+      <path d="M48 28.5c1.6 7.6 4.4 10.4 12 12-7.6 1.6-10.4 4.4-12 12-1.6-7.6-4.4-10.4-12-12 7.6-1.6 10.4-4.4 12-12z" fill="url(#g)"/>
+      <path d="M62.5 24c.6 2.8 1.6 3.8 4.4 4.4-2.8.6-3.8 1.6-4.4 4.4-.6-2.8-1.6-3.8-4.4-4.4 2.8-.6 3.8-1.6 4.4-4.4z" fill="url(#g)"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div id="icon128" class="box"><svg width="96" height="96"><use href="#mark"/></svg></div>
+
+<div id="logo512" class="box">
+  <svg width="512" height="512"><use href="#mark"/></svg>
+</div>
+
+<div id="ext16" class="box" style="width:16px;height:16px"><svg width="16" height="16"><use href="#mark"/></svg></div>
+<div id="ext48" class="box" style="width:48px;height:48px"><svg width="48" height="48"><use href="#mark"/></svg></div>
+
+<div id="small" class="box tile">
+  <svg width="120" height="120" style="flex:none"><use href="#mark"/></svg>
+  <div class="words">
+    <h1>Better prompts,<br><span class="accent">one click.</span></h1>
+    <p>Right in ChatGPT, Claude, Gemini, Perplexity and Grok.</p>
+  </div>
+</div>
+
+<div id="marquee" class="box tile">
+  <div class="words" style="flex:1">
+    <svg width="110" height="110" style="margin-bottom:26px"><use href="#mark"/></svg>
+    <h1>Better prompts,<br><span class="accent">one click.</span></h1>
+    <p>Rough draft in, clear prompt out, right where you chat.<br>Save your prompts once, reuse them anywhere with //.</p>
+  </div>
+  <div class="demo">
+    <div class="card">
+      <div class="lab"><i></i>Rewrite · Deep</div>
+      <div class="was" style="color:var(--text)">How do I sort a list of Python dictionaries by a key when some of them don't have it? Explain the options.</div>
+      <div class="row"><span class="btn go">Replace draft</span><span class="btn">Shorter</span><span class="btn">Open-ended</span></div>
+    </div>
+    <div class="chat" style="color:var(--muted)">hw do i sort dicts by a key in python, some dont have it<span class="send">↑</span></div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -217,7 +217,9 @@ def enhance_prompt(
         )
 
     logger.info(f"\n🎯 /enhance — user={user_id[:8]}... mode={request.mode} tier={tier} ({used}/{limit})")
-    logger.info(f"   Prompt: \"{request.prompt[:80]}...\"")
+    # The length, not the text: server logs are readable by anyone who runs the
+    # Space, and the privacy policy says no one at Prompt Memory reads prompts.
+    logger.info(f"   Prompt: {len(request.prompt)} chars")
 
     ctx = _build_enhance_context(request, user_id, _fetch_saved_prompt)
 
