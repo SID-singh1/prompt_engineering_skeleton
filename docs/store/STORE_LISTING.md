@@ -23,7 +23,12 @@ ringed plus, the same as its toolbar icon, the popup header and the privacy
 page. Source: `src/assets.html`; rerun `python docs/store/src/render_assets.py`
 after a change.
 
-Screenshots you take yourself on the real sites (section 2).
+`screenshot-1280x800.png`: one ready-made screenshot (Store listing →
+Screenshots): the real extension's card, with a rewrite, Replace draft, the
+other styles and the context it used, over a rough draft in a chat box. It
+was taken on the repo's test chat page, not on chatgpt.com, so it shows no
+site's branding. One is enough to submit; real-site shots (section 2) can be
+added later.
 
 ---
 
