@@ -18,13 +18,10 @@ Assets in this folder:
 | `logo-512.png` | 512×512 version of the mark | Your developer / Google profile picture |
 | `promo-small-440x280.png` | Small promo tile | Store listing → Small promo tile (required) |
 | `promo-marquee-1400x560.png` | Marquee tile | Store listing → Marquee promo tile (optional) |
-| `icon16.png`, `icon48.png` | The same mark for the toolbar and the Extensions page | Already copied into `extension/` (with `store-icon-128.png` as `icon128.png`) |
-
-The mark: a white chat bubble with a sparkle in it, on the mint-to-violet
-gradient tile. The product lives in the chat box and makes what you type
-clearer; it reads at 16px. The ⊕ button on chat pages is unchanged. Source:
-`src/assets.html`; rerun `python docs/store/src/render_assets.py` after a
-change and copy the three icons into `extension/` again.
+The mark is the extension's own ⊕: the mint-to-violet tile with a white
+ringed plus, the same as its toolbar icon, the popup header and the privacy
+page. Source: `src/assets.html`; rerun `python docs/store/src/render_assets.py`
+after a change.
 
 Screenshots you take yourself on the real sites (section 2).
 

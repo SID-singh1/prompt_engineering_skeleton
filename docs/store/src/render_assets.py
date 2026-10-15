@@ -13,9 +13,6 @@ SHOTS = {
     "logo512": "logo-512.png",
     "small": "promo-small-440x280.png",
     "marquee": "promo-marquee-1400x560.png",
-    # The extension's own icons, the same mark (copied into extension/).
-    "ext16": "icon16.png",
-    "ext48": "icon48.png",
 }
 
 with sync_playwright() as p:
