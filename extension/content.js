@@ -2257,6 +2257,7 @@ function libBodyHtml() {
       row("pm-tracking-toggle", promptTrackingEnabled, "Prompt tracking", "Logs the prompts you send on these sites to improve future suggestions.") +
       row("pm-context-toggle", contextEnabled, "Conversation context", "Reads recent messages in this chat when you ask for a rewrite, for that request only.") +
       row("pm-slash-toggle", slashEnabled, "Type // for saved prompts", "Opens your saved prompts at the cursor in the chat box.") +
+      row("pm-select-save-toggle", selectSaveEnabled, "Save selected text", "Select text on the page, such as an answer, to save it to your library as context.") +
       row("pm-tips-toggle", !tips.off, "Tips on the page", "Short hints the first time you use each feature.") +
       `</div>`;
   }
@@ -2856,6 +2857,7 @@ function onLibraryChange(e) {
   if (id === "pm-tracking-toggle") { promptTrackingEnabled = e.target.checked; storageSet({ pm_tracking: promptTrackingEnabled }); }
   if (id === "pm-context-toggle") { contextEnabled = e.target.checked; storageSet({ pm_context: contextEnabled }); }
   if (id === "pm-slash-toggle") { slashEnabled = e.target.checked; storageSet({ pm_slash: slashEnabled }); }
+  if (id === "pm-select-save-toggle") { selectSaveEnabled = e.target.checked; storageSet({ [SELECT_SAVE_KEY]: selectSaveEnabled }); if (!selectSaveEnabled) hideSelectSave(); }
   if (id === "pm-tips-toggle") { tips.off = !e.target.checked; storageSet({ pm_tips_off: tips.off }); if (tips.off) hideTip(); }
 }
 
@@ -6995,6 +6997,113 @@ function updateVoiceUI(recording) {
     btn.title = recording ? "Stop recording" : "Voice to Prompt";
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+// SAVE A SELECTION: select text on the page, save it as context
+// ══════════════════════════════════════════════════════════════
+//
+// An answer worth keeping, a spec, a bio: select it and a small button
+// offers to save it to the library, where it can be attached as context or
+// inserted with //. Nothing is sent until the button is pressed. Not for
+// text selected inside the chat box (that is the user's own draft, being
+// edited) or inside our own panels.
+
+const SELECT_SAVE_KEY = "pm_select_save";
+const SELECT_MIN_CHARS = 12;
+const SELECT_MAX_CHARS = 8000;
+let selectSaveEnabled = true;
+let selectSaveText = "";
+
+try {
+  storageGet(SELECT_SAVE_KEY, (r) => { selectSaveEnabled = r?.[SELECT_SAVE_KEY] !== false; });
+} catch (error) { onOrphaned(error); }
+
+function selectSaveButton() {
+  let b = document.getElementById("pm-select-save");
+  if (!b) {
+    b = document.createElement("button");
+    b.type = "button";
+    b.id = "pm-select-save";
+    b.className = "pm-select-save";
+    b.innerHTML = `${LIB_ICON.plus}<span>Save as context</span>`;
+    b.setAttribute("aria-label", "Save the selected text to your library as context");
+    // mousedown, not click: a click would clear the selection on its way in.
+    b.addEventListener("mousedown", (e) => { e.preventDefault(); e.stopPropagation(); });
+    b.addEventListener("click", (e) => { e.stopPropagation(); saveSelection(); });
+    storageGet("pm_theme", (r) => b.setAttribute("data-pm-theme", r.pm_theme || "dark"));
+    document.body.appendChild(b);
+  }
+  return b;
+}
+
+function hideSelectSave() {
+  const b = document.getElementById("pm-select-save");
+  if (b) b.hidden = true;
+  selectSaveText = "";
+}
+
+/** After a selection settles: offer to save it, beside its end. */
+function checkSelection() {
+  if (!selectSaveEnabled || orphaned) { hideSelectSave(); return; }
+  const sel = window.getSelection();
+  const text = sel && !sel.isCollapsed ? sel.toString().trim() : "";
+  if (text.length < SELECT_MIN_CHARS || text.length > SELECT_MAX_CHARS) { hideSelectSave(); return; }
+  const node = sel.anchorNode?.nodeType === 1 ? sel.anchorNode : sel.anchorNode?.parentElement;
+  const composer = findComposer();
+  if (!node || node.closest?.("[id^='pm-']") || (composer && composer.contains(node))) {
+    hideSelectSave();
+    return;
+  }
+  const rects = sel.getRangeAt(0).getClientRects();
+  const last = rects[rects.length - 1];
+  if (!last) { hideSelectSave(); return; }
+  selectSaveText = text;
+  const b = selectSaveButton();
+  b.hidden = false;
+  const w = b.offsetWidth, h = b.offsetHeight, m = 8;
+  const below = last.bottom + 8 + h <= window.innerHeight - m;
+  b.style.left = Math.round(Math.max(m, Math.min(last.right - w / 2, window.innerWidth - w - m))) + "px";
+  b.style.top = Math.round(below ? last.bottom + 8 : Math.max(m, last.top - h - 8)) + "px";
+}
+
+async function saveSelection() {
+  const text = selectSaveText;
+  hideSelectSave();
+  window.getSelection()?.removeAllRanges();
+  if (!text) return;
+  if (!libSignedIn) {
+    showToast("Sign in to save text to your library.", "info", { label: "Sign in", run: () => openSettings("signin") });
+    return;
+  }
+  const outcome = await createSavedPrompt(text, "", []);
+  if (outcome === "failed") { showToast("Couldn’t save it. Check your connection and try again.", "error"); return; }
+  if (outcome === "duplicate") {
+    showToast("Already in your library", "info", { label: "Show", run: () => showInLibrary(text) });
+    return;
+  }
+  const id = lastSavedPromptId;
+  statsBump("saves");
+  await fetchSavedPrompts();
+  if (panelOpen) renderLibrary();
+  showToast("Saved to your library. Find it under Saved, or type // to use it.", "success",
+    id ? { label: "Undo", run: () => undoSave(id) } : null);
+}
+
+// A selection settles on mouseup (a drag or double-click) or keyup (Shift and
+// the arrows). Anything else that moves the page puts the button away.
+document.addEventListener("mouseup", (e) => {
+  if (e.target?.closest?.("#pm-select-save")) return;
+  setTimeout(checkSelection, 0);
+}, true);
+document.addEventListener("keyup", (e) => {
+  if (e.key === "Escape") { hideSelectSave(); return; }
+  if (e.shiftKey) setTimeout(checkSelection, 0);
+}, true);
+document.addEventListener("mousedown", (e) => {
+  if (!e.target?.closest?.("#pm-select-save")) hideSelectSave();
+}, true);
+window.addEventListener("scroll", hideSelectSave, { capture: true, passive: true });
+window.addEventListener("resize", hideSelectSave);
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS

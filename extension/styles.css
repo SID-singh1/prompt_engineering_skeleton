@@ -3083,6 +3083,32 @@
 }
 
 
+/* ── Save a selection: the button beside selected text ── */
+.pm-select-save {
+    all: unset;
+    position: fixed;
+    z-index: var(--pm-z-toast);
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 12px 0 9px;
+    border-radius: 15px;
+    border: 1px solid var(--pm-con-border);
+    background: var(--pm-con-bg-solid);
+    box-shadow: var(--pm-con-shadow-lg);
+    color: var(--pm-con-text);
+    font: 600 12.5px/1 var(--pm-font);
+    cursor: pointer;
+    animation: pm-peek-in .12s ease-out;
+}
+.pm-select-save[hidden] { display: none; }
+.pm-select-save svg { width: 14px; height: 14px; color: var(--pm-accent); }
+.pm-select-save:hover { border-color: var(--pm-accent); }
+.pm-select-save:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { .pm-select-save { animation: none; } }
+
 /* ── Retrieved context: untick, then Retry ── */
 .pm-card-used-off .pm-card-used-name,
 .pm-card-used-off .pm-card-used-why { text-decoration: line-through; opacity: .55; }
