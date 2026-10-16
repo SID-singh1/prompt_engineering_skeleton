@@ -270,13 +270,13 @@ long-lived consent ledger is still needed before claiming permanent auditability
 | Shortcut | Action |
 |---|---|
 | `Ctrl+Shift+E` | Enhance the current prompt instantly |
-| `Ctrl+Shift+Space` | Voice-to-Prompt |
+| `Alt+Shift+V` (`Control+Shift+V` on macOS) | Voice-to-Prompt |
 
 ---
 
 ## 🎙️ Voice-to-Prompt
 
-Press `Ctrl+Shift+Space` (or `⌘+Shift+Space` on macOS) to record a spoken draft. (It was `Ctrl+Shift+V`, which is paste as plain text; change it at `chrome://extensions/shortcuts` if another app has taken it.) The extension records a short WebM audio clip, sends it to Whisper for transcription, then gives you an editable transcript before any enhancement request is made. You can discard it, put it into the composer as a draft, or enhance the corrected version.
+Press `Alt+Shift+V` (or `Control+Shift+V` on macOS) to record a spoken draft. (Not `Ctrl/⌘+Shift+V`, which is paste as plain text; change it at `chrome://extensions/shortcuts` if another app has taken it.) The extension records a short WebM audio clip, sends it to Whisper for transcription, then gives you an editable transcript before any enhancement request is made. You can discard it, put it into the composer as a draft, or enhance the corrected version.
 
 Audio is used only for the transcription request and is not stored by Prompt Memory. The private builder dashboard records safe operational metadata—such as transcription duration, success/failure, and latency—without transcript text or audio. Voice transcription requires a signed-in account so the backend cannot be used as an anonymous audio proxy.
 
