@@ -33,6 +33,30 @@ class MemorizeRequest(BaseModel):
     user_id: str
     prompt: str
 
+class ReusedMatch(BaseModel):
+    """An auto-matched saved prompt the user kept, by id."""
+    id: str
+    score: Optional[float] = None
+
+
+class ReusedPattern(BaseModel):
+    """A past pattern the user kept, as the server reported it."""
+    original: str
+    refined: str
+    score: Optional[float] = None
+
+
+class ReuseContext(BaseModel):
+    """
+    The retrieved context of an earlier rewrite, as the user left it on the
+    card. Sent on a retry or a style change so the same draft is rewritten
+    against the same context, minus what the user untucked: no new search,
+    straight to the model.
+    """
+    matched: List[ReusedMatch] = []
+    passive: List[ReusedPattern] = []
+
+
 class EnhanceRequest(BaseModel):
     """
     The main enhance endpoint payload.
@@ -63,6 +87,9 @@ class EnhanceRequest(BaseModel):
     byok_provider: Optional[str] = None   # "groq" | "gemini" | "openrouter"
     byok_key: Optional[str] = None
     byok_model: Optional[str] = None
+
+    # Present: reuse this context instead of retrieving (see ReuseContext).
+    reuse_context: Optional[ReuseContext] = None
 
 class FeedbackRequest(BaseModel):
     """Thumbs up/down on an enhanced prompt."""

@@ -3082,3 +3082,32 @@
     scrollbar-color: rgba(255, 255, 255, .16) transparent;
 }
 
+
+/* ── Retrieved context: untick, then Retry ── */
+.pm-card-used-off .pm-card-used-name,
+.pm-card-used-off .pm-card-used-why { text-decoration: line-through; opacity: .55; }
+.pm-card-used-drop.pm-card-used-undrop { color: var(--pm-accent); }
+.pm-card-used-retry {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+    padding: 8px 0 2px;
+    border-top: 1px solid var(--pm-border);
+    color: var(--pm-text-secondary);
+    font: 12px/1.4 var(--pm-font);
+    list-style: none;
+}
+.pm-card-used-retry span { flex: 1; min-width: 0; }
+.pm-card-used-retry button {
+    all: unset;
+    box-sizing: border-box;
+    padding: 5px 11px;
+    border-radius: 7px;
+    font: 600 12px/1.2 var(--pm-font);
+    cursor: pointer;
+}
+.pm-card-used-retry .pm-card-used-go { background: var(--pm-accent); color: #06140f; }
+.pm-card-used-retry .pm-card-used-cancel { color: var(--pm-text-secondary); }
+.pm-card-used-retry button:focus-visible { outline: 2px solid var(--pm-accent); outline-offset: 1px; }
+.pm-card-ctx-pending { margin-left: 4px; color: var(--pm-danger); font-weight: 600; }

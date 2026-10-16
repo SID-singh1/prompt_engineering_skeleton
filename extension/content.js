@@ -435,6 +435,8 @@ async function enhancePromptStream(prompt, selectedPromptIds, onToken, onDone, i
   if (inputMetadata.excludedIds && inputMetadata.excludedIds.length) {
     body.excluded_prompt_ids = inputMetadata.excludedIds;
   }
+  // A rerun of a draft: its context as the user left it, and no new search.
+  if (inputMetadata.reuseContext) body.reuse_context = inputMetadata.reuseContext;
   if (inputMetadata.inputMethod === "voice") {
     body.input_method = "voice";
     if (Number.isFinite(inputMetadata.inputDurationSeconds) && inputMetadata.inputDurationSeconds > 0) {
@@ -4324,6 +4326,10 @@ let cardRerunFrom = null;
 let cardStreamingStyle = "";
 // Whether the list of saved prompts under the rewrite is open. Per draft.
 let cardUsedOpen = false;
+// Retrieved context the user has unticked on the card and not yet retried
+// without: saved-prompt ids, and past patterns as "p:" + their index. Nothing
+// runs until they press Retry, however many they untick.
+let cardDropPending = new Set();
 // Set when the draft improves a saved prompt rather than the chat box text:
 // { id, title, content }. Its verb is "Update saved prompt", and the chat box
 // has no say in it — it is neither the source nor the destination.
@@ -4889,6 +4895,7 @@ function closeCard() {
   cardRerunFrom = null;
   cardStreamingStyle = "";
   cardUsedOpen = false;
+  cardDropPending = new Set();
   cardSubject = null;
   draftStore.clear();
   renderPill();
@@ -5192,9 +5199,54 @@ function showDiffModal(result) {
     if (list) list.hidden = !cardUsedOpen;
     positionCard();
   });
-  card.querySelectorAll("[data-pm-drop]").forEach((b) =>
-    b.addEventListener("click", () => rerunWithout(b.dataset.pmDrop, b.dataset.pmTitle || "")));
+  // Unticking only marks it: several can be dropped, and nothing is spent,
+  // until Retry. (Each "Don't use" used to start a rewrite on its own.)
+  card.querySelectorAll("[data-pm-drop]").forEach((b) => b.addEventListener("click", () => {
+    const key = b.dataset.pmDrop;
+    if (cardDropPending.has(key)) cardDropPending.delete(key); else cardDropPending.add(key);
+    showDiffModal(cardResult);
+  }));
+  document.getElementById("pm-card-retry-ctx")?.addEventListener("click", retryWithoutDropped);
+  document.getElementById("pm-card-retry-cancel")?.addEventListener("click", () => {
+    cardDropPending = new Set();
+    showDiffModal(cardResult);
+  });
   renderPill();
+}
+
+/**
+ * Rewrite the same text again, in the same style, without what the user
+ * unticked. The rest of the retrieved context is sent back as it was, so the
+ * server goes straight to the model instead of searching again.
+ */
+async function retryWithoutDropped() {
+  if (cardState !== "ready" || !cardResult || cardStale || cardResult.direct || !cardDropPending.size) return;
+  const d = cardResult.context_details || {};
+  const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
+  const droppedNow = (d.auto_matched_prompts || []).filter((m) => m.id && cardDropPending.has(m.id))
+    .map((m) => ({ id: m.id, title: flat(m.title) || flat(m.content).slice(0, 40) }));
+  const droppedPatterns = new Set([...cardDropPending].filter((k) => k.startsWith("p:")).map((k) => Number(k.slice(2))));
+  const patternsLeftOut = (d.passive_patterns || []).filter((_, i) => droppedPatterns.has(i))
+    .map((pm) => ({ title: "Past prompt: " + flat(pm.original).slice(0, 30) }));
+  const excluded = [...(cardResult.excluded || []).filter((x) => !droppedNow.some((y) => y.id === x.id)), ...droppedNow, ...patternsLeftOut];
+  cardDropPending = new Set();
+  await rerunDraft(STYLES.includes(cardResult.mode) ? cardResult.mode : currentMode, excluded, { droppedPatterns });
+}
+
+/**
+ * The context `result` was rewritten with, minus what is excluded: sent back
+ * with a rerun so the server skips retrieval. null when the server did not
+ * report it, in which case it searches as before.
+ */
+function reuseContextFrom(result, excluded = [], droppedPatterns = new Set()) {
+  const d = result?.context_details;
+  if (!d) return null;
+  const out = new Set(excluded.map((x) => x.id).filter(Boolean));
+  return {
+    matched: (d.auto_matched_prompts || []).filter((m) => m.id && !out.has(m.id)).map((m) => ({ id: m.id, score: m.score })),
+    passive: (d.passive_patterns || []).filter((_, i) => !droppedPatterns.has(i))
+      .map((pm) => ({ original: pm.original, refined: pm.refined, score: pm.score })),
+  };
 }
 
 /**
@@ -5214,7 +5266,12 @@ function cardUsedParts(result) {
   const d = result.context_details || {};
   const items = [
     ...(d.selected_prompts || []).map((p) => ({ ...p, kind: "attached" })),
-    ...(d.auto_matched_prompts || []).map((p) => ({ ...p, kind: "matched" })),
+    ...(d.auto_matched_prompts || []).map((p) => ({ ...p, kind: "matched", key: p.id })),
+    // Past rewrites the engine found similar: picked for you too, so they
+    // can be left out too.
+    ...(d.passive_patterns || []).map((pm, i) => ({
+      kind: "pattern", key: "p:" + i, title: "", content: pm.refined || pm.original, from: pm.original,
+    })),
   ];
   const left = result.excluded || [];
   if (!items.length && !left.length) {
@@ -5223,7 +5280,7 @@ function cardUsedParts(result) {
     return n ? { chip: `<span class="pm-card-ctx" title="Saved prompts this rewrite drew on"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>${n} used</span>`, list: "" } : none;
   }
   const flat = (t) => String(t || "").replace(/\s+/g, " ").trim();
-  const clip = (t, n) => (t.length > n ? t.slice(0, n - 1) + "\u2026" : t);
+  const clip = (t, k) => (t.length > k ? t.slice(0, k - 1) + "\u2026" : t);
   const name = (p) => flat(p.title) || clip(flat(p.content), 40) || "Saved prompt";
   const summary = items.length
     ? escHtml(clip(name(items[0]), 24)) + (items.length > 1 ? ` +${items.length - 1}` : "")
@@ -5232,13 +5289,17 @@ function cardUsedParts(result) {
   const rows = items.map((p) => {
     // Said the way a person would: "close match" and "loose match" named the
     // matcher's score, and testers did not know what to make of it.
-    const why = p.kind === "attached" ? "you added it" : "picked for you";
+    const why = p.kind === "attached" ? "you added it"
+      : p.kind === "pattern" ? `picked for you, from a past prompt: \u201c${escHtml(clip(flat(p.from), 40))}\u201d`
+      : "picked for you";
     const preview = p.title && p.content ? " \u00b7 " + escHtml(clip(flat(p.content), 80)) : "";
-    const drop = p.kind === "matched" && p.id && !cardStale
-      ? `<button type="button" class="pm-card-used-drop" data-pm-drop="${escHtml(p.id)}" data-pm-title="${escHtml(name(p))}" ` +
-        `title="Rewrite again without this saved prompt">Don\u2019t use</button>`
+    const off = p.key && cardDropPending.has(p.key);
+    // What was picked for you can be left out; what you added is yours.
+    const drop = p.key && !cardStale
+      ? `<button type="button" class="pm-card-used-drop${off ? " pm-card-used-undrop" : ""}" data-pm-drop="${escHtml(p.key)}" ` +
+        `aria-pressed="${!off}" title="${off ? "Use it again" : "Leave it out of the next retry"}">${off ? "Use" : "Don\u2019t use"}</button>`
       : "";
-    return `<li class="pm-card-used-item pm-card-used-${p.kind}">` +
+    return `<li class="pm-card-used-item pm-card-used-${p.kind}${off ? " pm-card-used-off" : ""}">` +
       `<span class="pm-card-used-icon" aria-hidden="true">${p.kind === "attached" ? LIB_ICON.clip : CARD_SPARK_SVG}</span>` +
       `<span class="pm-card-used-text"><span class="pm-card-used-name">${escHtml(clip(name(p), 60))}</span>` +
       `<span class="pm-card-used-why">${why}${preview}</span></span>${drop}</li>`;
@@ -5246,12 +5307,18 @@ function cardUsedParts(result) {
   const leftOut = left.length
     ? `<li class="pm-card-used-left">Left out: ${left.map((x) => escHtml(clip(flat(x.title) || "a saved prompt", 40))).join(", ")}</li>`
     : "";
+  const n = cardDropPending.size;
+  const retry = n
+    ? `<li class="pm-card-used-retry"><span>${n} left out. Nothing is searched again.</span>` +
+      `<button type="button" class="pm-card-used-cancel" id="pm-card-retry-cancel">Cancel</button>` +
+      `<button type="button" class="pm-card-used-go" id="pm-card-retry-ctx">Retry without ${n === 1 ? "it" : "them"}</button></li>`
+    : "";
   return {
     chip: `<button type="button" class="pm-card-ctx pm-card-used-toggle" id="pm-card-used-toggle" aria-expanded="${cardUsedOpen}" ` +
       `aria-controls="pm-card-used-list" title="${all}" aria-label="${all}"><span class="pm-card-used-arrow" aria-hidden="true">\u21B3</span>` +
-      `<span class="pm-card-ctx-name">${summary}</span><span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
+      `<span class="pm-card-ctx-name">${summary}</span>${n ? `<span class="pm-card-ctx-pending">\u2212${n}</span>` : ""}<span class="pm-card-used-caret" aria-hidden="true">\u25BE</span></button>`,
     list: `<ul class="pm-card-used-list" id="pm-card-used-list" aria-label="Context for this rewrite"${cardUsedOpen ? "" : " hidden"}>` +
-      `<li class="pm-card-used-head">Context for this rewrite</li>${rows}${leftOut}</ul>`,
+      `<li class="pm-card-used-head">Context for this rewrite</li>${rows}${leftOut}${retry}</ul>`,
   };
 }
 
@@ -5332,7 +5399,8 @@ async function rerunWithout(id, title) {
 }
 
 /** A new version of this draft; the versions already made are kept. */
-async function rerunDraft(style, excluded = []) {
+async function rerunDraft(style, excluded = [], opts = {}) {
+  const droppedPatterns = opts.droppedPatterns || new Set();
   tipDone("card");   // they found the style buttons
   if (enhanceInFlight) {
     showToast("Already enhancing \u2014 hang on a moment.", "info");
@@ -5344,6 +5412,7 @@ async function rerunDraft(style, excluded = []) {
   }
   const original = cardVersions[0]?.original || cardResult.original || cardOriginal;
   if (!original) return;
+  const from = cardResult;   // whose context the rerun reuses
   const route = await resolveEnhanceRoute();
   // The user may have inserted, discarded or edited while the worker answered.
   if (!route || cardState !== "ready" || isStaleAgainstComposer()) return;
@@ -5362,8 +5431,9 @@ async function rerunDraft(style, excluded = []) {
   try {
     if (route.route === "direct") await runDirectEnhance(original, route, style);
     else await runBackendEnhance(original, {
-      excludedIds: [...excluded.map((x) => x.id), ...(cardSubject ? [cardSubject.id] : [])],
+      excludedIds: [...excluded.map((x) => x.id).filter(Boolean), ...(cardSubject ? [cardSubject.id] : [])],
       excluded,
+      reuseContext: reuseContextFrom(from, excluded, droppedPatterns),
     }, style);
   } catch (err) {
     console.error("Prompt Memory: rerun failed", err);
