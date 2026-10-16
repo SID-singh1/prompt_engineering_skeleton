@@ -38,8 +38,8 @@
     },
     "voice-prompt": {
       "suggested_key": {
-        "default": "Ctrl+Shift+Space",
-        "mac": "Command+Shift+Space"
+        "default": "Alt+Shift+V",
+        "mac": "MacCtrl+Shift+V"
       },
       "description": "Voice to Prompt"
     }

@@ -1572,7 +1572,7 @@ def test_every_listed_chord_is_one_the_code_answers():
     listed = _shortcuts_block()
     for chord, handler in (
         ("${MOD_SHIFT}E", 'e.code === "KeyE"'),
-        ("VOICE_KEY", 'e.code === "Space"'),
+        ("VOICE_KEY", 'voiceChord && e.code === "KeyV"'),
         ("${MOD_SHIFT}L", 'e.code === "KeyL"'),
         ("${MOD_SHIFT}P", 'e.code === "KeyP"'),
         ("CMD_ENTER", 'e.key === "Enter"'),
@@ -1831,9 +1831,14 @@ def test_voice_no_longer_takes_paste_as_plain_text():
     import json
     manifest = json.loads(MANIFEST)
     key = manifest["commands"]["voice-prompt"]["suggested_key"]
-    assert key == {"default": "Ctrl+Shift+Space", "mac": "Command+Shift+Space"}
-    assert 'e.code === "KeyV"' not in CONTENT_JS, "the page still swallows paste as plain text"
-    assert "const VOICE_KEY = `${MOD_SHIFT}Space`;" in CONTENT_JS
+    # V for voice, as E is Improve, on modifiers paste does not use.
+    assert key == {"default": "Alt+Shift+V", "mac": "MacCtrl+Shift+V"}
+    assert 'const VOICE_KEY = IS_MAC ? "⌃⇧V" : "Alt+Shift+V";' in CONTENT_JS
+    # The page's own listener takes V only with those modifiers: never with
+    # Ctrl on Windows or ⌘ on a Mac, which is paste as plain text.
+    assert "e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey" in CONTENT_JS
+    assert "e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey" in CONTENT_JS
+    assert CONTENT_JS.count('e.code === "KeyV"') == 1
     caps = _function_bodies(CONTENT_JS, r"keyCaps")["keyCaps"]
     assert "key.slice(glyphs[0].length)" in caps, "⌘⇧Space would be drawn as S p a c e"
 

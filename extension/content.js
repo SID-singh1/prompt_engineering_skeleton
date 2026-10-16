@@ -79,12 +79,13 @@ const CMD_KEY = IS_MAC ? "⌘" : "Ctrl+";
 // Mac writes chords as glyphs, Windows and Linux spell them out. CMD_KEY
 // alone renders "Ctrl+⇧E" off-platform, which is neither convention.
 const MOD_SHIFT = IS_MAC ? "⌘⇧" : "Ctrl+Shift+";
-// Voice. It was ⌘⇧V / Ctrl+Shift+V, which is "paste as plain text" in Chrome
-// and most apps, and "paste and match style" on a Mac: taking it broke paste.
-// Space is free in Chrome on every platform and on ChatGPT, Claude and Gemini
-// (Gemini has ⌘⇧K, Claude and ChatGPT ⌘⇧O, S, C and ;), and holding it reads
-// as push to talk. Chrome lets the user change it at chrome://extensions/shortcuts.
-const VOICE_KEY = `${MOD_SHIFT}Space`;
+// Voice: V, as Improve is E. Not Ctrl/⌘+Shift+V, which is "paste as plain
+// text" in Chrome and most apps ("paste and match style" on a Mac): taking it
+// broke paste in the chat box. Alt+Shift+V on Windows and Linux, and
+// Control+Shift+V on a Mac (paste there is ⌘), are free in Chrome and on the
+// five chat sites. (It was Ctrl/⌘+Shift+Space for a while; testers kept
+// reaching for V.) Chrome lets the user change it at chrome://extensions/shortcuts.
+const VOICE_KEY = IS_MAC ? "⌃⇧V" : "Alt+Shift+V";
 // The same goes for the keys themselves. ↵ and ⇥ are what a Mac keyboard and
 // its menus print; on Windows the keycap says Enter and Tab, and "Ctrl+↵" was
 // half of each convention.
@@ -1466,6 +1467,16 @@ function setupKeyboardShortcut() {
   // the keystroke does arrive here.
   document.addEventListener("keydown", (e) => {
     if (orphaned || !extensionAlive()) { onOrphaned(); return; }
+    // Voice, with its own modifiers: Alt+Shift+V, or Control+Shift+V on a Mac.
+    // Ctrl/⌘+Shift+V is paste as plain text and must pass through untouched.
+    const voiceChord = IS_MAC
+      ? e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey
+      : e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey;
+    if (voiceChord && e.code === "KeyV") {
+      e.preventDefault();
+      toggleVoice();
+      return;
+    }
     // Accept Cmd on macOS as well as Ctrl. The manifest advertises
     // Command+Shift+E on Mac, but this listener only ever checked ctrlKey — so
     // the advertised Mac shortcut did nothing here.
@@ -1477,9 +1488,6 @@ function setupKeyboardShortcut() {
     if (e.code === "KeyE") {
       e.preventDefault();
       handleEnhance({ reveal: true });
-    } else if (e.code === "Space") {
-      e.preventDefault();
-      toggleVoice();
     } else if (e.code === "KeyL") {
       // The library, now that the trigger button runs an enhancement instead
       // of opening the panel.

@@ -67,7 +67,7 @@ SEE WHAT SHAPED A REWRITE
 The card names the saved prompts it used, including the ones Prompt Memory found by itself, and lets you rewrite again without any of them.
 
 ALSO
-Your rewrite History, voice input (Ctrl+Shift+Space), and a rating on each rewrite so it learns what works for you.
+Your rewrite History, voice input (Alt+Shift+V, or Control+Shift+V on a Mac), and a rating on each rewrite so it learns what works for you.
 
 FREE
 Sign in with Google for 15 free rewrites a day, your saved prompts and History on every computer. No card needed. Already have a Groq, Gemini or OpenRouter API key? Use it instead, with or without an account.
