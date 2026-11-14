@@ -42,7 +42,7 @@ function setButtonLoading(loading, message = 'Connecting to Google...') {
 
 // Redirect if already authenticated
 if (localStorage.getItem('pm_token')) {
-    window.location.href = 'dashboard.html';
+    window.location.href = '/dashboard';
 }
 
 // Handle Google OAuth
@@ -118,7 +118,7 @@ async function handleGoogleLogin() {
 
                 showAlert('Signed in successfully! Launching dashboard...', 'success');
                 setTimeout(() => {
-                    window.location.href = 'dashboard.html';
+                    window.location.href = '/dashboard';
                 }, 600);
             }
         } catch (err) {
@@ -138,7 +138,7 @@ async function handleGoogleLogin() {
                         localStorage.setItem('pm_email', finalData.email || 'user@promptmemory.ai');
                         localStorage.setItem('pm_user_id', finalData.user_id || '');
                         localStorage.removeItem('pm_guest_mode');
-                        window.location.href = 'dashboard.html';
+                        window.location.href = '/dashboard';
                         return;
                     }
                 } catch (_) {}
@@ -155,7 +155,7 @@ function handleGuestDemo() {
     localStorage.setItem('pm_guest_mode', 'true');
     localStorage.setItem('pm_email', 'guest.builder@promptmemory.ai');
     localStorage.setItem('pm_user_id', 'guest_demo_user');
-    window.location.href = 'dashboard.html';
+    window.location.href = '/dashboard';
 }
 
 googleBtn?.addEventListener('click', handleGoogleLogin);

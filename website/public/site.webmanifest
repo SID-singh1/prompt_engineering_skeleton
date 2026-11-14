@@ -1,0 +1,13 @@
+{
+  "name": "Prompt Memory",
+  "short_name": "Prompt Memory",
+  "description": "Turn a rough draft into a clear prompt in one click, right in ChatGPT, Claude, Gemini, Perplexity and Grok.",
+  "start_url": "/",
+  "display": "browser",
+  "background_color": "#0a0b10",
+  "theme_color": "#0a0b10",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

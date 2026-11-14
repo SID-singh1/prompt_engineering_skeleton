@@ -85,7 +85,7 @@ const confirmDeleteBtn = document.getElementById('confirm-delete-btn');
 
 // --- AUTH CHECK ---
 if (!token && !isGuest) {
-    window.location.href = 'login.html';
+    window.location.href = '/login';
 }
 
 // User Profile display
@@ -249,7 +249,7 @@ logoutBtn?.addEventListener('click', () => {
     localStorage.removeItem('pm_guest_mode');
     localStorage.removeItem('pm_email');
     localStorage.removeItem('pm_user_id');
-    window.location.href = 'login.html';
+    window.location.href = '/login';
 });
 
 // --- FETCH ANALYTICS DATA ---

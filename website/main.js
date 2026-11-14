@@ -1,25 +1,21 @@
-// Keep the landing page readable immediately, including without JavaScript.
-// Avoid hiding cards for decorative scroll effects or delaying installation.
+// The landing page reads fully without JavaScript. This only adds the
+// sticky-nav backdrop and swaps "Sign in" for "Dashboard" when signed in.
 const nav = document.querySelector('.nav');
 function updateNavigation() {
-    if (nav) nav.classList.toggle('nav-scrolled', window.scrollY > 100);
+    if (nav) nav.classList.toggle('nav-scrolled', window.scrollY > 12);
 }
 window.addEventListener('scroll', updateNavigation, { passive: true });
 updateNavigation();
 
-// ── Check Auth Session on Landing Page ──
-const token = localStorage.getItem('pm_token');
-const isGuest = localStorage.getItem('pm_guest_mode') === 'true';
-const navLoginLink = document.getElementById('nav-login-link');
-const navCtaBtn = document.getElementById('nav-cta-btn');
+let signedIn = false;
+try {
+    signedIn = Boolean(localStorage.getItem('pm_token')) || localStorage.getItem('pm_guest_mode') === 'true';
+} catch {
+    // Storage can be blocked; the page works the same signed out.
+}
 
-if (token || isGuest) {
-    if (navLoginLink) {
-        navLoginLink.textContent = 'Dashboard';
-        navLoginLink.href = 'dashboard.html';
-    }
-    if (navCtaBtn) {
-        navCtaBtn.textContent = 'Launch App →';
-        navCtaBtn.href = 'dashboard.html';
-    }
+const navLoginLink = document.getElementById('nav-login-link');
+if (signedIn && navLoginLink) {
+    navLoginLink.textContent = 'Dashboard';
+    navLoginLink.href = '/dashboard';
 }

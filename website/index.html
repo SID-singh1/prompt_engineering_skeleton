@@ -3,270 +3,431 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prompt Memory — AI Prompt Engineering, Supercharged</title>
-    <meta name="description" content="Turn a rough idea into a clearer AI prompt on ChatGPT, Claude, Gemini, Perplexity, or Grok. Review every rewrite before using it.">
+    <title>Prompt Memory: free prompt improver for ChatGPT, Claude &amp; Gemini</title>
+    <meta name="description" content="A free Chrome extension that turns a rough draft into a clear prompt in one click, right inside ChatGPT, Claude, Gemini, Perplexity and Grok. Save prompts and reuse them with //.">
+    <link rel="canonical" href="__SITE_URL__/">
+    <meta name="robots" content="index, follow, max-image-preview:large">
+    <meta name="theme-color" content="#0a0b10">
+
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Prompt Memory">
+    <meta property="og:title" content="Prompt Memory: rough draft in, clear prompt out">
+    <meta property="og:description" content="A free Chrome extension that rewrites your rough draft into a clear prompt, right inside ChatGPT, Claude, Gemini, Perplexity and Grok.">
+    <meta property="og:url" content="__SITE_URL__/">
+    <meta property="og:image" content="__SITE_URL__/og.png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="Prompt Memory turning a rough draft into a clear prompt beside a chat box">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Prompt Memory: rough draft in, clear prompt out">
+    <meta name="twitter:description" content="A free Chrome extension that rewrites your rough draft into a clear prompt, right where you chat.">
+    <meta name="twitter:image" content="__SITE_URL__/og.png">
+
+    <link rel="icon" href="/favicon.ico" sizes="48x48">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+    <link rel="manifest" href="/site.webmanifest">
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preload" as="image" href="/img/card.webp" fetchpriority="high">
     <link rel="stylesheet" href="./styles.css">
+
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "WebSite",
+          "@id": "__SITE_URL__/#website",
+          "url": "__SITE_URL__/",
+          "name": "Prompt Memory"
+        },
+        {
+          "@type": "SoftwareApplication",
+          "@id": "__SITE_URL__/#app",
+          "name": "Prompt Memory",
+          "url": "__SITE_URL__/",
+          "image": "__SITE_URL__/og.png",
+          "description": "A Chrome extension that rewrites a rough draft into a clear prompt in one click inside ChatGPT, Claude, Gemini, Perplexity and Grok, and lets you save and reuse your own prompts.",
+          "applicationCategory": "BrowserApplication",
+          "applicationSubCategory": "Chrome extension",
+          "operatingSystem": "Chrome (desktop)",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+        },
+        {
+          "@type": "FAQPage",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Is Prompt Memory free?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Yes. Sign in with Google for 15 free rewrites a day, with no card needed. If you already have a Groq, Gemini or OpenRouter API key you can use that instead, with or without an account." }
+            },
+            {
+              "@type": "Question",
+              "name": "Which AI chat sites does it work on?",
+              "acceptedAnswer": { "@type": "Answer", "text": "ChatGPT, Claude, Gemini, Perplexity and Grok, in desktop Chrome." }
+            },
+            {
+              "@type": "Question",
+              "name": "Does it send my message for me?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. The rewrite appears on a card beside the chat box. You choose whether to replace your draft with it, and nothing reaches the chat until you press send yourself." }
+            },
+            {
+              "@type": "Question",
+              "name": "What data does Prompt Memory send?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Nothing is sent until you press the button. Signed in, your draft and a few recent messages from the open chat go to our server and an AI provider, and you can turn chat context off. With your own API key and no account, the draft goes straight from your browser to that provider." }
+            },
+            {
+              "@type": "Question",
+              "name": "Do I need an API key?",
+              "acceptedAnswer": { "@type": "Answer", "text": "No. Signing in with Google is enough. An API key is optional, for people who would rather use their own provider account." }
+            },
+            {
+              "@type": "Question",
+              "name": "How do I delete my data?",
+              "acceptedAnswer": { "@type": "Answer", "text": "Open the extension from the Chrome toolbar, choose Delete account and data, and type DELETE to confirm." }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
 </head>
 <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <!-- ═══ NAV ═══ -->
-    <nav class="nav" aria-label="Main navigation">
-        <div class="container nav-inner">
-            <a href="#" class="nav-logo">
-                <span class="nav-logo-icon">⊕</span>
-                <span class="nav-logo-text">Prompt Memory</span>
+
+    <header class="nav" id="top">
+        <nav class="container nav-inner" aria-label="Main navigation">
+            <a href="/" class="brand" aria-label="Prompt Memory home">
+                <img src="/favicon.png" alt="" width="28" height="28">
+                <span>Prompt Memory</span>
             </a>
             <div class="nav-links">
                 <a href="#features">Features</a>
-                <a href="#how-it-works">How It Works</a>
+                <a href="#how-it-works">How it works</a>
                 <a href="#pricing">Pricing</a>
-                <a href="login.html" id="nav-login-link">Sign In</a>
+                <a href="#faq">FAQ</a>
             </div>
-            <a href="dashboard.html" id="nav-cta-btn" class="btn btn-nav">Open Dashboard →</a>
-        </div>
-    </nav>
+            <div class="nav-actions">
+                <a href="/login" id="nav-login-link" class="nav-signin">Sign in</a>
+                <a href="__INSTALL_HREF__" class="btn btn-primary btn-sm">__INSTALL_LABEL__</a>
+            </div>
+        </nav>
+    </header>
 
     <main id="main" tabindex="-1">
-    <!-- ═══ HERO ═══ -->
+
+    <!-- Hero -->
     <section class="hero">
         <div class="container hero-inner">
-            <div class="hero-badge"><span class="pulse-dot"></span> Next-Gen Prompt Engineering &amp; Observability</div>
-            <h1 class="hero-title">
-                Turn rough ideas into <span class="gradient-text">clearer prompts.</span><br>
-                Right where you chat.
-            </h1>
-            <p class="hero-subtitle">
-                Write a quick thought in ChatGPT, Claude, Gemini, Perplexity, or Grok. Prompt Memory grounds it with vector context, enforces rigorous constraints, and scores quality lift (0–100) before reaching the chat.
+            <p class="eyebrow"><span class="dot"></span> Free Chrome extension for AI chat</p>
+            <h1>Rough draft in.<br><span class="grad">Clear prompt out.</span></h1>
+            <p class="hero-sub">
+                Type a quick thought in ChatGPT, Claude, Gemini, Perplexity or Grok and press ⊕.
+                Prompt Memory rewrites it into a clearer prompt on a card beside the chat box.
+                Read it, then use it or keep your own.
             </p>
             <div class="hero-ctas">
-                <a href="#install" class="btn btn-primary btn-lg">
-                    <span>Try Prompt Memory</span>
-                    <span class="btn-arrow">→</span>
-                </a>
-                <a href="dashboard.html" class="btn btn-ghost btn-lg">
-                    <span>⚡ Live Dashboard</span>
-                </a>
+                <a href="__INSTALL_HREF__" class="btn btn-primary btn-lg">__INSTALL_LABEL__ <span class="free-tag">free</span></a>
+                <a href="#how-it-works" class="btn btn-ghost btn-lg">See how it works</a>
             </div>
-            <p class="hero-data-note">You choose when to enhance. Signed-in rewrites send your draft and optional recent chat context through our server; using your own key without sign-in sends the draft directly to your provider. <a href="privacy.html">See how your data is handled</a>.</p>
-            <div class="hero-stats">
-                <div class="stat">
-                    <span class="stat-value">3</span>
-                    <span class="stat-label">Rewrite modes</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                    <span class="stat-value">1 click</span>
-                    <span class="stat-label">To review a rewrite</span>
-                </div>
-                <div class="stat-divider"></div>
-                <div class="stat">
-                    <span class="stat-value">5</span>
-                    <span class="stat-label">Platforms supported</span>
-                </div>
-            </div>
+            <ul class="hero-points">
+                <li>15 free rewrites a day</li>
+                <li>No card needed</li>
+                <li>Nothing is sent until you press ⊕</li>
+            </ul>
 
-            <p class="demo-caption">Illustrative rewrite. AI can add assumptions—review before using.</p>
-            <!-- Demo Visual with live benchmark scores -->
-            <div class="hero-demo">
-                <div class="demo-card demo-before">
-                    <div class="demo-card-header">
-                        <span class="demo-label">Raw User Input</span>
-                        <span class="score-chip-mini chip-amber">Score 36/100</span>
-                    </div>
-                    <div class="demo-text">explain quantum computing to a beginner in 200 words, with an analogy</div>
-                </div>
-                <div class="demo-arrow">
-                    <span class="demo-arrow-icon">⚡</span>
-                    <span class="demo-arrow-label">+58 pts Lift</span>
-                </div>
-                <div class="demo-card demo-after">
-                    <div class="demo-card-header">
-                        <span class="demo-label">Synthesized Output</span>
-                        <span class="score-chip-mini chip-emerald">Score 94/100</span>
-                    </div>
-                    <div class="demo-text">Explain quantum computing to a beginner in about 200 words. Use a simple analogy to introduce the key idea, explain any technical terms, and make clear where the analogy stops being accurate.</div>
-                </div>
-            </div>
+            <figure class="shot shot-hero">
+                <img src="/img/card.webp" width="1400" height="633" fetchpriority="high"
+                     alt="A rough draft, “hw do i sort a list of dicts by a key in python, some dont have the key”, in a chat box. Above it, Prompt Memory's card shows a clear rewritten prompt with Replace draft, Shorter and Open-ended buttons.">
+            </figure>
+            <p class="shot-note">The real extension on a test chat page. AI can add assumptions, so read a rewrite before you use it.</p>
         </div>
-        <div class="hero-glow"></div>
     </section>
 
-    <!-- ═══ PLATFORMS ═══ -->
-    <section class="platforms">
+    <!-- Supported sites -->
+    <section class="sites" aria-label="Supported sites">
         <div class="container">
-            <p class="platforms-label">Works on five popular AI chat sites</p>
-            <div class="platforms-grid">
-                <div class="platform-chip">ChatGPT</div>
-                <div class="platform-chip">Claude</div>
-                <div class="platform-chip">Gemini</div>
-                <div class="platform-chip">Perplexity</div>
-                <div class="platform-chip">Grok</div>
-            </div>
+            <p class="sites-label">Works inside the chat you already use</p>
+            <ul class="sites-list">
+                <li>ChatGPT</li>
+                <li>Claude</li>
+                <li>Gemini</li>
+                <li>Perplexity</li>
+                <li>Grok</li>
+            </ul>
         </div>
     </section>
 
-    <!-- ═══ HOW IT WORKS ═══ -->
-    <section class="how-it-works" id="how-it-works">
+    <!-- How it works -->
+    <section class="section" id="how-it-works">
         <div class="container">
-            <h2 class="section-title">How It Works</h2>
-            <p class="section-subtitle">From rough thought to a prompt you can actually use</p>
-            <div class="steps-grid">
-                <div class="step-card">
-                    <div class="step-number">1</div>
-                    <div class="step-icon">✍️</div>
-                    <h3 class="step-title">Write your prompt</h3>
-                    <p class="step-desc">Type your prompt in ChatGPT, Claude, or any supported AI chat — just as you normally would.</p>
-                </div>
-                <div class="step-connector"></div>
-                <div class="step-card">
-                    <div class="step-number">2</div>
-                    <div class="step-icon">🎯</div>
-                    <h3 class="step-title">Press Enhance</h3>
-                    <p class="step-desc">Click the ⊕ button, or press <kbd>Ctrl+Shift+E</kbd> (<kbd>⌘+Shift+E</kbd> on Mac) — our AI rewrites your prompt with structure, specificity, and context.</p>
-                </div>
-                <div class="step-connector"></div>
-                <div class="step-card">
-                    <div class="step-number">3</div>
-                    <div class="step-icon">🚀</div>
-                    <h3 class="step-title">Review, then insert</h3>
-                    <p class="step-desc">Compare the rewrite with your original. Edit it, use it, or dismiss it. You stay in control of what the chat receives.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ═══ FEATURES ═══ -->
-    <section class="features" id="features">
-        <div class="container">
-            <h2 class="section-title">Tools for your next prompt</h2>
-            <p class="section-subtitle">Start with a rewrite. Add context, saved prompts, or voice when you need them.</p>
-            <div class="features-grid">
-                <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h3 class="feature-title">3 Enhancement Modes</h3>
-                    <p class="feature-desc">Quick for fast rewrites, Deep for structured enhancement, Creative for open-ended exploration.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🔄</div>
-                    <h3 class="feature-title">Real-time Streaming</h3>
-                    <p class="feature-desc">Watch your prompt being enhanced token-by-token in real-time. No waiting for the full result.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🎤</div>
-                    <h3 class="feature-title">Voice to Prompt</h3>
-                    <p class="feature-desc">Speak your prompt naturally — Whisper AI transcribes and enhances it in 20+ languages automatically.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">🧠</div>
-                    <h3 class="feature-title">Context Aware</h3>
-                    <p class="feature-desc">Optionally includes up to six recent chat messages when you enhance. You can turn conversation context off.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">💾</div>
-                    <h3 class="feature-title">Prompt Library</h3>
-                    <p class="feature-desc">Save, tag, and search your best prompts. Select them as context for future enhancements.</p>
-                </div>
-                <div class="feature-card">
-                    <div class="feature-icon">📈</div>
-                    <h3 class="feature-title">Learns from You</h3>
-                    <p class="feature-desc">Save useful prompts and give feedback on rewrites. Automatic prompt tracking is off unless you choose to enable it.</p>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- ═══ PRICING ═══ -->
-    <section class="pricing" id="pricing">
-        <div class="container">
-            <h2 class="section-title">Two ways to get started</h2>
-            <p class="section-subtitle">The extension is free. Choose the path that fits how you work.</p>
-
-            <div class="pricing-grid">
-                <!-- Free -->
-                <div class="price-card price-card-featured">
-                    <div class="price-popular">No API key needed</div>
-                    <div class="price-tier">Sign in for memory</div>
-                    <div class="price-amount">
-                        <span class="price-currency">$</span>
-                        <span class="price-value">0</span>
-                        <span class="price-period">/mo</span>
-                    </div>
-                    <p class="price-desc">Use our shared AI key and keep your prompts in a personal library.</p>
-                    <ul class="price-features">
-                        <li><span class="check">✓</span> 15 enhancements/day on our key</li>
-                        <li><span class="check">✓</span> Quick, Deep &amp; Creative modes</li>
-                        <li><span class="check">✓</span> Saved prompts and enhancement history</li>
-                        <li><span class="check">✓</span> Voice transcription with transcript review</li>
-                    </ul>
-                    <a href="#install" class="btn btn-primary btn-full">Start with Google sign-in</a>
-                </div>
-
-                <!-- Bring your own key -->
-                <div class="price-card">
-                    <div class="price-popular">Optional · For API-key users</div>
-                    <div class="price-tier">Use your own AI key</div>
-                    <div class="price-amount">
-                        <span class="price-currency">$</span>
-                        <span class="price-value">0</span>
-                        <span class="price-period">/mo</span>
-                    </div>
-                    <p class="price-desc">Send drafts directly from your browser to your chosen provider, with no Prompt Memory account.</p>
-                    <ul class="price-features">
-                        <li><span class="check">✓</span> Groq, Gemini, or OpenRouter</li>
-                        <li><span class="check">✓</span> Your key stays in local browser storage</li>
-                        <li><span class="check">✓</span> Review every rewrite before use</li>
-                        <li><span class="check">✓</span> Provider charges, limits, and terms apply</li>
-                    </ul>
-                    <a href="#install" class="btn btn-secondary btn-full">Set up your own key</a>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <section class="installation" id="install" aria-labelledby="install-title">
-        <div class="container install-inner">
-            <h2 class="section-title" id="install-title">Try it in desktop Chrome</h2>
-            <p class="section-subtitle">Manual installation for now. Prompt Memory is not yet available through a Chrome Web Store listing.</p>
-            <ol class="install-steps">
-                <li><strong>Get the files.</strong> <a href="https://github.com/siddhm11/prompt_engineering_skeleton">Open the project on GitHub</a>, choose <strong>Code → Download ZIP</strong>, and extract it. If a friend sent you an extension ZIP, extract that instead.</li>
-                <li><strong>Load the extension.</strong> Open <code>chrome://extensions</code>, enable <strong>Developer mode</strong>, and select <strong>Load unpacked</strong>. Choose the <code>extension</code> folder inside the project—or the extracted folder containing <code>manifest.json</code>.</li>
-                <li><strong>Choose your setup.</strong> Open Chrome’s Extensions menu and pin Prompt Memory. Open it, review the data disclosure, then continue with Google. Already have an AI provider key? Choose <strong>Use your own API key</strong>.</li>
-                <li><strong>Try one rewrite.</strong> Reload an open supported chat tab. Type the sample below without sending it, click ⊕, review the rewrite, and insert it when you are ready. Inserting does not send the message.</li>
+            <p class="kicker">How it works</p>
+            <h2>Three steps, and you stay in charge of the last one.</h2>
+            <ol class="steps">
+                <li>
+                    <span class="step-n">1</span>
+                    <h3>Type it the way you think it</h3>
+                    <p>Write your draft in the chat box as usual. Typos, half sentences and shorthand are fine.</p>
+                </li>
+                <li>
+                    <span class="step-n">2</span>
+                    <h3>Press ⊕</h3>
+                    <p>Click the button at the corner of the page or press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> (<kbd>⌘</kbd>+<kbd>Shift</kbd>+<kbd>E</kbd> on a Mac). The rewrite streams onto a card.</p>
+                </li>
+                <li>
+                    <span class="step-n">3</span>
+                    <h3>Read it, then decide</h3>
+                    <p>Replace your draft, try another style, or dismiss it. Nothing reaches the chat until you press send.</p>
+                </li>
             </ol>
-            <div class="sample-prompt"><strong>A safe first test</strong><p>Write a friendly email to a fictional teammate, Alex, asking to move our project check-in from Tuesday to Thursday. Keep it under 100 words. Do not invent a reason.</p></div>
-            <details class="install-help"><summary>Installed, but the button is missing?</summary><p>Reload the chat page after installing or updating. Check that Prompt Memory is enabled in Chrome’s Extensions page and allowed on that site. Contact <a href="mailto:hello.promptmemory@gmail.com">hello.promptmemory@gmail.com</a> if it still does not appear; include the site and error message, but no API keys or private conversations.</p></details>
         </div>
     </section>
 
-    <!-- ═══ CTA ═══ -->
-    <section class="cta-section">
-        <div class="container cta-inner">
-            <h2 class="cta-title">Give your next idea a clearer start.</h2>
-            <p class="cta-subtitle">From “explain this bug” to a precise debugging request with context and constraints—review the rewrite, then send only what you choose.</p>
-            <a href="#install" class="btn btn-primary btn-lg">
-                <span>Get the free extension</span>
-                <span class="btn-arrow">→</span>
-            </a>
+    <!-- Features -->
+    <section class="section" id="features">
+        <div class="container">
+            <p class="kicker">Features</p>
+            <h2>A rewrite first. Your own prompts when you need them.</h2>
+
+            <article class="feature">
+                <div class="feature-copy">
+                    <h3>See what shaped every rewrite</h3>
+                    <p>The card names the saved prompts it used, including the ones Prompt Memory found by itself. Disagree with one? Leave it out and rewrite again.</p>
+                    <ul class="ticks">
+                        <li>Up to six recent chat messages as context, with a switch to turn it off</li>
+                        <li>Every version stays on the card, so going back is free</li>
+                    </ul>
+                </div>
+                <figure class="shot">
+                    <img src="/img/context.webp" width="1240" height="770" loading="lazy" decoding="async"
+                         alt="The rewrite card with its context list open: three saved prompts that shaped the rewrite, two of them left out, and a “Retry without them” button.">
+                </figure>
+            </article>
+
+            <article class="feature feature-flip">
+                <div class="feature-copy">
+                    <h3>Your saved prompts, one <code>//</code> away</h3>
+                    <p>Save the prompts and details you keep retyping. Type <code>//</code> in any supported chat to search them and drop one in, without leaving the message box.</p>
+                    <ul class="ticks">
+                        <li><kbd>Enter</kbd> inserts the prompt, <kbd>Tab</kbd> attaches it as context</li>
+                        <li>The same library on every site</li>
+                    </ul>
+                </div>
+                <figure class="shot">
+                    <img src="/img/slash.webp" width="1120" height="335" loading="lazy" decoding="async"
+                         alt="Typing “//rev” in a chat box opens a small menu offering the saved prompt “Code review template”.">
+                </figure>
+            </article>
+
+            <article class="feature">
+                <div class="feature-copy">
+                    <h3>Save any text as context</h3>
+                    <p>Select a useful answer or a block of your own notes on the page and save it in one click. It is there the next time a rewrite needs it.</p>
+                </div>
+                <figure class="shot">
+                    <img src="/img/save.webp" width="1140" height="275" loading="lazy" decoding="async"
+                         alt="A selected paragraph in a chat with a “Save as context” button beneath it.">
+                </figure>
+            </article>
+
+            <article class="feature feature-flip">
+                <div class="feature-copy">
+                    <h3>Every prompt, one library</h3>
+                    <p>Search, tag and tick the prompts you want as context for the next rewrite. Your rewrite History sits one tab over.</p>
+                    <ul class="ticks">
+                        <li>Signed in, your library and History follow you to every computer</li>
+                    </ul>
+                </div>
+                <figure class="shot shot-tall">
+                    <img src="/img/library.webp" width="772" height="1035" loading="lazy" decoding="async"
+                         alt="The prompt library panel with Saved and History tabs, a search box, and saved prompts such as “Code review template” and “Bug report triage” with tags.">
+                </figure>
+            </article>
+
+            <ul class="mini-grid">
+                <li>
+                    <h3>Three styles</h3>
+                    <p>Shorter, More detail or Open-ended in one click when the first rewrite is not quite it.</p>
+                </li>
+                <li>
+                    <h3>Keeps your meaning</h3>
+                    <p>It rewrites the request instead of answering it, and aims to keep your names, numbers, code and language, Hinglish included.</p>
+                </li>
+                <li>
+                    <h3>Voice input</h3>
+                    <p>Speak a prompt with <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> and check the transcript before it is rewritten.</p>
+                </li>
+                <li>
+                    <h3>Learns what works</h3>
+                    <p>Rate a rewrite with a thumbs up or down. Prompt tracking stays off unless you turn it on.</p>
+                </li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Privacy -->
+    <section class="section section-tint" id="privacy">
+        <div class="container privacy-inner">
+            <div>
+                <p class="kicker">Your data</p>
+                <h2>Told up front, sent only when you ask.</h2>
+                <p class="lede">Prompt Memory does nothing in the background. It reads your draft when you press ⊕, and the first time it tells you exactly what will be sent.</p>
+                <a class="text-link" href="/privacy">Read the privacy policy →</a>
+            </div>
+            <ul class="privacy-list">
+                <li>
+                    <h3>Signed in</h3>
+                    <p>Your draft and a few recent messages from the open chat go to our server and an AI provider. Drafts and rewrites are kept in your History. Chat context has an off switch.</p>
+                </li>
+                <li>
+                    <h3>Your own key, no account</h3>
+                    <p>The draft goes straight from your browser to the provider you chose. Your key stays in this browser's storage.</p>
+                </li>
+                <li>
+                    <h3>Leaving</h3>
+                    <p>Delete your account and everything stored with it from the extension's toolbar menu.</p>
+                </li>
+            </ul>
+        </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="section" id="pricing">
+        <div class="container">
+            <p class="kicker">Pricing</p>
+            <h2>Free, two ways.</h2>
+            <div class="plans">
+                <div class="plan plan-main">
+                    <p class="plan-tag">Most people start here</p>
+                    <h3>Sign in with Google</h3>
+                    <p class="plan-price">$0</p>
+                    <p class="plan-desc">Use our AI key and keep your prompts in a personal library.</p>
+                    <ul class="ticks">
+                        <li>15 rewrites a day, no card needed</li>
+                        <li>Saved prompts and History on every computer</li>
+                        <li>Voice input with transcript review</li>
+                        <li>All three rewrite styles</li>
+                    </ul>
+                    <a href="__INSTALL_HREF__" class="btn btn-primary btn-full">__INSTALL_LABEL__</a>
+                </div>
+                <div class="plan">
+                    <p class="plan-tag">If you have an API key</p>
+                    <h3>Bring your own key</h3>
+                    <p class="plan-price">$0</p>
+                    <p class="plan-desc">Send drafts directly to your provider, with or without an account.</p>
+                    <ul class="ticks">
+                        <li>Groq, Gemini or OpenRouter</li>
+                        <li>Your key stays in this browser</li>
+                        <li>Review every rewrite before use</li>
+                        <li>Your provider's charges and terms apply</li>
+                    </ul>
+                    <a href="__INSTALL_HREF__" class="btn btn-secondary btn-full">__INSTALL_LABEL__</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Install -->
+    <section class="section section-tint" id="install" aria-labelledby="install-title">
+        <div class="container install-inner">
+            <p class="kicker">Install</p>
+            <!--if:store-->
+            <h2 id="install-title">Add it to Chrome in a minute.</h2>
+            <ol class="install-steps">
+                <li><strong>Add the extension.</strong> Open the <a href="__INSTALL_HREF__">Chrome Web Store listing</a> and choose <strong>Add to Chrome</strong>.</li>
+                <li><strong>Choose your setup.</strong> A tab opens explaining what is sent. Agree, then continue with Google, or choose <strong>I have my own API key</strong>.</li>
+                <li><strong>Try one rewrite.</strong> Open a supported chat, type the sample below without sending it, and press ⊕.</li>
+            </ol>
+            <p class="install-cta"><a href="__INSTALL_HREF__" class="btn btn-primary btn-lg">__INSTALL_LABEL__ <span class="free-tag">free</span></a></p>
+            <!--/if:store-->
+            <!--if:manual-->
+            <h2 id="install-title">Try it in desktop Chrome.</h2>
+            <p class="lede">The Chrome Web Store listing is on its way. Until then, installing by hand takes about two minutes.</p>
+            <ol class="install-steps">
+                <li><strong>Get the files.</strong> <a href="https://github.com/siddhm11/prompt_engineering_skeleton">Open the project on GitHub</a>, choose <strong>Code → Download ZIP</strong>, and extract it. If someone sent you an extension ZIP, extract that instead.</li>
+                <li><strong>Load the extension.</strong> Open <code>chrome://extensions</code>, turn on <strong>Developer mode</strong>, and choose <strong>Load unpacked</strong>. Pick the <code>extension</code> folder inside the project, or the extracted folder that contains <code>manifest.json</code>.</li>
+                <li><strong>Choose your setup.</strong> Pin Prompt Memory from Chrome's Extensions menu and open it. Read what is sent, then continue with Google, or choose <strong>I have my own API key</strong>.</li>
+                <li><strong>Try one rewrite.</strong> Reload an open chat tab, type the sample below without sending it, and press ⊕.</li>
+            </ol>
+            <!--/if:manual-->
+            <div class="sample">
+                <p class="sample-label">A safe first test</p>
+                <p>Write a friendly email to a fictional teammate, Alex, asking to move our project check-in from Tuesday to Thursday. Keep it under 100 words. Do not invent a reason.</p>
+            </div>
+            <details class="help">
+                <summary>Installed, but the button is missing?</summary>
+                <p>Reload the chat page after installing or updating. Check that Prompt Memory is turned on in Chrome's Extensions page and allowed on that site. Still missing? Email <a href="mailto:hello.promptmemory@gmail.com">hello.promptmemory@gmail.com</a> with the site and the error message, but no API keys or private conversations.</p>
+            </details>
+        </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="section" id="faq">
+        <div class="container faq-inner">
+            <p class="kicker">FAQ</p>
+            <h2>Questions people ask first.</h2>
+            <div class="faq">
+                <details>
+                    <summary>Is Prompt Memory free?</summary>
+                    <p>Yes. Sign in with Google for 15 free rewrites a day, with no card needed. If you already have a Groq, Gemini or OpenRouter API key you can use that instead, with or without an account.</p>
+                </details>
+                <details>
+                    <summary>Which AI chat sites does it work on?</summary>
+                    <p>ChatGPT, Claude, Gemini, Perplexity and Grok, in desktop Chrome.</p>
+                </details>
+                <details>
+                    <summary>Does it send my message for me?</summary>
+                    <p>No. The rewrite appears on a card beside the chat box. You choose whether to replace your draft with it, and nothing reaches the chat until you press send yourself.</p>
+                </details>
+                <details>
+                    <summary>What data does Prompt Memory send?</summary>
+                    <p>Nothing is sent until you press ⊕. Signed in, your draft and a few recent messages from the open chat go to our server and an AI provider, and you can turn chat context off. With your own API key and no account, the draft goes straight from your browser to that provider. The <a href="/privacy">privacy policy</a> has the full list.</p>
+                </details>
+                <details>
+                    <summary>Do I need an API key?</summary>
+                    <p>No. Signing in with Google is enough. An API key is optional, for people who would rather use their own provider account.</p>
+                </details>
+                <details>
+                    <summary>How do I delete my data?</summary>
+                    <p>Open the extension from the Chrome toolbar, choose <strong>Delete account and data</strong>, and type DELETE to confirm.</p>
+                </details>
+            </div>
+        </div>
+    </section>
+
+    <!-- Closing CTA -->
+    <section class="closing">
+        <div class="container closing-inner">
+            <h2>Give your next prompt a clearer start.</h2>
+            <p>From “explain this bug” to a precise request with context and constraints. Read the rewrite, then send only what you choose.</p>
+            <a href="__INSTALL_HREF__" class="btn btn-primary btn-lg">__INSTALL_LABEL__ <span class="free-tag">free</span></a>
         </div>
     </section>
 
     </main>
-    <!-- ═══ FOOTER ═══ -->
+
     <footer class="footer">
         <div class="container footer-inner">
             <div class="footer-brand">
-                <span class="nav-logo-icon">⊕</span>
-                <span class="nav-logo-text">Prompt Memory</span>
+                <a href="/" class="brand">
+                    <img src="/favicon.png" alt="" width="24" height="24" loading="lazy">
+                    <span>Prompt Memory</span>
+                </a>
+                <p>Rough draft in, clear prompt out.</p>
             </div>
-            <div class="footer-links">
-                <a href="privacy.html">Privacy Policy</a>
-                <a href="https://github.com/siddhm11/prompt_engineering_skeleton">GitHub</a>
+            <nav class="footer-links" aria-label="Footer">
+                <a href="#features">Features</a>
+                <a href="#pricing">Pricing</a>
+                <a href="#faq">FAQ</a>
+                <a href="/privacy">Privacy</a>
+                <a href="/login">Sign in</a>
+                <a href="https://github.com/siddhm11/prompt_engineering_skeleton" rel="noopener">GitHub</a>
                 <a href="mailto:hello.promptmemory@gmail.com">Contact</a>
-            </div>
-            <p class="footer-copy">© 2026 Prompt Memory. All rights reserved.</p>
+            </nav>
+            <p class="footer-fine">© 2026 Prompt Memory. Independent, and not affiliated with OpenAI, Anthropic, Google, Perplexity or xAI.</p>
         </div>
     </footer>
 
